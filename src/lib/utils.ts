@@ -60,3 +60,22 @@ export function formatDateTime(dateString: string): string {
 export function generateId(): string {
   return `trip_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 }
+
+export function calculateHeading(
+  fromLat: number,
+  fromLng: number,
+  toLat: number,
+  toLng: number,
+): number {
+  const fromLatRad = (fromLat * Math.PI) / 180;
+  const toLatRad = (toLat * Math.PI) / 180;
+  const deltaLng = ((toLng - fromLng) * Math.PI) / 180;
+
+  const x = Math.sin(deltaLng) * Math.cos(toLatRad);
+  const y =
+    Math.cos(fromLatRad) * Math.sin(toLatRad) -
+    Math.sin(fromLatRad) * Math.cos(toLatRad) * Math.cos(deltaLng);
+
+  const bearing = Math.atan2(x, y);
+  return ((bearing * 180) / Math.PI + 360) % 360;
+}

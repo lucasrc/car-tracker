@@ -1,6 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { TripCard } from "@/components/tracker/TripCard";
+import { TripSummary } from "@/components/history/TripSummary";
+import { FuelCharts } from "@/components/history/FuelCharts";
+import { DateRangePicker } from "@/components/ui/DateRangePicker";
 import { deleteTrip, getAllTrips } from "@/lib/db";
 import type { Trip } from "@/types";
 
@@ -8,20 +11,36 @@ export function History() {
   const navigate = useNavigate();
   const [trips, setTrips] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(true);
+  const [startDate, setStartDate] = useState(
+    () => new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+  );
+  const [endDate, setEndDate] = useState(() => new Date());
 
-  useEffect(() => {
-    loadTrips();
-  }, []);
-
-  const loadTrips = async () => {
+  const loadTrips = useCallback(async () => {
     try {
       const allTrips = await getAllTrips();
-      setTrips(allTrips.filter((t) => t.status === "completed"));
+      const completedTrips = allTrips.filter((t) => t.status === "completed");
+
+      const startTime = startDate.getTime();
+      const filteredTrips = completedTrips.filter(
+        (t) => new Date(t.startTime).getTime() >= startTime,
+      );
+
+      setTrips(filteredTrips);
     } catch (err) {
       console.error("Error loading trips:", err);
     } finally {
       setLoading(false);
     }
+  }, [startDate]);
+
+  useEffect(() => {
+    loadTrips();
+  }, [loadTrips]);
+
+  const handleDateChange = (start: Date, end: Date) => {
+    setStartDate(start);
+    setEndDate(end);
   };
 
   const handleTripClick = (tripId: string) => {
@@ -54,8 +73,24 @@ export function History() {
       </header>
 
       <main className="-mt-4 flex-1 overflow-auto p-4 pt-6">
+        <div className="mb-4">
+          <DateRangePicker
+            startDate={startDate}
+            endDate={endDate}
+            onChange={handleDateChange}
+          />
+        </div>
+
+        <TripSummary startDate={startDate} endDate={endDate} />
+
+        {trips.length > 0 && (
+          <div className="mt-4">
+            <FuelCharts trips={trips} startDate={startDate} endDate={endDate} />
+          </div>
+        )}
+
         {trips.length === 0 ? (
-          <div className="flex h-64 flex-col items-center justify-center rounded-3xl bg-white p-8 shadow-lg">
+          <div className="mt-4 flex h-64 flex-col items-center justify-center rounded-3xl bg-white p-8 shadow-lg">
             <div className="mb-4 rounded-full bg-blue-50 p-4">
               <svg
                 className="h-16 w-16 text-blue-400"
@@ -72,14 +107,17 @@ export function History() {
               </svg>
             </div>
             <p className="mb-2 text-lg font-semibold text-gray-900">
-              Nenhuma viagem ainda
+              Nenhuma viagem neste período
             </p>
             <p className="text-center text-sm text-gray-500">
               Inicie o rastreamento para registrar sua primeira viagem
             </p>
           </div>
         ) : (
-          <div className="flex flex-col gap-3">
+          <div className="mt-4 flex flex-col gap-3">
+            <h3 className="text-sm font-semibold text-gray-600">
+              Todas as Viagens
+            </h3>
             {trips.map((trip) => (
               <TripCard
                 key={trip.id}

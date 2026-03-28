@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import GaugeComponent from "react-gauge-component";
 
 interface SpeedometerProps {
   currentSpeed: number;
@@ -6,54 +6,94 @@ interface SpeedometerProps {
 }
 
 export function Speedometer({ currentSpeed }: SpeedometerProps) {
-  const speedPercent = Math.min(currentSpeed / 120, 1);
-  const radius = 60;
-  const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference * (1 - speedPercent);
-
-  const speedColor = useMemo(() => {
-    if (currentSpeed <= 60) return "#22c55e";
-    if (currentSpeed <= 80) return "#eab308";
-    if (currentSpeed <= 100) return "#f97316";
-    return "#ef4444";
-  }, [currentSpeed]);
-
   return (
     <div className="flex items-center justify-center">
-      <div className="relative">
-        <svg
-          className="h-36 w-36 -rotate-90 drop-shadow-2xl"
-          viewBox="0 0 140 140"
-        >
-          <circle
-            cx="70"
-            cy="70"
-            r={radius}
-            fill="rgba(0, 0, 0, 0.6)"
-            stroke="rgba(255, 255, 255, 0.15)"
-            strokeWidth="10"
+      <div className="bg-black/80 rounded-full p-3">
+        <div className="w-60 h-60">
+          <GaugeComponent
+            value={currentSpeed}
+            minValue={0}
+            maxValue={200}
+            startAngle={-225}
+            endAngle={45}
+            type="semicircle"
+            arc={{
+              nbSubArcs: 50,
+              width: 0.12,
+              gradient: true,
+              colorArray: [
+                "#22c55e",
+                "#84cc16",
+                "#eab308",
+                "#f97316",
+                "#ef4444",
+              ],
+              padding: 0.01,
+            }}
+            pointer={{
+              type: "needle",
+              length: 0.65,
+              color: "#ffffff",
+              animate: true,
+              elastic: true,
+              animationDuration: 1500,
+              animationDelay: 0,
+            }}
+            labels={{
+              valueLabel: {
+                matchColorWithArc: true,
+                renderContent: (value: number, color: string) => (
+                  <div className="flex flex-col items-center">
+                    <span
+                      className="text-3xl font-bold tabular-nums tracking-tight"
+                      style={{ color }}
+                    >
+                      {Math.round(value)}
+                    </span>
+                    <span className="text-[10px] font-medium text-white/50 -mt-0.5">
+                      km/h
+                    </span>
+                  </div>
+                ),
+              },
+              tickLabels: {
+                hideMinMax: true,
+                type: "inner",
+                autoSpaceTickLabels: true,
+                ticks: [
+                  { value: 0 },
+                  { value: 20 },
+                  { value: 40 },
+                  { value: 60 },
+                  { value: 80 },
+                  { value: 100 },
+                  { value: 120 },
+                  { value: 140 },
+                  { value: 160 },
+                  { value: 180 },
+                  { value: 200 },
+                ],
+                defaultTickLineConfig: {
+                  length: 4,
+                  width: 1,
+                  distanceFromArc: 6,
+                  color: "rgba(255,255,255,0.3)",
+                },
+                defaultTickValueConfig: {
+                  formatTextValue: (value: number) => {
+                    if (value > 0 && value < 200 && value % 20 === 0) {
+                      return String(value);
+                    }
+                    return "";
+                  },
+                  style: {
+                    fontSize: "11px",
+                    fill: "rgba(255,255,255,0.5)",
+                  },
+                },
+              },
+            }}
           />
-          <circle
-            cx="70"
-            cy="70"
-            r={radius}
-            fill="none"
-            stroke={speedColor}
-            strokeWidth="10"
-            strokeLinecap="round"
-            strokeDasharray={circumference}
-            strokeDashoffset={strokeDashoffset}
-            className="transition-all duration-300 ease-out"
-          />
-        </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span
-            className="text-4xl font-bold tabular-nums text-white drop-shadow-lg"
-            style={{ color: speedColor }}
-          >
-            {Math.round(currentSpeed)}
-          </span>
-          <span className="text-xs font-medium text-white/70">km/h</span>
         </div>
       </div>
     </div>

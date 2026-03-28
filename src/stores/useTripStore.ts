@@ -6,6 +6,7 @@ import {
   getCurrentTrip,
   clearCurrentTrip,
   saveTrip,
+  getSettings,
 } from "@/lib/db";
 import { calculateTotalDistance } from "@/lib/distance";
 
@@ -22,12 +23,14 @@ interface TripStore {
   stats: TripStats;
   elapsedTime: number;
 
-  startTrip: () => void;
+  startTrip: () => Promise<void>;
   pauseTrip: () => void;
   resumeTrip: () => void;
   stopTrip: () => Promise<void>;
   addPosition: (coords: Coordinates) => void;
   setCurrentSpeed: (speed: number) => void;
+  setDriveMode: (mode: "city" | "highway") => void;
+  setConsumption: (consumption: number) => void;
   tick: () => void;
   loadCurrentTrip: () => Promise<void>;
 }
@@ -45,14 +48,20 @@ export const useTripStore = create<TripStore>((set, get) => ({
   stats: getEmptyStats(),
   elapsedTime: 0,
 
-  startTrip: () => {
+  startTrip: async () => {
+    const settings = await getSettings();
     const trip: Trip = {
       id: generateId(),
       startTime: new Date().toISOString(),
       distanceMeters: 0,
       maxSpeed: 0,
+      avgSpeed: 0,
       path: [],
       status: "recording",
+      driveMode: "city",
+      consumption: settings.cityKmPerLiter,
+      fuelCapacity: settings.fuelCapacity,
+      fuelUsed: 0,
     };
 
     set({
@@ -93,8 +102,14 @@ export const useTripStore = create<TripStore>((set, get) => ({
   },
 
   stopTrip: async () => {
-    const { trip, stats } = get();
+    const { trip, stats, elapsedTime } = get();
     if (!trip) return;
+
+    const distanceKm = stats.distanceMeters / 1000;
+    const durationHours = elapsedTime / 3600;
+    const avgSpeed = durationHours > 0 ? distanceKm / durationHours : 0;
+    const consumption = trip.consumption || 0;
+    const fuelUsed = consumption > 0 ? distanceKm / consumption : 0;
 
     const completedTrip: Trip = {
       ...trip,
@@ -102,6 +117,9 @@ export const useTripStore = create<TripStore>((set, get) => ({
       status: "completed",
       distanceMeters: stats.distanceMeters,
       maxSpeed: stats.maxSpeed,
+      avgSpeed,
+      consumption,
+      fuelUsed,
     };
 
     await saveTrip(completedTrip);
@@ -149,6 +167,24 @@ export const useTripStore = create<TripStore>((set, get) => ({
 
   setCurrentSpeed: (speed: number) => {
     set({ currentSpeed: speed });
+  },
+
+  setDriveMode: (mode: "city" | "highway") => {
+    const { trip } = get();
+    if (!trip) return;
+
+    const updatedTrip: Trip = { ...trip, driveMode: mode };
+    set({ trip: updatedTrip });
+    saveCurrentTrip(updatedTrip);
+  },
+
+  setConsumption: (consumption: number) => {
+    const { trip } = get();
+    if (!trip) return;
+
+    const updatedTrip: Trip = { ...trip, consumption };
+    set({ trip: updatedTrip });
+    saveCurrentTrip(updatedTrip);
   },
 
   tick: () => {

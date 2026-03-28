@@ -5,6 +5,7 @@ import { BottomNav } from "@/components/layout/BottomNav";
 import { Tracker } from "@/pages/Tracker";
 import { History } from "@/pages/History";
 import { TripDetail } from "@/pages/TripDetail";
+import { Settings } from "@/pages/Settings";
 import { NotFound } from "@/pages/NotFound";
 
 export function App() {
@@ -16,6 +17,7 @@ export function App() {
           <Route path="/tracker" element={<Tracker />} />
           <Route path="/history" element={<History />} />
           <Route path="/history/:id" element={<TripDetail />} />
+          <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
         <BottomNav />

@@ -66,6 +66,10 @@ export function TripDetail() {
       ? trip.distanceMeters / 1000 / (durationSeconds / 3600)
       : 0;
 
+  const fuelUsed = trip.fuelUsed || 0;
+  const distanceKm = trip.distanceMeters / 1000;
+  const calculatedAvgKmL = fuelUsed > 0 ? distanceKm / fuelUsed : 0;
+
   return (
     <div className="min-h-screen pb-24">
       <div className="h-[50vh] w-full">
@@ -164,6 +168,27 @@ export function TripDetail() {
             <p className="text-xs font-medium text-green-600">Vel. Média</p>
             <p className="text-lg font-bold text-green-900">
               {Math.round(averageSpeed)} km/h
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-3 gap-3">
+          <div className="rounded-xl bg-orange-50 p-3 text-center">
+            <p className="text-xs font-medium text-orange-600">Consumo</p>
+            <p className="text-lg font-bold text-orange-900">
+              {fuelUsed.toFixed(2)} L
+            </p>
+          </div>
+          <div className="rounded-xl bg-amber-50 p-3 text-center">
+            <p className="text-xs font-medium text-amber-600">Média km/L</p>
+            <p className="text-lg font-bold text-amber-900">
+              {calculatedAvgKmL.toFixed(1)}
+            </p>
+          </div>
+          <div className="rounded-xl bg-red-50 p-3 text-center">
+            <p className="text-xs font-medium text-red-600">Modo</p>
+            <p className="text-lg font-bold text-red-900">
+              {trip.driveMode === "city" ? "Cidade" : "Estrada"}
             </p>
           </div>
         </div>

@@ -16,6 +16,9 @@ export function TripCard({ trip, onClick, onDelete }: TripCardProps) {
       )
     : 0;
 
+  const fuelUsed = trip.fuelUsed || 0;
+  const consumption = trip.consumption || 0;
+
   return (
     <div className="relative overflow-hidden rounded-2xl bg-white p-4 shadow-md transition-all hover:shadow-xl">
       <button
@@ -46,7 +49,7 @@ export function TripCard({ trip, onClick, onDelete }: TripCardProps) {
           </span>
         </div>
 
-        <div className="flex items-center justify-between">
+        <div className="mb-3 flex items-center justify-between">
           <div className="flex gap-4">
             <div className="flex flex-col">
               <span className="text-xs font-medium text-gray-400">
@@ -60,6 +63,23 @@ export function TripCard({ trip, onClick, onDelete }: TripCardProps) {
               <span className="text-xs font-medium text-gray-400">Duração</span>
               <span className="text-lg font-bold text-gray-900">
                 {durationMinutes} min
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between border-t border-gray-100 pt-3">
+          <div className="flex gap-4">
+            <div className="flex flex-col">
+              <span className="text-xs font-medium text-gray-400">Consumo</span>
+              <span className="text-sm font-bold text-gray-900">
+                {fuelUsed.toFixed(2)} L
+              </span>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-xs font-medium text-gray-400">Média</span>
+              <span className="text-sm font-bold text-gray-900">
+                {consumption.toFixed(1)} km/L
               </span>
             </div>
           </div>
