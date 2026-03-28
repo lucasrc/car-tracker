@@ -8,8 +8,8 @@ interface SpeedometerProps {
 export function Speedometer({ currentSpeed }: SpeedometerProps) {
   return (
     <div className="flex items-center justify-start pl-4">
-      <div className="bg-black/80 rounded-full p-2">
-        <div className="w-[132px] h-[132px]">
+      <div className="bg-black/80 rounded-full p-1">
+        <div className="w-[170px] h-[170px]">
           <GaugeComponent
             value={currentSpeed}
             minValue={0}
@@ -19,7 +19,7 @@ export function Speedometer({ currentSpeed }: SpeedometerProps) {
             type="semicircle"
             arc={{
               nbSubArcs: 50,
-              width: 0.12,
+              width: 0.15,
               gradient: true,
               colorArray: [
                 "#22c55e",
@@ -45,7 +45,7 @@ export function Speedometer({ currentSpeed }: SpeedometerProps) {
                 renderContent: (value: number, color: string) => (
                   <div className="flex flex-col items-center">
                     <span
-                      className="text-2xl font-bold tabular-nums tracking-tight"
+                      className="text-3xl font-bold tabular-nums tracking-tight"
                       style={{ color }}
                     >
                       {Math.round(value)}

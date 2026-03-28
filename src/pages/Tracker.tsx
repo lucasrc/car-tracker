@@ -295,7 +295,7 @@ export function Tracker() {
       )}
 
       <div className="relative z-10 flex h-full flex-col justify-between pointer-events-none">
-        <div className="p-4 pt-12 pointer-events-auto">
+        <div className="p-2 pt-2 pointer-events-auto">
           <TripInfo
             distance={isSimulating ? simulatedDistance : stats.distanceMeters}
             elapsedTime={isSimulating ? simulatedElapsedTime : elapsedTime}
@@ -308,20 +308,22 @@ export function Tracker() {
           />
         </div>
 
-        <div className="pointer-events-auto bg-gradient-to-t from-black/90 via-black/70 to-transparent pb-8 pt-12">
-          <Speedometer
-            currentSpeed={displaySpeed}
-            maxSpeed={simulatedMaxSpeed}
-          />
-          <div className="mt-4">
-            <TripControls
-              status={status}
-              battery={battery}
-              onStart={handleStart}
-              onPause={handlePause}
-              onResume={handleResume}
-              onStop={handleStop}
+        <div className="pointer-events-auto bg-gradient-to-t from-black/90 via-black/70 to-transparent pb-8 pt-8">
+          <div className="flex items-center justify-between">
+            <Speedometer
+              currentSpeed={displaySpeed}
+              maxSpeed={simulatedMaxSpeed}
             />
+            <div className="pr-4">
+              <TripControls
+                status={status}
+                battery={battery}
+                onStart={handleStart}
+                onPause={handlePause}
+                onResume={handleResume}
+                onStop={handleStop}
+              />
+            </div>
           </div>
         </div>
       </div>
