@@ -132,3 +132,25 @@ export function calculateTotalDistance(
 
   return total;
 }
+
+const MAX_SPEED_MS = 80 / 3.6;
+
+export function isValidSpeedForDistance(
+  prevCoords: { lat: number; lng: number; timestamp: number },
+  currCoords: { lat: number; lng: number; timestamp: number },
+): boolean {
+  const distance = vincentyDistance(
+    prevCoords.lat,
+    prevCoords.lng,
+    currCoords.lat,
+    currCoords.lng,
+  );
+
+  const timeDelta = (currCoords.timestamp - prevCoords.timestamp) / 1000;
+
+  if (timeDelta <= 0) return false;
+
+  const impliedSpeed = distance / timeDelta;
+
+  return impliedSpeed <= MAX_SPEED_MS;
+}

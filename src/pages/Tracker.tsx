@@ -6,7 +6,16 @@ import { TripInfo } from "@/components/tracker/TripInfo";
 import { useTripStore } from "@/stores/useTripStore";
 import { useGeolocation } from "@/hooks/useGeolocation";
 import { useWakeLock } from "@/hooks/useWakeLock";
+import { useSpeedFilter } from "@/hooks/useSpeedFilter";
 import { speedToKmh } from "@/lib/utils";
+import { isValidSpeedForDistance, vincentyDistance } from "@/lib/distance";
+
+const GPS_CONFIG = {
+  maxAccuracyMeters: 20,
+  minSpeedMs: 0.5,
+  minDistanceMeters: 10,
+  minTimeDeltaMs: 1000,
+} as const;
 
 export function Tracker() {
   const {
@@ -34,13 +43,21 @@ export function Tracker() {
     getCurrentPosition,
   } = useGeolocation();
   const { request: requestWakeLock, release: releaseWakeLock } = useWakeLock();
+  const { addSpeedReading, reset: resetSpeedFilter } = useSpeedFilter();
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastValidPositionRef = useRef<{
+    lat: number;
+    lng: number;
+    timestamp: number;
+  } | null>(null);
 
   const handleStart = useCallback(async () => {
+    resetSpeedFilter();
+    lastValidPositionRef.current = null;
     startTrip();
     startWatching();
     await requestWakeLock();
-  }, [startTrip, startWatching, requestWakeLock]);
+  }, [startTrip, startWatching, requestWakeLock, resetSpeedFilter]);
 
   const handlePause = useCallback(() => {
     pauseTrip();
@@ -80,17 +97,69 @@ export function Tracker() {
 
   useEffect(() => {
     if (position && status === "recording") {
-      if (position.accuracy === undefined || position.accuracy < 30) {
-        addPosition(position);
+      const filteredSpeed =
+        position.speed !== undefined
+          ? addSpeedReading(position.speed, position.timestamp)
+          : 0;
+      setCurrentSpeed(speedToKmh(filteredSpeed));
+
+      if (
+        position.accuracy !== undefined &&
+        position.accuracy > GPS_CONFIG.maxAccuracyMeters
+      ) {
+        return;
       }
 
-      if (position.speed !== undefined) {
-        setCurrentSpeed(speedToKmh(position.speed));
-      } else {
-        setCurrentSpeed(0);
+      if (
+        position.speed !== undefined &&
+        position.speed < GPS_CONFIG.minSpeedMs
+      ) {
+        return;
       }
+
+      const lastPos = lastValidPositionRef.current;
+      if (lastPos) {
+        const timeDelta = position.timestamp - lastPos.timestamp;
+        if (timeDelta < GPS_CONFIG.minTimeDeltaMs) {
+          return;
+        }
+
+        if (
+          !isValidSpeedForDistance(
+            {
+              lat: lastPos.lat,
+              lng: lastPos.lng,
+              timestamp: lastPos.timestamp,
+            },
+            {
+              lat: position.lat,
+              lng: position.lng,
+              timestamp: position.timestamp,
+            },
+          )
+        ) {
+          return;
+        }
+
+        const distance = vincentyDistance(
+          lastPos.lat,
+          lastPos.lng,
+          position.lat,
+          position.lng,
+        );
+        if (distance < GPS_CONFIG.minDistanceMeters) {
+          return;
+        }
+      }
+
+      addPosition(position);
+      lastValidPositionRef.current = {
+        lat: position.lat,
+        lng: position.lng,
+        timestamp: position.timestamp,
+      };
     }
-  }, [position, status, addPosition, setCurrentSpeed]);
+  }, [position, status, addPosition, setCurrentSpeed, addSpeedReading]);
 
   useEffect(() => {
     if (status === "recording" && !isWatching) {
