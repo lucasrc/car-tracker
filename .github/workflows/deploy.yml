@@ -23,12 +23,27 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+        working-directory: .
 
-      - name: TypeScript type check
+      - name: Show installed packages
+        run: npm ls --depth=0
+
+      - name: Run TypeScript type check
         run: npm run typecheck
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Run tests
+        run: npm run test:run
 
       - name: Build
         run: npm run build
+        env:
+          CI: true
+
+      - name: Show dist contents
+        run: ls -la dist/
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
