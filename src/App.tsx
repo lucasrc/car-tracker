@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { HashRouter, Routes, Route } from "react-router-dom";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "@/lib/query-client";
 import { BottomNav } from "@/components/layout/BottomNav";
@@ -10,7 +10,7 @@ import { NotFound } from "@/pages/NotFound";
 export function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter basename={import.meta.env.BASE_URL}>
+      <HashRouter>
         <Routes>
           <Route path="/" element={<Tracker />} />
           <Route path="/tracker" element={<Tracker />} />
@@ -19,7 +19,7 @@ export function App() {
           <Route path="*" element={<NotFound />} />
         </Routes>
         <BottomNav />
-      </BrowserRouter>
+      </HashRouter>
     </QueryClientProvider>
   );
 }
