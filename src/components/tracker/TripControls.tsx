@@ -28,21 +28,17 @@ export function TripControls({
         </div>
       )}
 
-      <div className="flex items-center justify-center gap-6">
+      <div className="flex items-center justify-center gap-4">
         {status === "idle" && (
           <button
             onClick={onStart}
-            className="flex h-20 w-20 items-center justify-center rounded-full bg-green-500 text-white shadow-2xl transition-all hover:scale-105 active:scale-95"
+            className="flex h-16 w-16 items-center justify-center rounded-full bg-green-500 text-white shadow-2xl transition-all hover:scale-105 active:scale-95"
           >
             <div className="flex flex-col items-center">
-              <svg
-                className="h-10 w-10"
-                fill="currentColor"
-                viewBox="0 0 24 24"
-              >
+              <svg className="h-8 w-8" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M8 5v14l11-7z" />
               </svg>
-              <span className="text-xs font-medium">INICIAR</span>
+              <span className="text-[10px] font-medium">INICIAR</span>
             </div>
           </button>
         )}
@@ -51,25 +47,25 @@ export function TripControls({
           <>
             <button
               onClick={onPause}
-              className="flex h-16 w-16 items-center justify-center rounded-full bg-amber-500 text-white shadow-2xl transition-all hover:scale-105 active:scale-95"
+              className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-500 text-white shadow-2xl transition-all hover:scale-105 active:scale-95"
             >
-              <svg className="h-8 w-8" fill="currentColor" viewBox="0 0 24 24">
+              <svg className="h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
               </svg>
             </button>
             <button
               onClick={onStop}
-              className="flex h-20 w-20 items-center justify-center rounded-full bg-red-500 text-white shadow-2xl transition-all hover:scale-105 active:scale-95"
+              className="flex h-16 w-16 items-center justify-center rounded-full bg-red-500 text-white shadow-2xl transition-all hover:scale-105 active:scale-95"
             >
               <div className="flex flex-col items-center">
                 <svg
-                  className="h-10 w-10"
+                  className="h-8 w-8"
                   fill="currentColor"
                   viewBox="0 0 24 24"
                 >
                   <path d="M6 6h12v12H6z" />
                 </svg>
-                <span className="text-xs font-medium">PARAR</span>
+                <span className="text-[10px] font-medium">PARAR</span>
               </div>
             </button>
           </>
@@ -79,25 +75,25 @@ export function TripControls({
           <>
             <button
               onClick={onResume}
-              className="flex h-16 w-16 items-center justify-center rounded-full bg-green-500 text-white shadow-2xl transition-all hover:scale-105 active:scale-95"
+              className="flex h-12 w-12 items-center justify-center rounded-full bg-green-500 text-white shadow-2xl transition-all hover:scale-105 active:scale-95"
             >
-              <svg className="h-8 w-8" fill="currentColor" viewBox="0 0 24 24">
+              <svg className="h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M8 5v14l11-7z" />
               </svg>
             </button>
             <button
               onClick={onStop}
-              className="flex h-20 w-20 items-center justify-center rounded-full bg-red-500 text-white shadow-2xl transition-all hover:scale-105 active:scale-95"
+              className="flex h-16 w-16 items-center justify-center rounded-full bg-red-500 text-white shadow-2xl transition-all hover:scale-105 active:scale-95"
             >
               <div className="flex flex-col items-center">
                 <svg
-                  className="h-10 w-10"
+                  className="h-8 w-8"
                   fill="currentColor"
                   viewBox="0 0 24 24"
                 >
                   <path d="M6 6h12v12H6z" />
                 </svg>
-                <span className="text-xs font-medium">SALVAR</span>
+                <span className="text-[10px] font-medium">SALVAR</span>
               </div>
             </button>
           </>
