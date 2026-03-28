@@ -10,7 +10,7 @@ import { NotFound } from "@/pages/NotFound";
 export function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      <BrowserRouter basename={import.meta.env.BASE_URL}>
         <Routes>
           <Route path="/" element={<Tracker />} />
           <Route path="/tracker" element={<Tracker />} />
