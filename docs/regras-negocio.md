@@ -13,43 +13,45 @@ Este documento descreve os algoritmos e parametros utilizados para calculo autom
 **Parametros**:
 
 - Limiar: 90 km/h
-- Penalidade: 0.8% por km/h acima do limite
+- Penalidade: 0.9% por km/h acima do limite
 
 **Fundamentacao Cientifica**:
 
 - Oak Ridge National Laboratory (ORNL, 2013) - "Fuel Efficiency of Automobile and Truck Fuels" - Confirmou que o consumo aumenta significativamente acima de 80-90 km/h devido a resistencia do ar
-- O limite de 90 km/h e conservativo e apropriado para condicoes brasileiras de rodovia
+- DOE Fact #773 (2013): 13-15% a mais por 16 km/h (70→80 mph) = ~0.8-0.9%/km
+- DOE Fact #982 (2017): 14% a mais de 60→70 mph = ~0.7%/km
 
 **Calculo**:
 
 ```
 se (velocidadeMedia > 90):
     velocidadeAcima = velocidadeMedia - 90
-    penalidadeVelocidade = velocidadeAcima * 0.8%
+    penalidadeVelocidade = velocidadeAcima * 0.9%
 ```
 
 ---
 
 ### 2. Tempo Ocioso (Idle)
 
-**Rega**: Quando o veiculo permanece parado por mais de 30 segundos consecutivas, e considerada situacao de ociosidade.
+**Regra**: Quando o veiculo permanece parado, e considerada situacao de ociosidade. A penalidade e aplicada proporcional ao tempo de ociosidade.
 
 **Parametros**:
 
 - Limiar: velocidade < 1 m/s (~3.6 km/h)
-- Janela minima: 30 segundos
-- Penalidade: 30% de aumento no consumo estimado
+- Tempo minimo para ativar: 10 segundos
+- Penalidade: 8% de aumento no consumo (proporcional ao tempo ocioso)
 
 **Fundamentacao Cientifica**:
 
-- CarXplorer (2026) - Estudo de consumo em marcha lenta: veiculos compactos consomem 0.6-0.95 L/h em marcha lenta
-- A penalidade de 30% e compensatoria e conservadora para o custo real de ociosidade
+- DOE Fact #861 (2015): veiculos compactos consomem 0.16-0.17 gal/h = 0.6-0.65 L/h em marcha lenta
+- Para um tanque de 50L, 1 hora de idle = ~1.2-1.3% do tanque
+- A penalidade de 8% e aplicada proporcionalmente ao tempo ocioso
 
 **Calculo**:
 
 ```
-se (velocidade < 1 m/s por > 30 segundos):
-    penalidadeOciosidade = 30%
+percentualOcioso = tempoOcioso / tempoTotalViagem
+penalidadeEfetiva = percentualOcioso * 8%
 ```
 
 ---
@@ -60,21 +62,22 @@ se (velocidade < 1 m/s por > 30 segundos):
 
 **Parametros**:
 
-- Aceleracao severa: > 2.5 m/s² = +15%
-- Aceleracao moderada: > 1.5 m/s² = +8%
+- Aceleracao severa: > 2.5 m/s² = +10%
+- Aceleracao moderada: > 1.5 m/s² = +6%
 
 **Fundamentacao Cientifica**:
 
-- ScienceDirect (2021) - "Energy Consumption Analysis of Electric Vehicles" - Cada aumento de 0.1 m/s² na aceleracao resulta em +0.15 J/(kg·m) de energia
-- Os limites utilizados sao conservadores mas validos para o contexto de direcao urbana
+- ORNL (2017): 10-40% a mais em stop-and-go, 15-30% em highway para conducao agressiva COMBINADA (aceleracao + frenagem)
+- Separando apenas a componente de aceleracao, os valores sao menores
+- A aceleracao severa (>2.5 m/s²) adiciona 10%, moderada (>1.5 m/s²) adiciona 6%
 
 **Calculo**:
 
 ```
 se (aceleracao > 2.5):
-    penalidadeAceleracao = 15%
+    penalidadeAceleracao = 10%
 senao se (aceleracao > 1.5):
-    penalidadeAceleracao = 8%
+    penalidadeAceleracao = 6%
 ```
 
 ---
@@ -85,18 +88,30 @@ senao se (aceleracao > 1.5):
 
 **Parametros**:
 
-- Penalidade: variancia × 10%
+- Penalidade: (variancia / 100) × 5%
 
 **Fundamentacao Cientifica**:
 
 - Direcao instavel (aceleracao e frenagem constantes) e reconhecidamente menos eficiente
-- O fator 10x e um multiplicador de impacto para converter variancia em penalidade
+- JRC (2022): 5% de diferenca entre melhor e pior driver vs WLTC
 
 **Calculo**:
 
 ```
 variancia = variancia(velocidades)
-penalidadeEstabilidade = variancia * 10%
+penalidadeEstabilidade = (variancia / 100) * 5%
+```
+
+---
+
+## Ponderacao por Tempo
+
+**Importante**: As penalidades sao aplicadas proporcionalmente ao tempo em que cada comportamento ocorre. Se o usuario ficou 10 minutos acima de 90 km/h em uma viagem de 1 hora, apenas ~16.6% da distancia recebera a penalidade de velocidade, nao a viagem inteira.
+
+**Formula de Ponderacao**:
+
+```
+penalidadeEfetiva = (tempoComPenalidade / tempoTotal) * penalidadePercentual
 ```
 
 ---
@@ -107,20 +122,15 @@ penalidadeEstabilidade = variancia * 10%
 
 1. **Consumo Base**: `combustivelBase = distancia / kmPorLitro`
 
-2. **Consumo Ajustado**: `kmPorLitroAjustado = kmPorLitro / (1 + penalidadeTotal)`
+2. **Penalidade Efetiva**: `penalidadeTotal = penalidadeVelocidade + penalidadeAceleracao + penalidadeIdle + penalidadeEstabilidade`
 
-3. **Combustivel Extra**: `combustivelExtra = combustivelTotal - combustivelBase`
+3. **Consumo Ajustado**: `kmPorLitroAjustado = kmPorLitro / (1 + penalidadeTotal / 100)`
 
-4. **Custo Extra**: `custoExtra = combustivelExtra * precoCombustivel`
+4. **Combustivel Total**: `combustivelTotal = distancia / kmPorLitroAjustado`
 
-### Distribuicao de Penalidades
+5. **Combustivel Extra**: `combustivelExtra = combustivelTotal - combustivelBase`
 
-Quando o custo extra e calculado, ele e distribuido proporcionalmente entre as penalidades ativas:
-
-```
-para cada penalidade:
-    custoPenalidade = (porcentagemPenalidade / totalPenalidades) * custoExtra
-```
+6. **Custo Extra**: `custoExtra = combustivelExtra * precoCombustivel`
 
 ---
 
@@ -129,11 +139,20 @@ para cada penalidade:
 1. **Oak Ridge National Laboratory (ORNL)** - "Fuel Efficiency of Automobile and Truck Fuels" (2013)
    - URL: https://www.energy.gov/eere/vehicles/fact-861-february-23-2015-fuel-efficiency-automobile-and-truck-fuels
 
-2. **ScienceDirect (2021)** - "Energy Consumption Analysis of Electric Vehicles"
-   - URL: https://www.sciencedirect.com/science/article/abs/pii/S2210670720307759
+2. **DOE Fact #773 (2013)** - Fuel Economy Penalty at Higher Speeds
+   - URL: https://energy.gov/cmei/vehicles/fact-773-april-1-2013-fuel-economy-penalty-higher-speeds
 
-3. **CarXplorer (2026)** - "Idle Fuel Consumption Study"
-   - URL: https://www.carxplorer.io/studies/idle-consumption-2026
+3. **DOE Fact #982 (2017)** - Slow Down to Save Fuel
+   - URL: https://www.energy.gov/eere/vehicles/fact-982-june-19-2017-slow-down-save-fuel-fuel-economy-decreases-about-14-when
+
+4. **DOE Fact #861 (2015)** - Idle Fuel Consumption for Selected Vehicles
+   - URL: https://www.energy.gov/cmei/vehicles/fact-861-february-23-2015-idle-fuel-consumption-selected-gasoline-and-diesel-vehicles
+
+5. **ORNL (2017)** - "Sensible driving saves more gas than drivers think"
+   - URL: https://www.ornl.gov/news/sensible-driving-saves-more-gas-drivers-think
+
+6. **JRC (2022)** - "Benchmarking the driver acceleration impact on vehicle energy consumption and CO2 emissions"
+   - URL: https://www.sciencedirect.com/science/article/pii/S2210670722003282
 
 ---
 
@@ -142,17 +161,17 @@ para cada penalidade:
 | Parametro                      | Valor | Unit        |
 | ------------------------------ | ----- | ----------- |
 | Limiar Velocidade              | 90    | km/h        |
-| Penalidade por km/h acima      | 0.8   | %           |
+| Penalidade por km/h acima      | 0.9   | %           |
 | Limiar Velocidade Idle         | 1     | m/s         |
-| Tempo Minimo Idle              | 30    | segundos    |
-| Penalidade Idle                | 30    | %           |
+| Tempo Minimo Penalidade        | 10    | segundos    |
+| Penalidade Idle                | 8     | %           |
 | Aceleracao Severa              | 2.5   | m/s²        |
 | Aceleracao Moderada            | 1.5   | m/s²        |
-| Penalidade Aceleracao Severa   | 15    | %           |
-| Penalidade Aceleracao Moderada | 8     | %           |
-| Fator Estabilidade             | 10    | x variancia |
+| Penalidade Aceleracao Severa   | 10    | %           |
+| Penalidade Aceleracao Moderada | 6     | %           |
+| Fator Estabilidade             | 5     | x variancia |
 
 ---
 
-_Documento gerado automaticamente - Versao 1.0_
+_Documento gerado automaticamente - Versao 2.0_
 _Data: Marte 2026_

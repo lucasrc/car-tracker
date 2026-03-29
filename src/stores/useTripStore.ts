@@ -152,7 +152,7 @@ export const useTripStore = create<TripStore>((set, get) => ({
   },
 
   resumeTrip: () => {
-    const { trip } = get();
+    const { trip, stopSampleStart, lastStopSampleTimestamp } = get();
     if (!trip) return;
 
     const updatedTrip: Trip = {
@@ -160,7 +160,12 @@ export const useTripStore = create<TripStore>((set, get) => ({
       status: "recording",
     };
 
-    set({ status: "recording", trip: updatedTrip });
+    set({
+      status: "recording",
+      trip: updatedTrip,
+      stopSampleStart,
+      lastStopSampleTimestamp,
+    });
     saveCurrentTrip(updatedTrip);
   },
 
@@ -175,13 +180,21 @@ export const useTripStore = create<TripStore>((set, get) => ({
       elapsedTime,
       stopSampleStart,
       lastStopSampleTimestamp,
+      currentSpeed,
     } = get();
     if (!trip) return "";
 
-    const tripWithStops =
-      stopSampleStart && lastStopSampleTimestamp
-        ? buildTripWithStop(trip, stopSampleStart, lastStopSampleTimestamp)
-        : trip;
+    let tripWithStops = trip;
+    if (stopSampleStart && lastStopSampleTimestamp) {
+      tripWithStops = buildTripWithStop(
+        trip,
+        stopSampleStart,
+        lastStopSampleTimestamp,
+      );
+    } else if (stopSampleStart && currentSpeed <= 3.6) {
+      const now = Date.now();
+      tripWithStops = buildTripWithStop(trip, stopSampleStart, now);
+    }
 
     const distanceKm = stats.distanceMeters / 1000;
     const durationHours = elapsedTime / 3600;
@@ -259,7 +272,7 @@ export const useTripStore = create<TripStore>((set, get) => ({
     const { trip, status, stopSampleStart, lastStopSampleTimestamp } = get();
     if (!trip || status !== "recording") return;
 
-    const isStopped = speedKmh <= 0.1;
+    const isStopped = speedKmh <= 3.6;
 
     if (isStopped) {
       if (!stopSampleStart) {
@@ -358,14 +371,27 @@ export const useTripStore = create<TripStore>((set, get) => ({
     const elapsedTime = recoveredTrip.elapsedTime || 0;
     const totalFuelUsed = recoveredTrip.totalFuelUsed || 0;
 
+    const lastStop =
+      recoveredTrip.stops && recoveredTrip.stops.length > 0
+        ? recoveredTrip.stops[recoveredTrip.stops.length - 1]
+        : null;
+
     set({
       trip: recoveredTrip,
       status: recoveredTrip.status,
       stats,
       elapsedTime,
       totalFuelUsed,
-      stopSampleStart: null,
-      lastStopSampleTimestamp: null,
+      stopSampleStart: lastStop
+        ? {
+            lat: lastStop.lat,
+            lng: lastStop.lng,
+            timestamp: lastStop.timestamp,
+          }
+        : null,
+      lastStopSampleTimestamp: lastStop
+        ? lastStop.timestamp + lastStop.durationSeconds * 1000
+        : null,
     });
   },
 }));

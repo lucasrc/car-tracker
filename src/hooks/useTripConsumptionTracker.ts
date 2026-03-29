@@ -3,23 +3,30 @@ import type { ConsumptionFactors } from "./useConsumptionModel";
 
 interface AccumulatedFactors {
   speedPenaltySum: number;
-  speedPenaltyCount: number;
+  speedTimeMs: number;
   aggressionPenaltySum: number;
-  aggressionPenaltyCount: number;
+  aggressionTimeMs: number;
   idlePenaltySum: number;
-  idlePenaltyCount: number;
+  idleTimeMs: number;
   stabilityPenaltySum: number;
-  stabilityPenaltyCount: number;
-  totalSamples: number;
+  stabilityTimeMs: number;
+  totalTimeMs: number;
 }
 
 interface TripConsumptionTrackerReturn {
-  addSample: (factors: ConsumptionFactors) => void;
+  addSample: (factors: ConsumptionFactors, durationMs: number) => void;
   getAverageFactors: () => {
     speedPenaltyPct: number;
     aggressionPenaltyPct: number;
     idlePenaltyPct: number;
     stabilityPenaltyPct: number;
+  };
+  getEffectivePenalties: () => {
+    speedPenaltyPct: number;
+    aggressionPenaltyPct: number;
+    idlePenaltyPct: number;
+    stabilityPenaltyPct: number;
+    combinedPenalty: number;
   };
   getEstimatedCosts: (
     distanceKm: number,
@@ -35,71 +42,74 @@ interface TripConsumptionTrackerReturn {
   reset: () => void;
 }
 
-const PENALTY_SAMPLES_MIN = 5;
+const PENALTY_TIME_MIN_MS = 10000;
 
 export function useTripConsumptionTracker(): TripConsumptionTrackerReturn {
   const accumulatedRef = useRef<AccumulatedFactors>({
     speedPenaltySum: 0,
-    speedPenaltyCount: 0,
+    speedTimeMs: 0,
     aggressionPenaltySum: 0,
-    aggressionPenaltyCount: 0,
+    aggressionTimeMs: 0,
     idlePenaltySum: 0,
-    idlePenaltyCount: 0,
+    idleTimeMs: 0,
     stabilityPenaltySum: 0,
-    stabilityPenaltyCount: 0,
-    totalSamples: 0,
+    stabilityTimeMs: 0,
+    totalTimeMs: 0,
   });
 
-  const addSample = useCallback((factors: ConsumptionFactors) => {
-    const acc = accumulatedRef.current;
-    acc.totalSamples++;
+  const addSample = useCallback(
+    (factors: ConsumptionFactors, durationMs: number) => {
+      const acc = accumulatedRef.current;
+      acc.totalTimeMs += durationMs;
 
-    const speedPenalty = (factors.speedFactor - 1) * 100;
-    if (speedPenalty > 0) {
-      acc.speedPenaltySum += speedPenalty;
-      acc.speedPenaltyCount++;
-    }
+      const speedPenalty = (factors.speedFactor - 1) * 100;
+      if (speedPenalty > 0) {
+        acc.speedPenaltySum += speedPenalty * durationMs;
+        acc.speedTimeMs += durationMs;
+      }
 
-    const aggressionPenalty = (factors.aggressionFactor - 1) * 100;
-    if (aggressionPenalty > 0) {
-      acc.aggressionPenaltySum += aggressionPenalty;
-      acc.aggressionPenaltyCount++;
-    }
+      const aggressionPenalty = (factors.aggressionFactor - 1) * 100;
+      if (aggressionPenalty > 0) {
+        acc.aggressionPenaltySum += aggressionPenalty * durationMs;
+        acc.aggressionTimeMs += durationMs;
+      }
 
-    const idlePenalty = (factors.idleFactor - 1) * 100;
-    if (idlePenalty > 0) {
-      acc.idlePenaltySum += idlePenalty;
-      acc.idlePenaltyCount++;
-    }
+      const idlePenalty = (factors.idleFactor - 1) * 100;
+      if (idlePenalty > 0) {
+        acc.idlePenaltySum += idlePenalty * durationMs;
+        acc.idleTimeMs += durationMs;
+      }
 
-    const stabilityPenalty = (factors.stabilityFactor - 1) * 100;
-    if (stabilityPenalty > 0) {
-      acc.stabilityPenaltySum += stabilityPenalty;
-      acc.stabilityPenaltyCount++;
-    }
-  }, []);
+      const stabilityPenalty = (factors.stabilityFactor - 1) * 100;
+      if (stabilityPenalty > 0) {
+        acc.stabilityPenaltySum += stabilityPenalty * durationMs;
+        acc.stabilityTimeMs += durationMs;
+      }
+    },
+    [],
+  );
 
   const getAverageFactors = useCallback(() => {
     const acc = accumulatedRef.current;
 
     const speedPenaltyPct =
-      acc.speedPenaltyCount >= PENALTY_SAMPLES_MIN
-        ? acc.speedPenaltySum / acc.speedPenaltyCount
+      acc.speedTimeMs >= PENALTY_TIME_MIN_MS && acc.speedTimeMs > 0
+        ? acc.speedPenaltySum / acc.speedTimeMs
         : 0;
 
     const aggressionPenaltyPct =
-      acc.aggressionPenaltyCount >= PENALTY_SAMPLES_MIN
-        ? acc.aggressionPenaltySum / acc.aggressionPenaltyCount
+      acc.aggressionTimeMs >= PENALTY_TIME_MIN_MS && acc.aggressionTimeMs > 0
+        ? acc.aggressionPenaltySum / acc.aggressionTimeMs
         : 0;
 
     const idlePenaltyPct =
-      acc.idlePenaltyCount >= PENALTY_SAMPLES_MIN
-        ? acc.idlePenaltySum / acc.idlePenaltyCount
+      acc.idleTimeMs >= PENALTY_TIME_MIN_MS && acc.idleTimeMs > 0
+        ? acc.idlePenaltySum / acc.idleTimeMs
         : 0;
 
     const stabilityPenaltyPct =
-      acc.stabilityPenaltyCount >= PENALTY_SAMPLES_MIN
-        ? acc.stabilityPenaltySum / acc.stabilityPenaltyCount
+      acc.stabilityTimeMs >= PENALTY_TIME_MIN_MS && acc.stabilityTimeMs > 0
+        ? acc.stabilityPenaltySum / acc.stabilityTimeMs
         : 0;
 
     return {
@@ -110,19 +120,66 @@ export function useTripConsumptionTracker(): TripConsumptionTrackerReturn {
     };
   }, []);
 
+  const getEffectivePenalties = useCallback(() => {
+    const acc = accumulatedRef.current;
+    const totalTime = acc.totalTimeMs || 1;
+
+    const speedTimeRatio =
+      acc.speedTimeMs >= PENALTY_TIME_MIN_MS ? acc.speedTimeMs / totalTime : 0;
+    const speedPenaltyPct =
+      acc.speedTimeMs >= PENALTY_TIME_MIN_MS && acc.speedTimeMs > 0
+        ? (acc.speedPenaltySum / acc.speedTimeMs) * speedTimeRatio
+        : 0;
+
+    const aggressionTimeRatio =
+      acc.aggressionTimeMs >= PENALTY_TIME_MIN_MS
+        ? acc.aggressionTimeMs / totalTime
+        : 0;
+    const aggressionPenaltyPct =
+      acc.aggressionTimeMs >= PENALTY_TIME_MIN_MS && acc.aggressionTimeMs > 0
+        ? (acc.aggressionPenaltySum / acc.aggressionTimeMs) *
+          aggressionTimeRatio
+        : 0;
+
+    const idleTimeRatio =
+      acc.idleTimeMs >= PENALTY_TIME_MIN_MS ? acc.idleTimeMs / totalTime : 0;
+    const idlePenaltyPct =
+      acc.idleTimeMs >= PENALTY_TIME_MIN_MS && acc.idleTimeMs > 0
+        ? (acc.idlePenaltySum / acc.idleTimeMs) * idleTimeRatio
+        : 0;
+
+    const stabilityTimeRatio =
+      acc.stabilityTimeMs >= PENALTY_TIME_MIN_MS
+        ? acc.stabilityTimeMs / totalTime
+        : 0;
+    const stabilityPenaltyPct =
+      acc.stabilityTimeMs >= PENALTY_TIME_MIN_MS && acc.stabilityTimeMs > 0
+        ? (acc.stabilityPenaltySum / acc.stabilityTimeMs) * stabilityTimeRatio
+        : 0;
+
+    const combinedPenalty =
+      speedPenaltyPct +
+      aggressionPenaltyPct +
+      idlePenaltyPct +
+      stabilityPenaltyPct;
+
+    return {
+      speedPenaltyPct: Math.round(speedPenaltyPct * 10) / 10,
+      aggressionPenaltyPct: Math.round(aggressionPenaltyPct * 10) / 10,
+      idlePenaltyPct: Math.round(idlePenaltyPct * 10) / 10,
+      stabilityPenaltyPct: Math.round(stabilityPenaltyPct * 10) / 10,
+      combinedPenalty: Math.round(combinedPenalty * 10) / 10,
+    };
+  }, []);
+
   const getEstimatedCosts = useCallback(
     (distanceKm: number, baseKmPerLiter: number, fuelPrice: number) => {
-      const averages = getAverageFactors();
-
-      const combinedPenalty =
-        averages.speedPenaltyPct / 100 +
-        averages.aggressionPenaltyPct / 100 +
-        averages.idlePenaltyPct / 100 +
-        averages.stabilityPenaltyPct / 100;
+      const effective = getEffectivePenalties();
 
       const baseFuelUsed = distanceKm / baseKmPerLiter;
 
-      const adjustedKmPerLiter = baseKmPerLiter / (1 + combinedPenalty);
+      const adjustedKmPerLiter =
+        baseKmPerLiter / (1 + effective.combinedPenalty / 100);
       const totalFuelUsed = distanceKm / adjustedKmPerLiter;
 
       const extraFuelUsed = totalFuelUsed - baseFuelUsed;
@@ -137,26 +194,27 @@ export function useTripConsumptionTracker(): TripConsumptionTrackerReturn {
         totalCost: Math.round(totalCost * 100) / 100,
       };
     },
-    [getAverageFactors],
+    [getEffectivePenalties],
   );
 
   const reset = useCallback(() => {
     accumulatedRef.current = {
       speedPenaltySum: 0,
-      speedPenaltyCount: 0,
+      speedTimeMs: 0,
       aggressionPenaltySum: 0,
-      aggressionPenaltyCount: 0,
+      aggressionTimeMs: 0,
       idlePenaltySum: 0,
-      idlePenaltyCount: 0,
+      idleTimeMs: 0,
       stabilityPenaltySum: 0,
-      stabilityPenaltyCount: 0,
-      totalSamples: 0,
+      stabilityTimeMs: 0,
+      totalTimeMs: 0,
     };
   }, []);
 
   return {
     addSample,
     getAverageFactors,
+    getEffectivePenalties,
     getEstimatedCosts,
     reset,
   };

@@ -46,7 +46,7 @@ const WINDOW_SIZE_MS = 30000;
 const HYSTERESIS_MS = 10000;
 const MIN_SPEED_CITY = 40 / 3.6;
 const MAX_SPEED_HIGHWAY = 60 / 3.6;
-const STOP_SPEED_THRESHOLD = 5 / 3.6;
+const STOP_SPEED_THRESHOLD = 1;
 const MIN_STOP_DURATION_MS = 180000;
 const STOPS_PER_km_THRESHOLD = 2;
 
@@ -64,6 +64,7 @@ export function useDriveMode(
   const speedReadingsRef = useRef<SpeedReading[]>([]);
   const stopsRef = useRef<{ start: number; end?: number }[]>([]);
   const lastModeChangeRef = useRef<number>(0);
+  const lastSampleTimeRef = useRef<number>(0);
 
   const {
     addReading: addConsumptionReading,
@@ -183,14 +184,18 @@ export function useDriveMode(
       addConsumptionReading(position.speed, now);
       calculateMetrics();
 
-      const metrics = getMetrics();
+      const metrics = getMetrics(now);
       const newFactors = calculateAdjustedConsumption(
         currentKmPerLiter,
         metrics.avgSpeedKmh,
         metrics.speedVariance,
         metrics.idlePercentage,
       );
-      addSample(newFactors);
+
+      const durationMs =
+        lastSampleTimeRef.current > 0 ? now - lastSampleTimeRef.current : 1000;
+      lastSampleTimeRef.current = now;
+      addSample(newFactors, durationMs);
 
       const newMode = determineMode();
       const timeSinceLastChange = now - lastModeChangeRef.current;
@@ -226,6 +231,7 @@ export function useDriveMode(
     speedReadingsRef.current = [];
     stopsRef.current = [];
     lastModeChangeRef.current = 0;
+    lastSampleTimeRef.current = 0;
     setDriveMode("city");
     setAvgSpeed(0);
     setStopPercentage(0);

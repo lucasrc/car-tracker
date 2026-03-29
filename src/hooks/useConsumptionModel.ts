@@ -22,11 +22,11 @@ const AGGRESSION_ACCEL_THRESHOLD_MS2 = 2.5;
 const MODERATE_ACCEL_THRESHOLD_MS2 = 1.5;
 const IDLE_SPEED_THRESHOLD_MS = 1;
 
-const SPEED_PENALTY_PER_KMH = 0.008;
-const AGGRESSIVE_PENALTY = 0.15;
-const MODERATE_PENALTY = 0.08;
-const IDLE_PENALTY_PERCENT = 0.3;
-const STABILITY_PENALTY_PER_VARIANCE = 0.1;
+const SPEED_PENALTY_PER_KMH = 0.009;
+const AGGRESSIVE_PENALTY = 0.1;
+const MODERATE_PENALTY = 0.06;
+const IDLE_PENALTY_PERCENT = 0.08;
+const STABILITY_PENALTY_PER_VARIANCE = 0.05;
 
 export function useConsumptionModel() {
   const readingsRef = useRef<SpeedReading[]>([]);
@@ -139,8 +139,8 @@ export function useConsumptionModel() {
     totalTimeRef.current += 1000;
   }, []);
 
-  const getMetrics = useCallback(() => {
-    const now = Date.now();
+  const getMetrics = useCallback((currentTime?: number) => {
+    const now = currentTime ?? Date.now();
     const windowStart = now - WINDOW_SIZE_MS;
 
     const recentReadings = readingsRef.current.filter(

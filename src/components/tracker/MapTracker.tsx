@@ -109,6 +109,10 @@ function MapUpdater({
   const map = useMap();
 
   useEffect(() => {
+    map.invalidateSize();
+  }, [map]);
+
+  useEffect(() => {
     if (position) {
       map.setView([position.lat, position.lng], map.getZoom(), {
         animate: true,
@@ -172,6 +176,10 @@ export function MapTracker({ position, path, center }: MapTrackerProps) {
         className="h-full w-full"
         zoomControl={false}
         attributionControl={false}
+        dragging={true}
+        touchZoom={true}
+        scrollWheelZoom={true}
+        doubleClickZoom={true}
       >
         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
         <MapUpdater position={position} />

@@ -436,7 +436,7 @@ export function Tracker() {
       )}
 
       {/* Main column layout */}
-      <div className="relative z-10 flex h-dvh flex-col">
+      <div className="pointer-events-none absolute inset-0 z-10 flex flex-col">
         <div className="pointer-events-auto pt-2">
           <TripInfo
             distance={isSimulating ? simulatedDistance : stats.distanceMeters}
