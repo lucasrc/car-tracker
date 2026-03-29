@@ -13,7 +13,9 @@ interface SummaryData {
   totalFuelUsed: number;
   totalRefuels: number;
   totalLitersRefueled: number;
-  totalSpent: number;
+  tripCost: number;
+  refuelCost: number;
+  totalCost: number;
   avgKmPerLiter: number;
 }
 
@@ -38,12 +40,9 @@ export function TripSummary({ startDate, endDate }: TripSummaryProps) {
         0,
       );
       const totalLitersRefueled = refuels.reduce((acc, r) => acc + r.amount, 0);
-      const totalTripCost = trips.reduce(
-        (acc, t) => acc + (t.totalCost || 0),
-        0,
-      );
-      const totalRefuelCost = refuels.reduce((acc, r) => acc + r.totalCost, 0);
-      const totalSpent = totalTripCost + totalRefuelCost;
+      const tripCost = trips.reduce((acc, t) => acc + (t.totalCost || 0), 0);
+      const refuelCost = refuels.reduce((acc, r) => acc + r.totalCost, 0);
+      const totalCost = tripCost + refuelCost;
       const avgKmPerLiter =
         totalFuelUsed > 0 ? totalDistance / 1000 / totalFuelUsed : 0;
 
@@ -53,7 +52,9 @@ export function TripSummary({ startDate, endDate }: TripSummaryProps) {
         totalFuelUsed,
         totalRefuels: refuels.length,
         totalLitersRefueled,
-        totalSpent,
+        tripCost,
+        refuelCost,
+        totalCost,
         avgKmPerLiter,
       });
     } catch (err) {
@@ -83,9 +84,23 @@ export function TripSummary({ startDate, endDate }: TripSummaryProps) {
 
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-xl bg-white/20 p-3">
-          <p className="text-xs text-white/70">Total Gasto</p>
+          <p className="text-xs text-white/70">Gasto com Viagens</p>
           <p className="text-xl font-bold text-white">
-            R$ {summary.totalSpent.toFixed(2)}
+            R$ {summary.tripCost.toFixed(2)}
+          </p>
+        </div>
+
+        <div className="rounded-xl bg-white/20 p-3">
+          <p className="text-xs text-white/70">Gasto com Abastecimento</p>
+          <p className="text-xl font-bold text-white">
+            R$ {summary.refuelCost.toFixed(2)}
+          </p>
+        </div>
+
+        <div className="col-span-2 rounded-xl bg-white p-3">
+          <p className="text-xs text-blue-600">Total Geral</p>
+          <p className="text-2xl font-bold text-blue-600">
+            R$ {summary.totalCost.toFixed(2)}
           </p>
         </div>
 

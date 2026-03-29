@@ -96,6 +96,7 @@ export const useTripStore = create<TripStore>((set, get) => ({
       consumption: settings.cityKmPerLiter,
       fuelCapacity: settings.fuelCapacity,
       fuelUsed: 0,
+      fuelPrice: settings.fuelPrice,
       totalCost: 0,
       stops: [],
     };
@@ -170,6 +171,7 @@ export const useTripStore = create<TripStore>((set, get) => ({
       avgSpeed,
       consumption,
       fuelUsed,
+      fuelPrice,
       totalCost,
     };
 
@@ -221,12 +223,7 @@ export const useTripStore = create<TripStore>((set, get) => ({
   },
 
   registerStopSample: (coords: Coordinates, speedKmh: number) => {
-    const {
-      trip,
-      status,
-      stopSampleStart,
-      lastStopSampleTimestamp,
-    } = get();
+    const { trip, status, stopSampleStart, lastStopSampleTimestamp } = get();
     if (!trip || status !== "recording") return;
 
     const isStopped = speedKmh <= 0.1;

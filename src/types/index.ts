@@ -30,6 +30,7 @@ export interface Trip {
   consumption: number;
   fuelCapacity: number;
   fuelUsed: number;
+  fuelPrice: number;
   totalCost: number;
   stops?: TripStop[];
 }
