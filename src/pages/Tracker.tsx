@@ -1,8 +1,10 @@
 import { useEffect, useRef, useCallback, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { MapTracker } from "@/components/tracker/MapTracker";
 import { Speedometer } from "@/components/tracker/Speedometer";
 import { TripControls } from "@/components/tracker/TripControls";
 import { TripInfo } from "@/components/tracker/TripInfo";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useTripStore } from "@/stores/useTripStore";
 import { useGeolocation } from "@/hooks/useGeolocation";
 import { useWakeLock } from "@/hooks/useWakeLock";
@@ -27,6 +29,8 @@ const GPS_CONFIG = {
 } as const;
 
 export function Tracker() {
+  const navigate = useNavigate();
+
   const {
     trip,
     status,
@@ -75,6 +79,7 @@ export function Tracker() {
     fuelPrice: 5.0,
   });
   const [totalFuelUsed, setTotalFuelUsed] = useState(0);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 
   const {
     estimatedRange,
@@ -119,11 +124,32 @@ export function Tracker() {
     startWatching();
   }, [resumeTrip, startWatching]);
 
-  const handleStop = useCallback(async () => {
+  const handleStopRequest = useCallback(() => {
+    setShowConfirmDialog(true);
+  }, []);
+
+  const handleConfirmStop = useCallback(async () => {
+    setShowConfirmDialog(false);
     stopWatching();
     await releaseWakeLock();
-    await stopTrip();
-  }, [stopWatching, releaseWakeLock, stopTrip]);
+    const tripId = await stopTrip(settings.fuelPrice, totalFuelUsed);
+    setTotalFuelUsed(0);
+
+    if (tripId) {
+      navigate(`/history/${tripId}`);
+    }
+  }, [
+    stopWatching,
+    releaseWakeLock,
+    stopTrip,
+    settings.fuelPrice,
+    totalFuelUsed,
+    navigate,
+  ]);
+
+  const handleCancelStop = useCallback(() => {
+    setShowConfirmDialog(false);
+  }, []);
 
   useEffect(() => {
     loadCurrentTrip();
@@ -153,6 +179,22 @@ export function Tracker() {
           : 0;
       setCurrentSpeed(speedToKmh(filteredSpeed));
 
+      const lastPos = lastValidPositionRef.current;
+      const isFirstPoint = !lastPos;
+
+      // Always save the first point, even with poor accuracy/speed
+      if (isFirstPoint) {
+        addPosition(position);
+        addDriveModePosition(position);
+        lastValidPositionRef.current = {
+          lat: position.lat,
+          lng: position.lng,
+          timestamp: position.timestamp,
+        };
+        return;
+      }
+
+      // Apply filters for subsequent points
       if (
         position.accuracy !== undefined &&
         position.accuracy > GPS_CONFIG.maxAccuracyMeters
@@ -167,7 +209,6 @@ export function Tracker() {
         return;
       }
 
-      const lastPos = lastValidPositionRef.current;
       if (lastPos) {
         const timeDelta = position.timestamp - lastPos.timestamp;
         if (timeDelta < GPS_CONFIG.minTimeDeltaMs) {
@@ -321,12 +362,22 @@ export function Tracker() {
                 onStart={handleStart}
                 onPause={handlePause}
                 onResume={handleResume}
-                onStop={handleStop}
+                onStop={handleStopRequest}
               />
             </div>
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={showConfirmDialog}
+        title="Parar rastreamento"
+        message="Tem certeza que deseja parar o rastreamento?"
+        confirmLabel="Confirmar"
+        cancelLabel="Cancelar"
+        onConfirm={handleConfirmStop}
+        onCancel={handleCancelStop}
+      />
     </div>
   );
 }

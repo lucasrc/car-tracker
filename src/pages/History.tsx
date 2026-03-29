@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { TripCard } from "@/components/tracker/TripCard";
 import { TripSummary } from "@/components/history/TripSummary";
 import { FuelCharts } from "@/components/history/FuelCharts";
@@ -9,6 +9,8 @@ import type { Trip } from "@/types";
 
 export function History() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const activeTab = searchParams.get("tab") === "report" ? "report" : "trips";
   const [trips, setTrips] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(true);
   const [startDate, setStartDate] = useState(
@@ -65,68 +67,79 @@ export function History() {
   return (
     <div className="flex min-h-screen flex-col bg-gradient-to-br from-gray-50 to-gray-100 pb-24">
       <header className="bg-gradient-to-r from-blue-600 to-blue-500 p-4 pb-6 pt-12 shadow-lg">
-        <h1 className="text-2xl font-bold text-white">Minhas Viagens</h1>
+        <h1 className="text-2xl font-bold text-white">
+          {activeTab === "report" ? "Relatório" : "Minhas Viagens"}
+        </h1>
         <p className="mt-1 text-sm text-white/80">
-          {trips.length}{" "}
-          {trips.length === 1 ? "viagem registrada" : "viagens registradas"}
+          {activeTab === "report"
+            ? "Resumo e estatísticas"
+            : `${trips.length} ${
+                trips.length === 1 ? "viagem registrada" : "viagens registradas"
+              }`}
         </p>
       </header>
 
       <main className="-mt-4 flex-1 overflow-auto p-4 pt-6">
-        <div className="mb-4">
-          <DateRangePicker
-            startDate={startDate}
-            endDate={endDate}
-            onChange={handleDateChange}
-          />
-        </div>
-
-        <TripSummary startDate={startDate} endDate={endDate} />
-
-        {trips.length > 0 && (
-          <div className="mt-4">
-            <FuelCharts trips={trips} startDate={startDate} endDate={endDate} />
-          </div>
-        )}
-
-        {trips.length === 0 ? (
-          <div className="mt-4 flex h-64 flex-col items-center justify-center rounded-3xl bg-white p-8 shadow-lg">
-            <div className="mb-4 rounded-full bg-blue-50 p-4">
-              <svg
-                className="h-16 w-16 text-blue-400"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1.5}
-                  d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"
-                />
-              </svg>
+        {activeTab === "trips" ? (
+          trips.length === 0 ? (
+            <div className="mt-4 flex h-64 flex-col items-center justify-center rounded-3xl bg-white p-8 shadow-lg">
+              <div className="mb-4 rounded-full bg-blue-50 p-4">
+                <svg
+                  className="h-16 w-16 text-blue-400"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={1.5}
+                    d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"
+                  />
+                </svg>
+              </div>
+              <p className="mb-2 text-lg font-semibold text-gray-900">
+                Nenhuma viagem neste período
+              </p>
+              <p className="text-center text-sm text-gray-500">
+                Inicie o rastreamento para registrar sua primeira viagem
+              </p>
             </div>
-            <p className="mb-2 text-lg font-semibold text-gray-900">
-              Nenhuma viagem neste período
-            </p>
-            <p className="text-center text-sm text-gray-500">
-              Inicie o rastreamento para registrar sua primeira viagem
-            </p>
-          </div>
+          ) : (
+            <div className="mt-4 flex flex-col gap-3">
+              <h3 className="text-sm font-semibold text-gray-600">
+                Todas as Viagens
+              </h3>
+              {trips.map((trip) => (
+                <TripCard
+                  key={trip.id}
+                  trip={trip}
+                  onClick={() => handleTripClick(trip.id)}
+                  onDelete={() => handleDeleteTrip(trip.id)}
+                />
+              ))}
+            </div>
+          )
         ) : (
-          <div className="mt-4 flex flex-col gap-3">
-            <h3 className="text-sm font-semibold text-gray-600">
-              Todas as Viagens
-            </h3>
-            {trips.map((trip) => (
-              <TripCard
-                key={trip.id}
-                trip={trip}
-                onClick={() => handleTripClick(trip.id)}
-                onDelete={() => handleDeleteTrip(trip.id)}
+          <>
+            <div className="mb-4">
+              <DateRangePicker
+                startDate={startDate}
+                endDate={endDate}
+                onChange={handleDateChange}
               />
-            ))}
-          </div>
+            </div>
+            <TripSummary startDate={startDate} endDate={endDate} />
+            {trips.length > 0 && (
+              <div className="mt-4">
+                <FuelCharts
+                  trips={trips}
+                  startDate={startDate}
+                  endDate={endDate}
+                />
+              </div>
+            )}
+          </>
         )}
       </main>
     </div>
