@@ -168,12 +168,12 @@ export function MapTracker({ position, path, center }: MapTrackerProps) {
     currentPosition || center || defaultCenter;
 
   return (
-    <div className="absolute inset-0">
+    <div className="relative h-full w-full">
       <MapContainer
         ref={mapRef}
         center={mapCenter}
         zoom={16}
-        className="absolute inset-0 h-full w-full"
+        className="h-full w-full"
         zoomControl={false}
         attributionControl={false}
         dragging={true}
