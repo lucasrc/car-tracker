@@ -412,8 +412,7 @@ export function Tracker() {
         : idleWorstCaseRange;
 
   return (
-    <div className="fixed inset-0 bg-[#bdd2d9]">
-      {/* Map: full screen background */}
+    <>
       <div className="fixed inset-0 z-0">
         <MapTracker position={effectivePosition} path={effectivePath} />
       </div>
@@ -435,8 +434,7 @@ export function Tracker() {
         </div>
       )}
 
-      {/* Main column layout */}
-      <div className="pointer-events-none absolute inset-0 z-10 flex flex-col">
+      <div className="pointer-events-none fixed inset-0 z-10">
         <div className="pointer-events-auto pt-2">
           <TripInfo
             distance={isSimulating ? simulatedDistance : stats.distanceMeters}
@@ -447,11 +445,11 @@ export function Tracker() {
           />
         </div>
 
-        <div className="pointer-events-none fixed bottom-24 left-4 z-[60]">
+        <div className="pointer-events-none fixed bottom-24 left-4">
           <Speedometer currentSpeed={displaySpeed} />
         </div>
 
-        <div className="pointer-events-none fixed bottom-24 right-4 z-[60]">
+        <div className="pointer-events-none fixed bottom-24 right-4">
           <div className="pointer-events-auto">
             <TripControls
               status={status}
@@ -477,6 +475,6 @@ export function Tracker() {
         onConfirm={handleConfirmStop}
         onCancel={handleCancelStop}
       />
-    </div>
+    </>
   );
 }
