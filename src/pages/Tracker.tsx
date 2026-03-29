@@ -273,20 +273,30 @@ export function Tracker() {
     }
   }, [simulatedPath, isSimulating, currentKmPerLiter]);
 
+  const displayDistance = isSimulating ? simulatedDistance : stats.distanceMeters;
+  const displayElapsedTime = isSimulating ? simulatedElapsedTime : elapsedTime;
+  const avgSpeed =
+    displayElapsedTime > 0
+      ? (displayDistance / 1000) / (displayElapsedTime / 3600)
+      : 0;
+
   return (
-    <div className="h-screen w-screen overflow-hidden pb-20">
+    <div className="h-dvh w-screen overflow-hidden bg-[#bdd2d9]">
+      {/* Map: full screen background */}
       <div className="fixed inset-0 z-0">
         <MapTracker position={effectivePosition} path={effectivePath} />
       </div>
 
+      <div className="pointer-events-none fixed inset-0 z-[1] bg-[linear-gradient(180deg,rgba(214,228,233,0.5)_0%,rgba(214,228,233,0.14)_38%,rgba(18,38,58,0.22)_100%)]" />
+
       {IS_DEV && (
-        <div className="absolute top-20 right-4 z-30">
+        <div className="fixed right-4 top-16 z-50">
           <button
             onClick={isSimulating ? stopSimulation : startSimulation}
-            className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors pointer-events-auto ${
+            className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
               isSimulating
-                ? "bg-red-500 hover:bg-red-600 text-white"
-                : "bg-emerald-500 hover:bg-emerald-600 text-white"
+                ? "bg-red-500 text-white hover:bg-red-600"
+                : "bg-emerald-500 text-white hover:bg-emerald-600"
             }`}
           >
             {isSimulating ? "Parar Simulação" : "Iniciar Simulação"}
@@ -294,37 +304,35 @@ export function Tracker() {
         </div>
       )}
 
-      <div className="relative z-10 flex h-full flex-col justify-between pointer-events-none">
-        <div className="p-2 pt-2 pointer-events-auto">
+      {/* Main column layout */}
+      <div className="relative z-10 flex h-dvh flex-col">
+        <div className="pointer-events-auto pt-3">
           <TripInfo
             distance={isSimulating ? simulatedDistance : stats.distanceMeters}
             elapsedTime={isSimulating ? simulatedElapsedTime : elapsedTime}
-            maxSpeed={simulatedMaxSpeed}
             fuelUsed={isRecordingOrSimulating ? totalFuelUsed : 0}
             fuelPrice={settings.fuelPrice}
-            range={
-              isRecordingOrSimulating && isInitialized ? estimatedRange : 0
-            }
+            range={isRecordingOrSimulating && isInitialized ? estimatedRange : 250}
           />
         </div>
 
-        <div className="pointer-events-auto bg-gradient-to-t from-black/90 via-black/70 to-transparent pb-8 pt-8">
-          <div className="flex items-center justify-between">
-            <Speedometer
-              currentSpeed={displaySpeed}
-              maxSpeed={simulatedMaxSpeed}
-            />
-            <div className="pr-4">
-              <TripControls
-                status={status}
-                battery={battery}
-                onStart={handleStart}
-                onPause={handlePause}
-                onResume={handleResume}
-                onStop={handleStop}
-              />
-            </div>
-          </div>
+        <div className="pointer-events-none flex flex-1 items-center justify-center px-3 pb-1 pt-1">
+          <Speedometer
+            currentSpeed={displaySpeed}
+            maxSpeed={simulatedMaxSpeed}
+            avgSpeed={avgSpeed}
+          />
+        </div>
+
+        <div className="pointer-events-auto px-4 pb-20">
+          <TripControls
+            status={status}
+            battery={battery}
+            onStart={handleStart}
+            onPause={handlePause}
+            onResume={handleResume}
+            onStop={handleStop}
+          />
         </div>
       </div>
     </div>
