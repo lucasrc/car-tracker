@@ -1,5 +1,11 @@
 import { create } from "zustand";
-import type { Trip, Coordinates, TripStatus, TripStop } from "@/types";
+import type {
+  Trip,
+  Coordinates,
+  TripStatus,
+  TripStop,
+  TripConsumptionBreakdown,
+} from "@/types";
 import { generateId } from "@/lib/utils";
 import {
   saveCurrentTrip,
@@ -22,18 +28,26 @@ interface TripStore {
   currentSpeed: number;
   stats: TripStats;
   elapsedTime: number;
+  totalFuelUsed: number;
   stopSampleStart: Coordinates | null;
   lastStopSampleTimestamp: number | null;
+  consumptionBreakdown: TripConsumptionBreakdown | null;
 
   startTrip: () => Promise<void>;
   pauseTrip: () => void;
   resumeTrip: () => void;
-  stopTrip: (fuelPrice: number, totalFuelUsed: number) => Promise<string>;
+  stopTrip: (
+    fuelPrice: number,
+    totalFuelUsed: number,
+    breakdown?: TripConsumptionBreakdown,
+  ) => Promise<string>;
   addPosition: (coords: Coordinates) => void;
   registerStopSample: (coords: Coordinates, speedKmh: number) => void;
   setCurrentSpeed: (speed: number) => void;
   setDriveMode: (mode: "city" | "highway") => void;
   setConsumption: (consumption: number) => void;
+  setTotalFuelUsed: (totalFuelUsed: number) => void;
+  setConsumptionBreakdown: (breakdown: TripConsumptionBreakdown) => void;
   tick: () => void;
   loadCurrentTrip: () => Promise<void>;
 }
@@ -79,8 +93,14 @@ export const useTripStore = create<TripStore>((set, get) => ({
   currentSpeed: 0,
   stats: getEmptyStats(),
   elapsedTime: 0,
+  totalFuelUsed: 0,
   stopSampleStart: null,
   lastStopSampleTimestamp: null,
+  consumptionBreakdown: null,
+
+  setConsumptionBreakdown: (breakdown: TripConsumptionBreakdown) => {
+    set({ consumptionBreakdown: breakdown });
+  },
 
   startTrip: async () => {
     const settings = await getSettings();
@@ -98,6 +118,8 @@ export const useTripStore = create<TripStore>((set, get) => ({
       fuelUsed: 0,
       fuelPrice: settings.fuelPrice,
       totalCost: 0,
+      elapsedTime: 0,
+      totalFuelUsed: 0,
       stops: [],
     };
 
@@ -109,18 +131,20 @@ export const useTripStore = create<TripStore>((set, get) => ({
       elapsedTime: 0,
       stopSampleStart: null,
       lastStopSampleTimestamp: null,
+      consumptionBreakdown: null,
     });
 
     saveCurrentTrip(trip);
   },
 
   pauseTrip: () => {
-    const { trip } = get();
+    const { trip, elapsedTime } = get();
     if (!trip) return;
 
     const updatedTrip: Trip = {
       ...trip,
       status: "paused",
+      elapsedTime,
     };
 
     set({ status: "paused", trip: updatedTrip });
@@ -140,7 +164,11 @@ export const useTripStore = create<TripStore>((set, get) => ({
     saveCurrentTrip(updatedTrip);
   },
 
-  stopTrip: async (fuelPrice: number, totalFuelUsed: number) => {
+  stopTrip: async (
+    fuelPrice: number,
+    totalFuelUsed: number,
+    breakdown?: TripConsumptionBreakdown,
+  ) => {
     const {
       trip,
       stats,
@@ -173,6 +201,9 @@ export const useTripStore = create<TripStore>((set, get) => ({
       fuelUsed,
       fuelPrice,
       totalCost,
+      elapsedTime,
+      totalFuelUsed,
+      consumptionBreakdown: breakdown || undefined,
     };
 
     await saveTrip(completedTrip);
@@ -184,8 +215,10 @@ export const useTripStore = create<TripStore>((set, get) => ({
       currentSpeed: 0,
       stats: getEmptyStats(),
       elapsedTime: 0,
+      totalFuelUsed: 0,
       stopSampleStart: null,
       lastStopSampleTimestamp: null,
+      consumptionBreakdown: null,
     });
 
     return completedTrip.id;
@@ -282,6 +315,15 @@ export const useTripStore = create<TripStore>((set, get) => ({
     saveCurrentTrip(updatedTrip);
   },
 
+  setTotalFuelUsed: (totalFuelUsed: number) => {
+    const { trip } = get();
+    if (!trip) return;
+
+    const updatedTrip: Trip = { ...trip, totalFuelUsed };
+    set({ trip: updatedTrip });
+    saveCurrentTrip(updatedTrip);
+  },
+
   tick: () => {
     const { elapsedTime, status } = get();
     if (status !== "recording") return;
@@ -310,24 +352,18 @@ export const useTripStore = create<TripStore>((set, get) => ({
     const stats: TripStats = {
       distanceMeters: recoveredTrip.distanceMeters,
       maxSpeed: recoveredTrip.maxSpeed,
-      durationSeconds: recoveredTrip.startTime
-        ? Math.floor(
-            (Date.now() - new Date(recoveredTrip.startTime).getTime()) / 1000,
-          )
-        : 0,
+      durationSeconds: recoveredTrip.elapsedTime || 0,
     };
 
-    const elapsedTime = recoveredTrip.startTime
-      ? Math.floor(
-          (Date.now() - new Date(recoveredTrip.startTime).getTime()) / 1000,
-        )
-      : 0;
+    const elapsedTime = recoveredTrip.elapsedTime || 0;
+    const totalFuelUsed = recoveredTrip.totalFuelUsed || 0;
 
     set({
       trip: recoveredTrip,
       status: recoveredTrip.status,
       stats,
       elapsedTime,
+      totalFuelUsed,
       stopSampleStart: null,
       lastStopSampleTimestamp: null,
     });

@@ -17,6 +17,16 @@ export interface TripStop {
   durationSeconds: number;
 }
 
+export interface TripConsumptionBreakdown {
+  speedPenaltyPct: number;
+  aggressionPenaltyPct: number;
+  idlePenaltyPct: number;
+  stabilityPenaltyPct: number;
+  baseFuelUsed: number;
+  extraFuelUsed: number;
+  extraCost: number;
+}
+
 export interface Trip {
   id: string;
   startTime: string;
@@ -32,7 +42,10 @@ export interface Trip {
   fuelUsed: number;
   fuelPrice: number;
   totalCost: number;
+  elapsedTime: number;
+  totalFuelUsed: number;
   stops?: TripStop[];
+  consumptionBreakdown?: TripConsumptionBreakdown;
 }
 
 export interface Settings {

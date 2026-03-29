@@ -190,6 +190,7 @@ export async function getTripsInPeriod(
     .where("startTime")
     .between(start, end)
     .filter((t) => t.status === "completed")
+    .reverse()
     .toArray();
 }
 

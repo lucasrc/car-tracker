@@ -365,6 +365,58 @@ export function Settings() {
               frequentes entre modos.
             </p>
           </div>
+
+          <div className="mt-6 border-t border-gray-200 pt-6 space-y-3 text-sm text-gray-600">
+            <h3 className="font-semibold text-gray-900">
+              Como a Autonomia é Calculada
+            </h3>
+            <p>
+              A autonomia mostra quantos quilômetros você ainda pode percorrer
+              com o combustível atual no tanque.
+            </p>
+            <div className="rounded-lg bg-gray-50 p-3 font-mono text-xs">
+              Autonomia = Combustível no tanque × km/l do modo atual
+            </div>
+            <p className="mt-3">
+              <strong>Combustível Gasto na Viagem:</strong> é calculado
+              continuamente somando o consumo de cada trecho percorrido:
+            </p>
+            <div className="rounded-lg bg-gray-50 p-3 font-mono text-xs">
+              Consumo por trecho = distância do trecho / km/l atual
+            </div>
+            <p className="mt-3 text-xs text-gray-400">
+              O km/l utilizado varia automaticamente entre cidade, estrada e
+              modo misto conforme o padrão de velocidade detectado.
+            </p>
+          </div>
+
+          <div className="mt-6 border-t border-gray-200 pt-6 space-y-3 text-sm text-gray-600">
+            <h3 className="font-semibold text-gray-900">
+              Factores que Afectam o Consumo
+            </h3>
+            <ul className="ml-4 list-disc space-y-2">
+              <li>
+                <strong>Velocidade:</strong> velocidades muito acima ou abaixo
+                do ideal aumentam o consumo.
+              </li>
+              <li>
+                <strong>Aceleração agressiva:</strong> acelerações bruscas
+                consomem mais combustível.
+              </li>
+              <li>
+                <strong>Paradas (idle):</strong> o motor continua consumindo
+                mesmo parado.
+              </li>
+              <li>
+                <strong>Estabilidade:</strong> variações constantes de
+                velocidade aumentam o consumo.
+              </li>
+            </ul>
+            <p className="mt-3 text-xs text-gray-400">
+              Estes factores são aplicados como multiplicadores ao consumo base
+              do modo de condução.
+            </p>
+          </div>
         </div>
       </main>
     </div>

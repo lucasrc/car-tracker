@@ -1,6 +1,6 @@
 import { formatDistance } from "@/lib/utils";
 import type { ConsumptionFactors } from "@/hooks/useConsumptionModel";
-import type { DriveMode } from "@/types";
+import type { DriveMode, TripConsumptionBreakdown } from "@/types";
 
 interface TripInfoProps {
   distance: number;
@@ -14,6 +14,7 @@ interface TripInfoProps {
   driveMode?: DriveMode;
   useWorstCaseCity?: boolean;
   consumptionFactors?: ConsumptionFactors;
+  consumptionBreakdown?: TripConsumptionBreakdown | null;
 }
 
 function formatTimeHms(seconds: number): string {
@@ -33,51 +34,12 @@ export function TripInfo({
   fuelUsed = 0,
   fuelPrice = 5.0,
   range = 0,
-  cityKmPerLiter = 8,
-  highwayKmPerLiter = 12,
-  mixedKmPerLiter = 10,
-  driveMode,
-  useWorstCaseCity = false,
-  consumptionFactors,
 }: TripInfoProps) {
   const cost = fuelUsed * fuelPrice;
   const formattedCost = cost.toLocaleString("pt-BR", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
-
-  const speedFactorPct = consumptionFactors
-    ? Math.round((consumptionFactors.speedFactor - 1) * 100)
-    : 0;
-  const aggressionFactorPct = consumptionFactors
-    ? Math.round((consumptionFactors.aggressionFactor - 1) * 100)
-    : 0;
-
-  const getModeLabel = (mode?: DriveMode) => {
-    switch (mode) {
-      case "city":
-        return "Cidade";
-      case "highway":
-        return "Estrada";
-      case "mixed":
-        return "Misto";
-      default:
-        return "Cidade";
-    }
-  };
-
-  const getBaseConsumption = (mode?: DriveMode) => {
-    switch (mode) {
-      case "city":
-        return cityKmPerLiter;
-      case "highway":
-        return highwayKmPerLiter;
-      case "mixed":
-        return mixedKmPerLiter;
-      default:
-        return cityKmPerLiter;
-    }
-  };
 
   return (
     <div className="mx-auto max-w-md space-y-2 px-3 pb-2">
@@ -180,35 +142,8 @@ export function TripInfo({
               Autonomia:
             </p>
             <p className="mt-1 truncate font-semibold leading-none tracking-[-0.02em] text-slate-950 [font-size:clamp(1.25rem,4.3vw,1.95rem)]">
-              {Math.round(range)} km
+              {Math.round(range)} km / {fuelUsed.toFixed(1)} L
             </p>
-            <p className="mt-1 truncate text-[11px] font-medium leading-none text-slate-700">
-              {getModeLabel(driveMode)}:{" "}
-              {getBaseConsumption(driveMode).toFixed(1)} km/l
-            </p>
-            <p className="mt-1 truncate text-[10px] font-medium leading-none text-slate-500">
-              Cidade/Estrada/Misto: {cityKmPerLiter.toFixed(1)}/
-              {highwayKmPerLiter.toFixed(1)}/{mixedKmPerLiter.toFixed(1)}
-            </p>
-            {consumptionFactors &&
-              (speedFactorPct > 0 || aggressionFactorPct > 0) && (
-                <p className="mt-1 truncate text-[10px] font-medium leading-none text-orange-600">
-                  {speedFactorPct > 0 && `Velocidade: +${speedFactorPct}%`}
-                  {speedFactorPct > 0 && aggressionFactorPct > 0 && " | "}
-                  {aggressionFactorPct > 0 &&
-                    `Aceleração: +${aggressionFactorPct}%`}
-                </p>
-              )}
-            {consumptionFactors && consumptionFactors.isAggressive && (
-              <p className="mt-1 text-[10px] font-semibold leading-none text-red-600">
-                Condução agressiva
-              </p>
-            )}
-            {useWorstCaseCity && (
-              <p className="mt-1 text-[10px] font-semibold leading-none text-amber-700">
-                Baseado em cidade (pior caso)
-              </p>
-            )}
           </div>
         </div>
 

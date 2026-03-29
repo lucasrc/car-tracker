@@ -27,7 +27,10 @@ function formatDurationForCard(seconds: number): string {
   return `${minutes}m`;
 }
 
-function splitDistance(distanceInMeters: number): { value: string; unit: string } {
+function splitDistance(distanceInMeters: number): {
+  value: string;
+  unit: string;
+} {
   const formatted = formatDistance(distanceInMeters);
   const [value = "0", unit = "km"] = formatted.split(" ");
   return { value, unit };
@@ -115,7 +118,10 @@ export function TripDetail() {
     stops.length > 0 ? Math.round(totalStopSeconds / stops.length) : 0;
   const stopRatioPercent =
     durationSeconds > 0
-      ? Math.max(0, Math.min(100, Math.round((totalStopSeconds / durationSeconds) * 100)))
+      ? Math.max(
+          0,
+          Math.min(100, Math.round((totalStopSeconds / durationSeconds) * 100)),
+        )
       : 0;
 
   return (
@@ -125,7 +131,9 @@ export function TripDetail() {
           Sua Viagem Finalizada
         </h1>
 
-        <p className="mt-1 text-sm text-slate-500">{formatDateTime(trip.startTime)}</p>
+        <p className="mt-1 text-sm text-slate-500">
+          {formatDateTime(trip.startTime)}
+        </p>
 
         <div className="mt-4 overflow-hidden rounded-3xl bg-white shadow-xl">
           <div className="h-[280px] w-full">
@@ -195,20 +203,28 @@ export function TripDetail() {
                 Distancia Total
               </p>
               <div className="mt-1 flex items-end gap-1">
-                <p className="text-4xl font-semibold leading-none text-blue-900">{distance.value}</p>
-                <p className="pb-1 text-base font-medium text-blue-700">{distance.unit}</p>
+                <p className="text-4xl font-semibold leading-none text-blue-900">
+                  {distance.value}
+                </p>
+                <p className="pb-1 text-base font-medium text-blue-700">
+                  {distance.unit}
+                </p>
               </div>
             </div>
 
             <div className="rounded-2xl bg-purple-50 p-3 shadow-sm">
-              <p className="text-xs font-medium text-purple-600">Tempo de Viagem</p>
+              <p className="text-xs font-medium text-purple-600">
+                Tempo de Viagem
+              </p>
               <p className="mt-2 text-4xl font-semibold leading-none text-purple-900">
                 {compactDuration}
               </p>
             </div>
 
             <div className="rounded-2xl bg-green-50 p-3 shadow-sm">
-              <p className="text-xs font-medium text-green-600">Velocidade Media</p>
+              <p className="text-xs font-medium text-green-600">
+                Velocidade Media
+              </p>
               <p className="mt-1 text-3xl font-semibold leading-none text-green-900">
                 {displayAverageSpeed}
               </p>
@@ -271,6 +287,94 @@ export function TripDetail() {
                 </p>
               </div>
             </div>
+
+            {trip.consumptionBreakdown &&
+              trip.consumptionBreakdown.extraCost > 0 &&
+              (() => {
+                const b = trip.consumptionBreakdown;
+                const totalPenalty =
+                  b.speedPenaltyPct +
+                  b.aggressionPenaltyPct +
+                  b.idlePenaltyPct +
+                  b.stabilityPenaltyPct;
+                const speedCost =
+                  totalPenalty > 0
+                    ? (b.speedPenaltyPct / totalPenalty) * b.extraCost
+                    : 0;
+                const aggressionCost =
+                  totalPenalty > 0
+                    ? (b.aggressionPenaltyPct / totalPenalty) * b.extraCost
+                    : 0;
+                const idleCost =
+                  totalPenalty > 0
+                    ? (b.idlePenaltyPct / totalPenalty) * b.extraCost
+                    : 0;
+                const stabilityCost =
+                  totalPenalty > 0
+                    ? (b.stabilityPenaltyPct / totalPenalty) * b.extraCost
+                    : 0;
+
+                return (
+                  <div className="col-span-2 mt-2 rounded-2xl bg-red-50 border border-red-100 p-4 shadow-sm">
+                    <p className="text-sm font-semibold text-red-800 mb-3">
+                      Fatores que Aumentaram o Consumo
+                    </p>
+                    <div className="space-y-2">
+                      {b.speedPenaltyPct > 0 && (
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-red-700">
+                            Excesso de velocidade (+
+                            {b.speedPenaltyPct.toFixed(1)}%)
+                          </span>
+                          <span className="font-medium text-red-900">
+                            +R$ {speedCost.toFixed(2)}
+                          </span>
+                        </div>
+                      )}
+                      {b.idlePenaltyPct > 0 && (
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-red-700">
+                            Tempo ocioso (+{b.idlePenaltyPct.toFixed(1)}%)
+                          </span>
+                          <span className="font-medium text-red-900">
+                            +R$ {idleCost.toFixed(2)}
+                          </span>
+                        </div>
+                      )}
+                      {b.aggressionPenaltyPct > 0 && (
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-red-700">
+                            Aceleracoes bruscas (+
+                            {b.aggressionPenaltyPct.toFixed(1)}%)
+                          </span>
+                          <span className="font-medium text-red-900">
+                            +R$ {aggressionCost.toFixed(2)}
+                          </span>
+                        </div>
+                      )}
+                      {b.stabilityPenaltyPct > 0 && (
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-red-700">
+                            Irregularidade na dirigibilidade (+
+                            {b.stabilityPenaltyPct.toFixed(1)}%)
+                          </span>
+                          <span className="font-medium text-red-900">
+                            +R$ {stabilityCost.toFixed(2)}
+                          </span>
+                        </div>
+                      )}
+                      <div className="mt-3 pt-2 border-t border-red-200 flex justify-between items-center">
+                        <span className="text-sm font-semibold text-red-800">
+                          Total em Penalidades
+                        </span>
+                        <span className="text-lg font-bold text-red-900">
+                          R$ {b.extraCost.toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
             <button
               onClick={() => navigate("/history")}

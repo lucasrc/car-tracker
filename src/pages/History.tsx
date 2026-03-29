@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { TripCard } from "@/components/tracker/TripCard";
 import { RefuelCard } from "@/components/history/RefuelCard";
@@ -12,6 +12,8 @@ import { deleteTrip, getTripsInPeriod, getRefuelsInPeriod } from "@/lib/db";
 import { normalizeDateRange } from "@/lib/utils";
 import type { Trip, Refuel } from "@/types";
 
+const ITEMS_PER_PAGE = 20;
+
 export function History() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -24,6 +26,14 @@ export function History() {
     () => new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
   );
   const [endDate, setEndDate] = useState(() => new Date());
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const paginatedTrips = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    return trips.slice(start, start + ITEMS_PER_PAGE);
+  }, [trips, currentPage]);
+
+  const totalPages = Math.ceil(trips.length / ITEMS_PER_PAGE);
 
   const loadTrips = useCallback(async () => {
     try {
@@ -48,6 +58,7 @@ export function History() {
   const handleDateChange = (start: Date, end: Date) => {
     setStartDate(start);
     setEndDate(end);
+    setCurrentPage(1);
   };
 
   const handleTripClick = (tripId: string) => {
@@ -91,7 +102,10 @@ export function History() {
           <>
             <div className="mb-4 flex gap-2 rounded-xl bg-white p-1 shadow-sm">
               <button
-                onClick={() => setListTab("trips")}
+                onClick={() => {
+                  setListTab("trips");
+                  setCurrentPage(1);
+                }}
                 className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors ${
                   listTab === "trips"
                     ? "bg-blue-500 text-white"
@@ -101,7 +115,10 @@ export function History() {
                 Viagens
               </button>
               <button
-                onClick={() => setListTab("refuels")}
+                onClick={() => {
+                  setListTab("refuels");
+                  setCurrentPage(1);
+                }}
                 className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors ${
                   listTab === "refuels"
                     ? "bg-blue-500 text-white"
@@ -138,16 +155,43 @@ export function History() {
                   </p>
                 </div>
               ) : (
-                <div className="mt-4 flex flex-col gap-3">
-                  {trips.map((trip) => (
-                    <TripCard
-                      key={trip.id}
-                      trip={trip}
-                      onClick={() => handleTripClick(trip.id)}
-                      onDelete={() => handleDeleteTrip(trip.id)}
-                    />
-                  ))}
-                </div>
+                <>
+                  <div className="mt-4 flex flex-col gap-3">
+                    {paginatedTrips.map((trip) => (
+                      <TripCard
+                        key={trip.id}
+                        trip={trip}
+                        onClick={() => handleTripClick(trip.id)}
+                        onDelete={() => handleDeleteTrip(trip.id)}
+                      />
+                    ))}
+                  </div>
+                  {totalPages > 1 && (
+                    <div className="mt-6 flex items-center justify-center gap-2">
+                      <button
+                        onClick={() =>
+                          setCurrentPage((p) => Math.max(1, p - 1))
+                        }
+                        disabled={currentPage === 1}
+                        className="rounded-lg px-4 py-2 text-sm font-medium text-gray-600 disabled:opacity-50"
+                      >
+                        Anterior
+                      </button>
+                      <span className="text-sm text-gray-600">
+                        {currentPage} / {totalPages}
+                      </span>
+                      <button
+                        onClick={() =>
+                          setCurrentPage((p) => Math.min(totalPages, p + 1))
+                        }
+                        disabled={currentPage === totalPages}
+                        className="rounded-lg px-4 py-2 text-sm font-medium text-gray-600 disabled:opacity-50"
+                      >
+                        Próxima
+                      </button>
+                    </div>
+                  )}
+                </>
               )
             ) : refuels.length === 0 ? (
               <div className="mt-4 flex h-64 flex-col items-center justify-center rounded-3xl bg-white p-8 shadow-lg">

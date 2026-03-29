@@ -27,6 +27,9 @@ const GPS_CONFIG = {
   minSpeedMs: 0.5,
   minDistanceMeters: 10,
   minTimeDeltaMs: 1000,
+  warmupMinAccuracyMeters: 15,
+  warmupMinTimeMs: 3000,
+  warmupMaxTimeMs: 10000,
 } as const;
 
 export function Tracker() {
@@ -38,6 +41,7 @@ export function Tracker() {
     currentSpeed,
     stats,
     elapsedTime,
+    totalFuelUsed: storeTotalFuelUsed,
     startTrip,
     pauseTrip,
     resumeTrip,
@@ -45,6 +49,7 @@ export function Tracker() {
     addPosition,
     registerStopSample,
     setCurrentSpeed,
+    setTotalFuelUsed,
     tick,
     loadCurrentTrip,
   } = useTripStore();
@@ -84,8 +89,9 @@ export function Tracker() {
     currentFuel: 50,
     fuelPrice: 5.0,
   });
-  const [totalFuelUsed, setTotalFuelUsed] = useState(0);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [isGpsWarming, setIsGpsWarming] = useState(false);
+  const [warmupStartTime, setWarmupStartTime] = useState<number | null>(null);
 
   const {
     estimatedRange,
@@ -94,6 +100,8 @@ export function Tracker() {
     isInitialized,
     currentKmPerLiter,
     consumptionFactors,
+    getAverageFactors,
+    getEstimatedCosts,
   } = useDriveMode(stats.distanceMeters, settings.currentFuel);
 
   useEffect(() => {
@@ -114,16 +122,23 @@ export function Tracker() {
     resetSpeedFilter();
     resetDriveMode();
     lastValidPositionRef.current = null;
-    startTrip();
+    setIsGpsWarming(true);
+    setWarmupStartTime(Date.now());
     startWatching();
     await requestWakeLock();
-  }, [
-    startTrip,
-    startWatching,
-    requestWakeLock,
-    resetSpeedFilter,
-    resetDriveMode,
-  ]);
+  }, [startWatching, requestWakeLock, resetSpeedFilter, resetDriveMode]);
+
+  const handleActualStart = useCallback(() => {
+    startTrip();
+    setIsGpsWarming(false);
+    setWarmupStartTime(null);
+  }, [startTrip]);
+
+  const handleCancelWarmup = useCallback(() => {
+    setIsGpsWarming(false);
+    setWarmupStartTime(null);
+    stopWatching();
+  }, [stopWatching]);
 
   const handlePause = useCallback(() => {
     pauseTrip();
@@ -143,7 +158,30 @@ export function Tracker() {
     setShowConfirmDialog(false);
     stopWatching();
     await releaseWakeLock();
-    const tripId = await stopTrip(settings.fuelPrice, totalFuelUsed);
+
+    const distanceKm = stats.distanceMeters / 1000;
+    const avgFactors = getAverageFactors();
+    const costs = getEstimatedCosts(
+      distanceKm,
+      currentKmPerLiter,
+      settings.fuelPrice,
+    );
+
+    const breakdown = {
+      speedPenaltyPct: avgFactors.speedPenaltyPct,
+      aggressionPenaltyPct: avgFactors.aggressionPenaltyPct,
+      idlePenaltyPct: avgFactors.idlePenaltyPct,
+      stabilityPenaltyPct: avgFactors.stabilityPenaltyPct,
+      baseFuelUsed: costs.baseFuelUsed,
+      extraFuelUsed: costs.extraFuelUsed,
+      extraCost: costs.extraCost,
+    };
+
+    const tripId = await stopTrip(
+      settings.fuelPrice,
+      storeTotalFuelUsed,
+      breakdown,
+    );
     setTotalFuelUsed(0);
 
     if (tripId) {
@@ -153,9 +191,14 @@ export function Tracker() {
     stopWatching,
     releaseWakeLock,
     stopTrip,
+    setTotalFuelUsed,
     settings.fuelPrice,
-    totalFuelUsed,
+    storeTotalFuelUsed,
     navigate,
+    stats.distanceMeters,
+    getAverageFactors,
+    getEstimatedCosts,
+    currentKmPerLiter,
   ]);
 
   const handleCancelStop = useCallback(() => {
@@ -181,6 +224,35 @@ export function Tracker() {
       }
     };
   }, [status, tick]);
+
+  useEffect(() => {
+    if (!isGpsWarming) {
+      return;
+    }
+
+    const checkWarmup = () => {
+      if (!position || warmupStartTime === null) {
+        return;
+      }
+
+      const now = Date.now();
+      const elapsedTime = now - warmupStartTime;
+      const hasGoodAccuracy =
+        position.accuracy !== undefined &&
+        position.accuracy < GPS_CONFIG.warmupMinAccuracyMeters;
+      const hasMinTime = elapsedTime >= GPS_CONFIG.warmupMinTimeMs;
+      const hasMaxTime = elapsedTime >= GPS_CONFIG.warmupMaxTimeMs;
+
+      if ((hasGoodAccuracy && hasMinTime) || hasMaxTime) {
+        handleActualStart();
+      }
+    };
+
+    checkWarmup();
+
+    const interval = setInterval(checkWarmup, 1000);
+    return () => clearInterval(interval);
+  }, [isGpsWarming, position, warmupStartTime, handleActualStart]);
 
   useEffect(() => {
     if (position && status === "recording") {
@@ -259,7 +331,7 @@ export function Tracker() {
         const fuelUsed = distanceKm / currentKmPerLiter;
 
         if (fuelUsed > 0 && status === "recording") {
-          const newTotalFuel = totalFuelUsed + fuelUsed;
+          const newTotalFuel = storeTotalFuelUsed + fuelUsed;
           setTotalFuelUsed(newTotalFuel);
 
           consumeFuel(fuelUsed).then((updated) => {
@@ -286,9 +358,10 @@ export function Tracker() {
     addPosition,
     registerStopSample,
     setCurrentSpeed,
+    setTotalFuelUsed,
     addSpeedReading,
     addDriveModePosition,
-    totalFuelUsed,
+    storeTotalFuelUsed,
     currentKmPerLiter,
     stats.distanceMeters,
   ]);
@@ -307,9 +380,6 @@ export function Tracker() {
   const simulatedDistance = isSimulating
     ? calculateTotalDistance(simulatedPath)
     : 0;
-  const simulatedMaxSpeed = isSimulating
-    ? Math.max(stats.maxSpeed, displaySpeed)
-    : stats.maxSpeed;
   const isRecordingOrSimulating = isSimulating || status === "recording";
 
   useEffect(() => {
@@ -323,19 +393,17 @@ export function Tracker() {
 
       if (distKm > 0.001 && currentKmPerLiter > 0) {
         const fuelUsed = distKm / currentKmPerLiter;
-        setTotalFuelUsed((prev) => prev + fuelUsed);
+        setTotalFuelUsed(storeTotalFuelUsed + fuelUsed);
       }
     }
-  }, [simulatedPath, isSimulating, currentKmPerLiter]);
+  }, [
+    simulatedPath,
+    isSimulating,
+    currentKmPerLiter,
+    setTotalFuelUsed,
+    storeTotalFuelUsed,
+  ]);
 
-  const displayDistance = isSimulating
-    ? simulatedDistance
-    : stats.distanceMeters;
-  const displayElapsedTime = isSimulating ? simulatedElapsedTime : elapsedTime;
-  const avgSpeed =
-    displayElapsedTime > 0
-      ? displayDistance / 1000 / (displayElapsedTime / 3600)
-      : 0;
   const idleWorstCaseRange = settings.currentFuel * settings.cityKmPerLiter;
   const displayedRange =
     status === "idle"
@@ -374,36 +442,29 @@ export function Tracker() {
           <TripInfo
             distance={isSimulating ? simulatedDistance : stats.distanceMeters}
             elapsedTime={isSimulating ? simulatedElapsedTime : elapsedTime}
-            fuelUsed={isRecordingOrSimulating ? totalFuelUsed : 0}
+            fuelUsed={isRecordingOrSimulating ? storeTotalFuelUsed : 0}
             fuelPrice={settings.fuelPrice}
             range={displayedRange}
-            cityKmPerLiter={settings.cityKmPerLiter}
-            highwayKmPerLiter={settings.highwayKmPerLiter}
-            useWorstCaseCity={status === "idle"}
-            consumptionFactors={consumptionFactors}
           />
         </div>
 
-        <div className="pointer-events-none flex-1" />
+        <div className="pointer-events-none fixed bottom-24 left-4 z-[60]">
+          <Speedometer currentSpeed={displaySpeed} />
+        </div>
 
-        <div className="pointer-events-none mx-auto max-w-md pb-24">
-          <div className="flex flex-col items-center gap-4">
-            <Speedometer
-              currentSpeed={displaySpeed}
-              maxSpeed={simulatedMaxSpeed}
-              avgSpeed={avgSpeed}
+        <div className="pointer-events-none fixed bottom-24 right-4 z-[60]">
+          <div className="pointer-events-auto">
+            <TripControls
+              status={status}
+              battery={battery}
+              onStart={handleStart}
+              onPause={handlePause}
+              onResume={handleResume}
+              onStop={handleStopRequest}
+              onCancel={handleCancelWarmup}
+              isGpsWarming={isGpsWarming}
+              gpsAccuracy={position?.accuracy}
             />
-
-            <div className="pointer-events-auto pt-4">
-              <TripControls
-                status={status}
-                battery={battery}
-                onStart={handleStart}
-                onPause={handlePause}
-                onResume={handleResume}
-                onStop={handleStopRequest}
-              />
-            </div>
           </div>
         </div>
       </div>

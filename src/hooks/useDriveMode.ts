@@ -5,6 +5,7 @@ import {
   useConsumptionModel,
   type ConsumptionFactors,
 } from "./useConsumptionModel";
+import { useTripConsumptionTracker } from "./useTripConsumptionTracker";
 
 interface SpeedReading {
   speed: number;
@@ -22,6 +23,23 @@ interface UseDriveModeReturn {
   addPosition: (position: Coordinates) => void;
   reset: () => void;
   isInitialized: boolean;
+  getAverageFactors: () => {
+    speedPenaltyPct: number;
+    aggressionPenaltyPct: number;
+    idlePenaltyPct: number;
+    stabilityPenaltyPct: number;
+  };
+  getEstimatedCosts: (
+    distanceKm: number,
+    baseKmPerLiter: number,
+    fuelPrice: number,
+  ) => {
+    baseFuelUsed: number;
+    extraFuelUsed: number;
+    extraCost: number;
+    totalFuelUsed: number;
+    totalCost: number;
+  };
 }
 
 const WINDOW_SIZE_MS = 30000;
@@ -53,6 +71,13 @@ export function useDriveMode(
     reset: resetConsumptionModel,
     calculateAdjustedConsumption,
   } = useConsumptionModel();
+
+  const {
+    addSample,
+    getAverageFactors,
+    getEstimatedCosts,
+    reset: resetTripTracker,
+  } = useTripConsumptionTracker();
 
   useEffect(() => {
     getSettings().then((s) => {
@@ -158,6 +183,15 @@ export function useDriveMode(
       addConsumptionReading(position.speed, now);
       calculateMetrics();
 
+      const metrics = getMetrics();
+      const newFactors = calculateAdjustedConsumption(
+        currentKmPerLiter,
+        metrics.avgSpeedKmh,
+        metrics.speedVariance,
+        metrics.idlePercentage,
+      );
+      addSample(newFactors);
+
       const newMode = determineMode();
       const timeSinceLastChange = now - lastModeChangeRef.current;
 
@@ -195,7 +229,8 @@ export function useDriveMode(
       setCurrentKmPerLiter(settings.cityKmPerLiter);
     }
     resetConsumptionModel();
-  }, [settings, resetConsumptionModel]);
+    resetTripTracker();
+  }, [settings, resetConsumptionModel, resetTripTracker]);
 
   const litersRemaining = Math.max(0, currentFuel);
 
@@ -253,5 +288,7 @@ export function useDriveMode(
     addPosition,
     reset,
     isInitialized,
+    getAverageFactors,
+    getEstimatedCosts,
   };
 }
