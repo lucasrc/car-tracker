@@ -45,6 +45,8 @@ body {
 
 .leaflet-container {
   font-family: inherit;
+  position: absolute !important;
+  inset: 0 !important;
   height: 100% !important;
   width: 100% !important;
 }
