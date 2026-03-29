@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Trip, Coordinates, TripStatus } from "@/types";
+import type { Trip, Coordinates, TripStatus, TripStop } from "@/types";
 import { generateId } from "@/lib/utils";
 import {
   saveCurrentTrip,
@@ -22,12 +22,15 @@ interface TripStore {
   currentSpeed: number;
   stats: TripStats;
   elapsedTime: number;
+  stopSampleStart: Coordinates | null;
+  lastStopSampleTimestamp: number | null;
 
   startTrip: () => Promise<void>;
   pauseTrip: () => void;
   resumeTrip: () => void;
   stopTrip: (fuelPrice: number, totalFuelUsed: number) => Promise<string>;
   addPosition: (coords: Coordinates) => void;
+  registerStopSample: (coords: Coordinates, speedKmh: number) => void;
   setCurrentSpeed: (speed: number) => void;
   setDriveMode: (mode: "city" | "highway") => void;
   setConsumption: (consumption: number) => void;
@@ -41,12 +44,43 @@ const getEmptyStats = (): TripStats => ({
   durationSeconds: 0,
 });
 
+const STOP_MIN_MILLISECONDS = 5000;
+
+function buildTripWithStop(
+  trip: Trip,
+  stopStart: Coordinates,
+  lastTimestamp: number,
+): Trip {
+  const durationMilliseconds = lastTimestamp - stopStart.timestamp;
+
+  // Considera parada apenas quando ficou em 0 km/h por mais de 5 segundos.
+  if (durationMilliseconds <= STOP_MIN_MILLISECONDS) {
+    return trip;
+  }
+
+  const durationSeconds = Math.round(durationMilliseconds / 1000);
+
+  const newStop: TripStop = {
+    lat: stopStart.lat,
+    lng: stopStart.lng,
+    timestamp: stopStart.timestamp,
+    durationSeconds,
+  };
+
+  return {
+    ...trip,
+    stops: [...(trip.stops || []), newStop],
+  };
+}
+
 export const useTripStore = create<TripStore>((set, get) => ({
   trip: null,
   status: "idle",
   currentSpeed: 0,
   stats: getEmptyStats(),
   elapsedTime: 0,
+  stopSampleStart: null,
+  lastStopSampleTimestamp: null,
 
   startTrip: async () => {
     const settings = await getSettings();
@@ -63,6 +97,7 @@ export const useTripStore = create<TripStore>((set, get) => ({
       fuelCapacity: settings.fuelCapacity,
       fuelUsed: 0,
       totalCost: 0,
+      stops: [],
     };
 
     set({
@@ -71,6 +106,8 @@ export const useTripStore = create<TripStore>((set, get) => ({
       currentSpeed: 0,
       stats: getEmptyStats(),
       elapsedTime: 0,
+      stopSampleStart: null,
+      lastStopSampleTimestamp: null,
     });
 
     saveCurrentTrip(trip);
@@ -103,8 +140,19 @@ export const useTripStore = create<TripStore>((set, get) => ({
   },
 
   stopTrip: async (fuelPrice: number, totalFuelUsed: number) => {
-    const { trip, stats, elapsedTime } = get();
+    const {
+      trip,
+      stats,
+      elapsedTime,
+      stopSampleStart,
+      lastStopSampleTimestamp,
+    } = get();
     if (!trip) return "";
+
+    const tripWithStops =
+      stopSampleStart && lastStopSampleTimestamp
+        ? buildTripWithStop(trip, stopSampleStart, lastStopSampleTimestamp)
+        : trip;
 
     const distanceKm = stats.distanceMeters / 1000;
     const durationHours = elapsedTime / 3600;
@@ -114,7 +162,7 @@ export const useTripStore = create<TripStore>((set, get) => ({
     const totalCost = totalFuelUsed * fuelPrice;
 
     const completedTrip: Trip = {
-      ...trip,
+      ...tripWithStops,
       endTime: new Date().toISOString(),
       status: "completed",
       distanceMeters: stats.distanceMeters,
@@ -134,6 +182,8 @@ export const useTripStore = create<TripStore>((set, get) => ({
       currentSpeed: 0,
       stats: getEmptyStats(),
       elapsedTime: 0,
+      stopSampleStart: null,
+      lastStopSampleTimestamp: null,
     });
 
     return completedTrip.id;
@@ -168,6 +218,49 @@ export const useTripStore = create<TripStore>((set, get) => ({
     });
 
     saveCurrentTrip(updatedTrip);
+  },
+
+  registerStopSample: (coords: Coordinates, speedKmh: number) => {
+    const {
+      trip,
+      status,
+      stopSampleStart,
+      lastStopSampleTimestamp,
+    } = get();
+    if (!trip || status !== "recording") return;
+
+    const isStopped = speedKmh <= 0.1;
+
+    if (isStopped) {
+      if (!stopSampleStart) {
+        set({
+          stopSampleStart: coords,
+          lastStopSampleTimestamp: coords.timestamp,
+        });
+        return;
+      }
+
+      set({ lastStopSampleTimestamp: coords.timestamp });
+      return;
+    }
+
+    if (!stopSampleStart || !lastStopSampleTimestamp) return;
+
+    const updatedTrip = buildTripWithStop(
+      trip,
+      stopSampleStart,
+      lastStopSampleTimestamp,
+    );
+
+    set({
+      trip: updatedTrip,
+      stopSampleStart: null,
+      lastStopSampleTimestamp: null,
+    });
+
+    if (updatedTrip !== trip) {
+      saveCurrentTrip(updatedTrip);
+    }
   },
 
   setCurrentSpeed: (speed: number) => {
@@ -238,6 +331,8 @@ export const useTripStore = create<TripStore>((set, get) => ({
       status: recoveredTrip.status,
       stats,
       elapsedTime,
+      stopSampleStart: null,
+      lastStopSampleTimestamp: null,
     });
   },
 }));

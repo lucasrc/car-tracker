@@ -12,6 +12,7 @@ import { useSpeedFilter } from "@/hooks/useSpeedFilter";
 import { useDriveMode } from "@/hooks/useDriveMode";
 import { useSimulation } from "@/hooks/useSimulation";
 import { speedToKmh } from "@/lib/utils";
+import type { Settings } from "@/types";
 import {
   isValidSpeedForDistance,
   vincentyDistance,
@@ -42,6 +43,7 @@ export function Tracker() {
     resumeTrip,
     stopTrip,
     addPosition,
+    registerStopSample,
     setCurrentSpeed,
     tick,
     loadCurrentTrip,
@@ -73,7 +75,11 @@ export function Tracker() {
     timestamp: number;
   } | null>(null);
 
-  const [settings, setSettings] = useState({
+  const [settings, setSettings] = useState<Settings>({
+    id: "default",
+    cityKmPerLiter: 8,
+    highwayKmPerLiter: 12,
+    mixedKmPerLiter: 10,
     fuelCapacity: 50,
     currentFuel: 50,
     fuelPrice: 5.0,
@@ -87,11 +93,16 @@ export function Tracker() {
     reset: resetDriveMode,
     isInitialized,
     currentKmPerLiter,
+    consumptionFactors,
   } = useDriveMode(stats.distanceMeters, settings.currentFuel);
 
   useEffect(() => {
     getSettings().then((s) => {
       setSettings({
+        id: s.id,
+        cityKmPerLiter: s.cityKmPerLiter,
+        highwayKmPerLiter: s.highwayKmPerLiter,
+        mixedKmPerLiter: s.mixedKmPerLiter,
         fuelCapacity: s.fuelCapacity,
         currentFuel: s.currentFuel,
         fuelPrice: s.fuelPrice,
@@ -177,7 +188,9 @@ export function Tracker() {
         position.speed !== undefined
           ? addSpeedReading(position.speed, position.timestamp)
           : 0;
-      setCurrentSpeed(speedToKmh(filteredSpeed));
+      const speedKmh = speedToKmh(filteredSpeed);
+      setCurrentSpeed(speedKmh);
+      registerStopSample(position, speedKmh);
 
       const lastPos = lastValidPositionRef.current;
       const isFirstPoint = !lastPos;
@@ -251,9 +264,9 @@ export function Tracker() {
 
           consumeFuel(fuelUsed).then((updated) => {
             setSettings((prev) => ({
+              ...prev,
               fuelCapacity: updated.fuelCapacity,
               currentFuel: updated.currentFuel,
-              fuelPrice: prev.fuelPrice,
             }));
           });
         }
@@ -271,6 +284,7 @@ export function Tracker() {
     position,
     status,
     addPosition,
+    registerStopSample,
     setCurrentSpeed,
     addSpeedReading,
     addDriveModePosition,
@@ -322,6 +336,13 @@ export function Tracker() {
     displayElapsedTime > 0
       ? displayDistance / 1000 / (displayElapsedTime / 3600)
       : 0;
+  const idleWorstCaseRange = settings.currentFuel * settings.cityKmPerLiter;
+  const displayedRange =
+    status === "idle"
+      ? idleWorstCaseRange
+      : isInitialized
+        ? estimatedRange
+        : idleWorstCaseRange;
 
   return (
     <div className="h-dvh w-screen overflow-hidden bg-[#bdd2d9]">
@@ -355,9 +376,11 @@ export function Tracker() {
             elapsedTime={isSimulating ? simulatedElapsedTime : elapsedTime}
             fuelUsed={isRecordingOrSimulating ? totalFuelUsed : 0}
             fuelPrice={settings.fuelPrice}
-            range={
-              isRecordingOrSimulating && isInitialized ? estimatedRange : 250
-            }
+            range={displayedRange}
+            cityKmPerLiter={settings.cityKmPerLiter}
+            highwayKmPerLiter={settings.highwayKmPerLiter}
+            useWorstCaseCity={status === "idle"}
+            consumptionFactors={consumptionFactors}
           />
         </div>
 

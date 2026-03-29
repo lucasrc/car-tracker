@@ -8,7 +8,14 @@ export interface Coordinates {
 
 export type TripStatus = "idle" | "recording" | "paused" | "completed";
 
-export type DriveMode = "city" | "highway";
+export type DriveMode = "city" | "highway" | "mixed";
+
+export interface TripStop {
+  lat: number;
+  lng: number;
+  timestamp: number;
+  durationSeconds: number;
+}
 
 export interface Trip {
   id: string;
@@ -24,12 +31,14 @@ export interface Trip {
   fuelCapacity: number;
   fuelUsed: number;
   totalCost: number;
+  stops?: TripStop[];
 }
 
 export interface Settings {
   id: string;
   cityKmPerLiter: number;
   highwayKmPerLiter: number;
+  mixedKmPerLiter: number;
   fuelCapacity: number;
   currentFuel: number;
   fuelPrice: number;

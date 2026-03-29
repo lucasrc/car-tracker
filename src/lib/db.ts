@@ -6,6 +6,7 @@ const DEFAULT_SETTINGS: Settings = {
   id: "default",
   cityKmPerLiter: 8,
   highwayKmPerLiter: 12,
+  mixedKmPerLiter: 10,
   fuelCapacity: 50,
   currentFuel: 50,
   fuelPrice: 5.0,
@@ -60,6 +61,16 @@ export async function getSettings(): Promise<Settings> {
       const updated = {
         ...settings,
         fuelPrice: DEFAULT_SETTINGS.fuelPrice,
+      } as Settings;
+      await db.settings.put(updated);
+      return updated;
+    }
+    if (typeof s.mixedKmPerLiter === "undefined") {
+      const city = s.cityKmPerLiter || 8;
+      const highway = s.highwayKmPerLiter || 12;
+      const updated = {
+        ...settings,
+        mixedKmPerLiter: (city + highway) / 2,
       } as Settings;
       await db.settings.put(updated);
       return updated;

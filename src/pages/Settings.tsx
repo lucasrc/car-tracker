@@ -121,6 +121,31 @@ export function Settings() {
 
             <div>
               <label className="mb-2 block text-sm font-medium text-gray-700">
+                km/l Misto
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  value={settings?.mixedKmPerLiter || ""}
+                  onChange={(e) =>
+                    handleChange("mixedKmPerLiter", e.target.value)
+                  }
+                  className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 pr-12 text-lg font-medium text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  placeholder="10.0"
+                />
+                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-gray-400">
+                  km/L
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-gray-500">
+                Consumo médio combinando cidade e estrada
+              </p>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-gray-700">
                 km/l na Estrada
               </label>
               <div className="relative">

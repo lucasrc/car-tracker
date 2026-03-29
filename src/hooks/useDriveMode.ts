@@ -1,6 +1,10 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import type { DriveMode, Settings, Coordinates } from "@/types";
 import { getSettings } from "@/lib/db";
+import {
+  useConsumptionModel,
+  type ConsumptionFactors,
+} from "./useConsumptionModel";
 
 interface SpeedReading {
   speed: number;
@@ -14,6 +18,7 @@ interface UseDriveModeReturn {
   estimatedConsumption: number;
   estimatedRange: number;
   currentKmPerLiter: number;
+  consumptionFactors: ConsumptionFactors;
   addPosition: (position: Coordinates) => void;
   reset: () => void;
   isInitialized: boolean;
@@ -29,7 +34,7 @@ const STOPS_PER_km_THRESHOLD = 2;
 
 export function useDriveMode(
   distanceMeters: number,
-  fuelCapacity: number,
+  currentFuel: number,
 ): UseDriveModeReturn {
   const [driveMode, setDriveMode] = useState<DriveMode>("city");
   const [avgSpeed, setAvgSpeed] = useState(0);
@@ -41,6 +46,13 @@ export function useDriveMode(
   const speedReadingsRef = useRef<SpeedReading[]>([]);
   const stopsRef = useRef<{ start: number; end?: number }[]>([]);
   const lastModeChangeRef = useRef<number>(0);
+
+  const {
+    addReading: addConsumptionReading,
+    getMetrics,
+    reset: resetConsumptionModel,
+    calculateAdjustedConsumption,
+  } = useConsumptionModel();
 
   useEffect(() => {
     getSettings().then((s) => {
@@ -107,7 +119,11 @@ export function useDriveMode(
       return "city";
     }
 
-    return "highway";
+    if (stopsPerKm < STOPS_PER_km_THRESHOLD / 2 && avgSpeedMs >= 35 / 3.6) {
+      return "highway";
+    }
+
+    return "mixed";
   }, [avgSpeed, distanceMeters]);
 
   const addPosition = useCallback(
@@ -139,6 +155,7 @@ export function useDriveMode(
         stopsRef.current.push({ start: now });
       }
 
+      addConsumptionReading(position.speed, now);
       calculateMetrics();
 
       const newMode = determineMode();
@@ -147,14 +164,24 @@ export function useDriveMode(
       if (newMode !== driveMode && timeSinceLastChange >= HYSTERESIS_MS) {
         setDriveMode(newMode);
         lastModeChangeRef.current = now;
-        setCurrentKmPerLiter(
-          newMode === "highway"
-            ? settings.highwayKmPerLiter
-            : settings.cityKmPerLiter,
-        );
+        let baseConsumption: number;
+        if (newMode === "highway") {
+          baseConsumption = settings.highwayKmPerLiter;
+        } else if (newMode === "mixed") {
+          baseConsumption = settings.mixedKmPerLiter;
+        } else {
+          baseConsumption = settings.cityKmPerLiter;
+        }
+        setCurrentKmPerLiter(baseConsumption);
       }
     },
-    [settings, calculateMetrics, determineMode, driveMode],
+    [
+      settings,
+      calculateMetrics,
+      determineMode,
+      driveMode,
+      addConsumptionReading,
+    ],
   );
 
   const reset = useCallback(() => {
@@ -167,20 +194,53 @@ export function useDriveMode(
     if (settings) {
       setCurrentKmPerLiter(settings.cityKmPerLiter);
     }
-  }, [settings]);
+    resetConsumptionModel();
+  }, [settings, resetConsumptionModel]);
 
-  const distanceKm = distanceMeters / 1000;
-  const litersUsed =
-    distanceKm > 0 && currentKmPerLiter > 0
-      ? distanceKm / currentKmPerLiter
-      : 0;
-  const litersRemaining = Math.max(0, fuelCapacity - litersUsed);
+  const litersRemaining = Math.max(0, currentFuel);
+
+  const consumptionFactors = useMemo((): ConsumptionFactors => {
+    if (!settings) {
+      return {
+        baseKmPerLiter: currentKmPerLiter,
+        speedFactor: 1,
+        aggressionFactor: 1,
+        idleFactor: 1,
+        stabilityFactor: 1,
+        adjustedKmPerLiter: currentKmPerLiter,
+        isAggressive: false,
+      };
+    }
+
+    const metrics = getMetrics();
+    let baseConsumption: number;
+    if (driveMode === "highway") {
+      baseConsumption = settings.highwayKmPerLiter;
+    } else if (driveMode === "mixed") {
+      baseConsumption = settings.mixedKmPerLiter;
+    } else {
+      baseConsumption = settings.cityKmPerLiter;
+    }
+
+    return calculateAdjustedConsumption(
+      baseConsumption,
+      metrics.avgSpeedKmh,
+      metrics.speedVariance,
+      metrics.idlePercentage,
+    );
+  }, [
+    settings,
+    currentKmPerLiter,
+    driveMode,
+    getMetrics,
+    calculateAdjustedConsumption,
+  ]);
+
   const estimatedRange =
-    currentKmPerLiter > 0 ? litersRemaining * currentKmPerLiter : 0;
-  const estimatedConsumption =
-    distanceKm > 0 && litersUsed > 0
-      ? distanceKm / litersUsed
-      : currentKmPerLiter;
+    consumptionFactors.adjustedKmPerLiter > 0
+      ? litersRemaining * consumptionFactors.adjustedKmPerLiter
+      : 0;
+  const estimatedConsumption = consumptionFactors.adjustedKmPerLiter;
 
   return {
     driveMode,
@@ -189,6 +249,7 @@ export function useDriveMode(
     estimatedConsumption,
     estimatedRange,
     currentKmPerLiter,
+    consumptionFactors,
     addPosition,
     reset,
     isInitialized,

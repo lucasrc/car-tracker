@@ -6,6 +6,33 @@ import { getTripById } from "@/lib/db";
 import { formatDateTime, formatDistance, formatTime } from "@/lib/utils";
 import type { Trip } from "@/types";
 
+function createStopIcon(index: number): L.DivIcon {
+  return new L.DivIcon({
+    className: "map-stop-marker",
+    html: `<div style="width:26px;height:26px;background:#f59e0b;border:3px solid white;border-radius:9999px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(245,158,11,0.45);color:white;font-size:11px;font-weight:700;">${index}</div>`,
+    iconSize: [26, 26],
+    iconAnchor: [13, 13],
+  });
+}
+
+function formatDurationForCard(seconds: number): string {
+  const totalMinutes = Math.max(0, Math.floor(seconds / 60));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (hours > 0) {
+    return `${hours}h ${minutes.toString().padStart(2, "0")}m`;
+  }
+
+  return `${minutes}m`;
+}
+
+function splitDistance(distanceInMeters: number): { value: string; unit: string } {
+  const formatted = formatDistance(distanceInMeters);
+  const [value = "0", unit = "km"] = formatted.split(" ");
+  return { value, unit };
+}
+
 export function TripDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -22,21 +49,21 @@ export function TripDetail() {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-gray-900">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-white/30 border-t-white"></div>
+      <div className="flex min-h-screen items-center justify-center bg-slate-100">
+        <div className="h-10 w-10 animate-spin rounded-full border-4 border-slate-300 border-t-slate-700"></div>
       </div>
     );
   }
 
   if (!trip) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-gray-50 p-4">
-        <p className="text-lg font-semibold text-gray-900">
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-slate-100 p-4">
+        <p className="text-lg font-semibold text-slate-900">
           Viagem não encontrada
         </p>
         <button
           onClick={() => navigate("/history")}
-          className="rounded-full bg-blue-500 px-6 py-2.5 text-sm font-medium text-white"
+          className="rounded-full bg-slate-900 px-6 py-2.5 text-sm font-medium text-white"
         >
           Voltar ao histórico
         </button>
@@ -48,10 +75,15 @@ export function TripDetail() {
     p.lat,
     p.lng,
   ]);
+  const stops = trip.stops || [];
 
   // Use first point as center if available, otherwise fallback
   const mapCenter: [number, number] =
-    pathPositions.length > 0 ? pathPositions[0] : [-23.5505, -46.6333];
+    pathPositions.length > 0
+      ? pathPositions[0]
+      : stops.length > 0
+        ? [stops[0].lat, stops[0].lng]
+        : [-23.5505, -46.6333];
 
   const durationSeconds = trip.endTime
     ? Math.floor(
@@ -69,138 +101,191 @@ export function TripDetail() {
   const fuelUsed = trip.fuelUsed || 0;
   const distanceKm = trip.distanceMeters / 1000;
   const calculatedAvgKmL = fuelUsed > 0 ? distanceKm / fuelUsed : 0;
+  const distance = splitDistance(trip.distanceMeters);
+  const hasMapPath = pathPositions.length > 0;
+  const compactDuration = formatDurationForCard(durationSeconds);
+  const displayAverageSpeed = Number.isFinite(averageSpeed)
+    ? `${Math.round(averageSpeed)} km/h`
+    : "--";
+  const totalStopSeconds = stops.reduce(
+    (acc, stop) => acc + stop.durationSeconds,
+    0,
+  );
+  const averageStopSeconds =
+    stops.length > 0 ? Math.round(totalStopSeconds / stops.length) : 0;
+  const stopRatioPercent =
+    durationSeconds > 0
+      ? Math.max(0, Math.min(100, Math.round((totalStopSeconds / durationSeconds) * 100)))
+      : 0;
 
   return (
-    <div className="min-h-screen pb-24">
-      <div className="h-[50vh] w-full">
-        <MapContainer
-          center={mapCenter}
-          zoom={pathPositions.length > 1 ? 14 : 17}
-          className="h-full w-full"
-          zoomControl={false}
-          attributionControl={false}
-        >
-          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-          {pathPositions.length > 0 && (
-            <>
-              <Polyline
-                positions={pathPositions}
-                color="#2563eb"
-                weight={10}
-                opacity={0.4}
-                lineCap="round"
-                lineJoin="round"
-              />
-              <Polyline
-                positions={pathPositions}
-                color="#3b82f6"
-                weight={5}
-                opacity={1}
-                lineCap="round"
-                lineJoin="round"
-              />
-              <Marker
-                position={pathPositions[0]}
-                icon={
-                  new L.DivIcon({
-                    className: "map-marker",
-                    html: `<div style="width: 20px; height: 20px; background: #22c55e; border: 3px solid white; border-radius: 50%;"></div>`,
-                    iconSize: [20, 20],
-                    iconAnchor: [10, 10],
-                  })
-                }
-              />
-              <Marker
-                position={pathPositions[pathPositions.length - 1]}
-                icon={
-                  new L.DivIcon({
-                    className: "map-marker",
-                    html: `<div style="width: 20px; height: 20px; background: #ef4444; border: 3px solid white; border-radius: 50%;"></div>`,
-                    iconSize: [20, 20],
-                    iconAnchor: [10, 10],
-                  })
-                }
-              />
-            </>
-          )}
-        </MapContainer>
-      </div>
+    <div className="min-h-screen bg-gray-50 px-4 pb-24 pt-6">
+      <div className="mx-auto w-full max-w-sm">
+        <h1 className="text-[31px] font-bold leading-tight text-slate-900">
+          Sua Viagem Finalizada
+        </h1>
 
-      <div className="-mt-6 rounded-t-3xl bg-white px-4 pt-6 shadow-xl">
-        <button
-          onClick={() => navigate("/history")}
-          className="mb-4 flex items-center gap-2 text-sm font-medium text-gray-600"
-        >
-          <svg
-            className="h-5 w-5"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M15 19l-7-7 7-7"
-            />
-          </svg>
-          Voltar
-        </button>
+        <p className="mt-1 text-sm text-slate-500">{formatDateTime(trip.startTime)}</p>
 
-        <p className="mb-4 text-sm text-gray-500">
-          {formatDateTime(trip.startTime)}
-        </p>
+        <div className="mt-4 overflow-hidden rounded-3xl bg-white shadow-xl">
+          <div className="h-[280px] w-full">
+            <MapContainer
+              center={mapCenter}
+              zoom={pathPositions.length > 1 ? 14 : 17}
+              className="h-full w-full"
+              zoomControl={false}
+              attributionControl={false}
+            >
+              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+              {hasMapPath && (
+                <>
+                  <Polyline
+                    positions={pathPositions}
+                    color="#2563eb"
+                    weight={10}
+                    opacity={0.4}
+                    lineCap="round"
+                    lineJoin="round"
+                  />
+                  <Polyline
+                    positions={pathPositions}
+                    color="#3b82f6"
+                    weight={5}
+                    opacity={1}
+                    lineCap="round"
+                    lineJoin="round"
+                  />
+                  <Marker
+                    position={pathPositions[0]}
+                    icon={
+                      new L.DivIcon({
+                        className: "map-marker",
+                        html: `<div style="width: 20px; height: 20px; background: #22c55e; border: 3px solid white; border-radius: 50%;"></div>`,
+                        iconSize: [20, 20],
+                        iconAnchor: [10, 10],
+                      })
+                    }
+                  />
+                  <Marker
+                    position={pathPositions[pathPositions.length - 1]}
+                    icon={
+                      new L.DivIcon({
+                        className: "map-marker",
+                        html: `<div style="width: 20px; height: 20px; background: #ef4444; border: 3px solid white; border-radius: 50%;"></div>`,
+                        iconSize: [20, 20],
+                        iconAnchor: [10, 10],
+                      })
+                    }
+                  />
+                  {stops.map((stop, idx) => (
+                    <Marker
+                      key={`${stop.timestamp}-${idx}`}
+                      position={[stop.lat, stop.lng]}
+                      icon={createStopIcon(idx + 1)}
+                    />
+                  ))}
+                </>
+              )}
+            </MapContainer>
+          </div>
 
-        <div className="grid grid-cols-3 gap-3">
-          <div className="rounded-xl bg-blue-50 p-3 text-center">
-            <p className="text-xs font-medium text-blue-600">Distância</p>
-            <p className="text-lg font-bold text-blue-900">
-              {formatDistance(trip.distanceMeters)}
-            </p>
-          </div>
-          <div className="rounded-xl bg-purple-50 p-3 text-center">
-            <p className="text-xs font-medium text-purple-600">Duração</p>
-            <p className="text-lg font-bold text-purple-900">
-              {formatTime(durationSeconds)}
-            </p>
-          </div>
-          <div className="rounded-xl bg-green-50 p-3 text-center">
-            <p className="text-xs font-medium text-green-600">Vel. Média</p>
-            <p className="text-lg font-bold text-green-900">
-              {Math.round(averageSpeed)} km/h
-            </p>
-          </div>
-        </div>
+          <div className="grid grid-cols-2 gap-3 p-4">
+            <div className="rounded-2xl bg-blue-50 p-3 shadow-sm">
+              <p className="text-xs font-medium uppercase tracking-wide text-blue-600">
+                Distancia Total
+              </p>
+              <div className="mt-1 flex items-end gap-1">
+                <p className="text-4xl font-semibold leading-none text-blue-900">{distance.value}</p>
+                <p className="pb-1 text-base font-medium text-blue-700">{distance.unit}</p>
+              </div>
+            </div>
 
-        <div className="mt-3 grid grid-cols-3 gap-3">
-          <div className="rounded-xl bg-orange-50 p-3 text-center">
-            <p className="text-xs font-medium text-orange-600">Consumo</p>
-            <p className="text-lg font-bold text-orange-900">
-              {fuelUsed.toFixed(2)} L
-            </p>
-          </div>
-          <div className="rounded-xl bg-amber-50 p-3 text-center">
-            <p className="text-xs font-medium text-amber-600">Média km/L</p>
-            <p className="text-lg font-bold text-amber-900">
-              {calculatedAvgKmL.toFixed(1)}
-            </p>
-          </div>
-          <div className="rounded-xl bg-red-50 p-3 text-center">
-            <p className="text-xs font-medium text-red-600">Modo</p>
-            <p className="text-lg font-bold text-red-900">
-              {trip.driveMode === "city" ? "Cidade" : "Estrada"}
-            </p>
-          </div>
-          <div className="rounded-xl bg-emerald-50 p-3 text-center">
-            <p className="text-xs font-medium text-emerald-600">Gasto</p>
-            <p className="text-lg font-bold text-emerald-900">
-              R$ {(trip.totalCost || 0).toFixed(2)}
-            </p>
-          </div>
-          <div className="rounded-xl bg-sky-50 p-3 text-center">
-            <p className="text-xs font-medium text-sky-600">Km Rodado</p>
-            <p className="text-lg font-bold text-sky-900">
-              {distanceKm.toFixed(1)} km
+            <div className="rounded-2xl bg-purple-50 p-3 shadow-sm">
+              <p className="text-xs font-medium text-purple-600">Tempo de Viagem</p>
+              <p className="mt-2 text-4xl font-semibold leading-none text-purple-900">
+                {compactDuration}
+              </p>
+            </div>
+
+            <div className="rounded-2xl bg-green-50 p-3 shadow-sm">
+              <p className="text-xs font-medium text-green-600">Velocidade Media</p>
+              <p className="mt-1 text-3xl font-semibold leading-none text-green-900">
+                {displayAverageSpeed}
+              </p>
+            </div>
+
+            <div className="rounded-2xl bg-gray-100 p-3 shadow-sm">
+              <p className="text-xs font-medium text-gray-500">Elevacao</p>
+              <p className="mt-1 text-3xl font-semibold leading-none text-gray-900">--</p>
+            </div>
+
+            <div className="col-span-2 rounded-2xl bg-gray-100 p-3 shadow-sm">
+              <p className="text-sm font-medium text-gray-700">
+                Paradas: {stops.length}
+              </p>
+              <div className="mt-3 h-2 rounded-full bg-gray-300">
+                <div
+                  className="h-full rounded-full bg-blue-500"
+                  style={{ width: `${stopRatioPercent}%` }}
+                />
+              </div>
+              <div className="mt-2 flex items-center justify-between text-xs text-gray-500">
+                <span>0%</span>
+                <span>
+                  {stops.length > 0
+                    ? `${stopRatioPercent}% do tempo parado • Media ${averageStopSeconds}s`
+                    : "Sem paradas registradas"}
+                </span>
+                <span>100%</span>
+              </div>
+            </div>
+
+            <div className="col-span-2 grid grid-cols-2 gap-3">
+              <div className="rounded-2xl bg-orange-50 p-3 shadow-sm">
+                <p className="text-xs font-medium text-orange-600">Consumo</p>
+                <p className="mt-1 text-xl font-semibold text-orange-900">
+                  {fuelUsed.toFixed(2)} L
+                </p>
+              </div>
+              <div className="rounded-2xl bg-amber-50 p-3 shadow-sm">
+                <p className="text-xs font-medium text-amber-600">Media km/L</p>
+                <p className="mt-1 text-xl font-semibold text-amber-900">
+                  {calculatedAvgKmL.toFixed(1)}
+                </p>
+              </div>
+              <div className="rounded-2xl bg-red-50 p-3 shadow-sm">
+                <p className="text-xs font-medium text-red-600">Modo</p>
+                <p className="mt-1 text-xl font-semibold text-red-900">
+                  {trip.driveMode === "city"
+                    ? "Cidade"
+                    : trip.driveMode === "highway"
+                      ? "Estrada"
+                      : "Misto"}
+                </p>
+              </div>
+              <div className="rounded-2xl bg-emerald-50 p-3 shadow-sm">
+                <p className="text-xs font-medium text-emerald-600">Gasto</p>
+                <p className="mt-1 text-xl font-semibold text-emerald-900">
+                  R$ {(trip.totalCost || 0).toFixed(2)}
+                </p>
+              </div>
+              <div className="col-span-2 rounded-2xl bg-sky-50 p-3 shadow-sm">
+                <p className="text-xs font-medium text-sky-600">Km Rodado</p>
+                <p className="mt-1 text-xl font-semibold text-sky-900">
+                  {distanceKm.toFixed(1)} km
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => navigate("/history")}
+              className="mt-2 w-full rounded-full bg-blue-500 px-5 py-3 text-sm font-semibold text-white shadow-md"
+            >
+              Voltar ao Historico
+            </button>
+
+            <p className="mt-3 text-center text-xs text-gray-500">
+              Duracao completa: {formatTime(durationSeconds)}
             </p>
           </div>
         </div>
