@@ -17,6 +17,8 @@ interface SummaryData {
   refuelCost: number;
   totalCost: number;
   avgKmPerLiter: number;
+  costPerKm: number;
+  avgCostPerTrip: number;
 }
 
 export function TripSummary({ startDate, endDate }: TripSummaryProps) {
@@ -45,6 +47,9 @@ export function TripSummary({ startDate, endDate }: TripSummaryProps) {
       const totalCost = tripCost + refuelCost;
       const avgKmPerLiter =
         totalFuelUsed > 0 ? totalDistance / 1000 / totalFuelUsed : 0;
+      const costPerKm =
+        totalDistance > 0 ? totalCost / (totalDistance / 1000) : 0;
+      const avgCostPerTrip = trips.length > 0 ? totalCost / trips.length : 0;
 
       setSummary({
         totalTrips: trips.length,
@@ -56,6 +61,8 @@ export function TripSummary({ startDate, endDate }: TripSummaryProps) {
         refuelCost,
         totalCost,
         avgKmPerLiter,
+        costPerKm,
+        avgCostPerTrip,
       });
     } catch (err) {
       console.error("Error loading summary:", err);
@@ -129,6 +136,20 @@ export function TripSummary({ startDate, endDate }: TripSummaryProps) {
           <p className="text-xs text-white/70">Km Rodado</p>
           <p className="text-xl font-bold text-white">
             {(summary.totalDistance / 1000).toFixed(1)} km
+          </p>
+        </div>
+
+        <div className="rounded-xl bg-white/20 p-3">
+          <p className="text-xs text-white/70">Custo/km</p>
+          <p className="text-xl font-bold text-white">
+            R$ {summary.costPerKm.toFixed(2)}
+          </p>
+        </div>
+
+        <div className="rounded-xl bg-white/20 p-3">
+          <p className="text-xs text-white/70">Média por Viagem</p>
+          <p className="text-xl font-bold text-white">
+            R$ {summary.avgCostPerTrip.toFixed(2)}
           </p>
         </div>
       </div>

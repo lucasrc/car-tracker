@@ -4,6 +4,9 @@ import { TripCard } from "@/components/tracker/TripCard";
 import { RefuelCard } from "@/components/history/RefuelCard";
 import { TripSummary } from "@/components/history/TripSummary";
 import { FuelCharts } from "@/components/history/FuelCharts";
+import { TimeAnalysis } from "@/components/history/TimeAnalysis";
+import { SpeedAnalysis } from "@/components/history/SpeedAnalysis";
+import { UsagePatterns } from "@/components/history/UsagePatterns";
 import { DateRangePicker } from "@/components/ui/DateRangePicker";
 import { deleteTrip, getTripsInPeriod, getRefuelsInPeriod } from "@/lib/db";
 import { normalizeDateRange } from "@/lib/utils";
@@ -189,13 +192,26 @@ export function History() {
             </div>
             <TripSummary startDate={startDate} endDate={endDate} />
             {trips.length > 0 && (
-              <div className="mt-4">
-                <FuelCharts
+              <>
+                <div className="mt-4">
+                  <FuelCharts
+                    trips={trips}
+                    startDate={startDate}
+                    endDate={endDate}
+                  />
+                </div>
+                <TimeAnalysis
                   trips={trips}
                   startDate={startDate}
                   endDate={endDate}
                 />
-              </div>
+                <SpeedAnalysis
+                  trips={trips}
+                  startDate={startDate}
+                  endDate={endDate}
+                />
+                <UsagePatterns trips={trips} />
+              </>
             )}
           </>
         )}
