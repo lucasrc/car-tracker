@@ -28,64 +28,70 @@ export function TripSummary({ startDate, endDate }: TripSummaryProps) {
   const [summary, setSummary] = useState<SummaryData | null>(null);
 
   useEffect(() => {
+    const loadSummary = async () => {
+      setLoading(true);
+      try {
+        const { start, end } = normalizeDateRange(startDate, endDate);
+        const trips = await getTripsInPeriod(start, end);
+        const refuels = await getRefuelsInPeriod(start, end);
+
+        const totalDistance = trips.reduce(
+          (acc, t) => acc + t.distanceMeters,
+          0,
+        );
+        const totalFuelUsed = trips.reduce(
+          (acc, t) => acc + (t.fuelUsed || 0),
+          0,
+        );
+        const totalLitersRefueled = refuels.reduce(
+          (acc, r) => acc + r.amount,
+          0,
+        );
+        const tripCost = trips.reduce((acc, t) => acc + (t.totalCost || 0), 0);
+        const refuelCost = refuels.reduce((acc, r) => acc + r.totalCost, 0);
+        const totalCost = tripCost + refuelCost;
+        const avgKmPerLiter =
+          totalFuelUsed > 0 ? totalDistance / 1000 / totalFuelUsed : 0;
+        const costPerKm =
+          totalDistance > 0 ? totalCost / (totalDistance / 1000) : 0;
+        const avgCostPerTrip = trips.length > 0 ? totalCost / trips.length : 0;
+
+        const tripsWithPenalty = trips.filter(
+          (t) => t.consumptionBreakdown && t.consumptionBreakdown.extraCost > 0,
+        );
+        const totalPenalty = tripsWithPenalty.reduce(
+          (acc, t) => acc + (t.consumptionBreakdown?.extraCost || 0),
+          0,
+        );
+        const avgPenalty =
+          tripsWithPenalty.length > 0
+            ? totalPenalty / tripsWithPenalty.length
+            : 0;
+
+        setSummary({
+          totalTrips: trips.length,
+          totalDistance,
+          totalFuelUsed,
+          totalRefuels: refuels.length,
+          totalLitersRefueled,
+          tripCost,
+          refuelCost,
+          totalCost,
+          avgKmPerLiter,
+          costPerKm,
+          avgCostPerTrip,
+          avgPenalty,
+          totalPenalty,
+        });
+      } catch (err) {
+        console.error("Error loading summary:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
     loadSummary();
   }, [startDate, endDate]);
-
-  const loadSummary = async () => {
-    setLoading(true);
-    try {
-      const { start, end } = normalizeDateRange(startDate, endDate);
-      const trips = await getTripsInPeriod(start, end);
-      const refuels = await getRefuelsInPeriod(start, end);
-
-      const totalDistance = trips.reduce((acc, t) => acc + t.distanceMeters, 0);
-      const totalFuelUsed = trips.reduce(
-        (acc, t) => acc + (t.fuelUsed || 0),
-        0,
-      );
-      const totalLitersRefueled = refuels.reduce((acc, r) => acc + r.amount, 0);
-      const tripCost = trips.reduce((acc, t) => acc + (t.totalCost || 0), 0);
-      const refuelCost = refuels.reduce((acc, r) => acc + r.totalCost, 0);
-      const totalCost = tripCost + refuelCost;
-      const avgKmPerLiter =
-        totalFuelUsed > 0 ? totalDistance / 1000 / totalFuelUsed : 0;
-      const costPerKm =
-        totalDistance > 0 ? totalCost / (totalDistance / 1000) : 0;
-      const avgCostPerTrip = trips.length > 0 ? totalCost / trips.length : 0;
-
-      const tripsWithPenalty = trips.filter(
-        (t) => t.consumptionBreakdown && t.consumptionBreakdown.extraCost > 0,
-      );
-      const totalPenalty = tripsWithPenalty.reduce(
-        (acc, t) => acc + (t.consumptionBreakdown?.extraCost || 0),
-        0,
-      );
-      const avgPenalty =
-        tripsWithPenalty.length > 0
-          ? totalPenalty / tripsWithPenalty.length
-          : 0;
-
-      setSummary({
-        totalTrips: trips.length,
-        totalDistance,
-        totalFuelUsed,
-        totalRefuels: refuels.length,
-        totalLitersRefueled,
-        tripCost,
-        refuelCost,
-        totalCost,
-        avgKmPerLiter,
-        costPerKm,
-        avgCostPerTrip,
-        avgPenalty,
-        totalPenalty,
-      });
-    } catch (err) {
-      console.error("Error loading summary:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   if (loading) {
     return (

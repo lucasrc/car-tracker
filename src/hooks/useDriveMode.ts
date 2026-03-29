@@ -215,6 +215,10 @@ export function useDriveMode(
       determineMode,
       driveMode,
       addConsumptionReading,
+      addSample,
+      getMetrics,
+      calculateAdjustedConsumption,
+      currentKmPerLiter,
     ],
   );
 
