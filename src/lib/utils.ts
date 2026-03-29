@@ -61,6 +61,47 @@ export function generateId(): string {
   return `trip_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 }
 
+export function startOfDay(date: Date): Date {
+  return new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+    0,
+    0,
+    0,
+    0,
+  );
+}
+
+export function endOfDay(date: Date): Date {
+  return new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+    23,
+    59,
+    59,
+    999,
+  );
+}
+
+export function normalizeDateRange(
+  startDate: Date,
+  endDate: Date,
+): { start: Date; end: Date } {
+  const start = startOfDay(startDate);
+  const end = endOfDay(endDate);
+
+  if (start.getTime() <= end.getTime()) {
+    return { start, end };
+  }
+
+  return {
+    start: startOfDay(endDate),
+    end: endOfDay(startDate),
+  };
+}
+
 export function calculateHeading(
   fromLat: number,
   fromLng: number,

@@ -370,7 +370,7 @@ export function Tracker() {
 
       {/* Main column layout */}
       <div className="relative z-10 flex h-dvh flex-col">
-        <div className="pointer-events-auto pt-3">
+        <div className="pointer-events-auto pt-2">
           <TripInfo
             distance={isSimulating ? simulatedDistance : stats.distanceMeters}
             elapsedTime={isSimulating ? simulatedElapsedTime : elapsedTime}
@@ -384,17 +384,17 @@ export function Tracker() {
           />
         </div>
 
-        <div className="pointer-events-none flex flex-1 items-center justify-center px-3 pb-1 pt-1">
-          <Speedometer
-            currentSpeed={displaySpeed}
-            maxSpeed={simulatedMaxSpeed}
-            avgSpeed={avgSpeed}
-          />
-        </div>
+        <div className="pointer-events-none flex-1" />
 
-        <div className="pointer-events-auto bg-gradient-to-t from-black/90 via-black/70 to-transparent pb-24 pt-5">
-          <div className="flex items-center justify-center">
-            <div>
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-end pb-24">
+          <div className="flex flex-col items-center gap-4">
+            <Speedometer
+              currentSpeed={displaySpeed}
+              maxSpeed={simulatedMaxSpeed}
+              avgSpeed={avgSpeed}
+            />
+
+            <div className="pointer-events-auto pb-16 pt-4">
               <TripControls
                 status={status}
                 battery={battery}

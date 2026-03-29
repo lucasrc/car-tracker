@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { getTripsInPeriod, getRefuelsInPeriod } from "@/lib/db";
+import { normalizeDateRange } from "@/lib/utils";
 
 interface TripSummaryProps {
   startDate: Date;
@@ -27,8 +28,9 @@ export function TripSummary({ startDate, endDate }: TripSummaryProps) {
   const loadSummary = async () => {
     setLoading(true);
     try {
-      const trips = await getTripsInPeriod(startDate, endDate);
-      const refuels = await getRefuelsInPeriod(startDate, endDate);
+      const { start, end } = normalizeDateRange(startDate, endDate);
+      const trips = await getTripsInPeriod(start, end);
+      const refuels = await getRefuelsInPeriod(start, end);
 
       const totalDistance = trips.reduce((acc, t) => acc + t.distanceMeters, 0);
       const totalFuelUsed = trips.reduce(

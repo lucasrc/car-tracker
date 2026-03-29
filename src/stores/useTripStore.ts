@@ -158,8 +158,8 @@ export const useTripStore = create<TripStore>((set, get) => ({
     const durationHours = elapsedTime / 3600;
     const avgSpeed = durationHours > 0 ? distanceKm / durationHours : 0;
     const consumption = trip.consumption || 0;
-    const fuelUsed = consumption > 0 ? distanceKm / consumption : 0;
-    const totalCost = totalFuelUsed * fuelPrice;
+    const fuelUsed = Math.max(totalFuelUsed, 0);
+    const totalCost = fuelUsed * fuelPrice;
 
     const completedTrip: Trip = {
       ...tripWithStops,

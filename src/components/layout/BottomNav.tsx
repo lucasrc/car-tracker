@@ -7,24 +7,31 @@ export function BottomNav() {
   const isReportTab = isHistoryRoute && searchParams.get("tab") === "report";
   const isHistoryTab = isHistoryRoute && !isReportTab;
 
-  const iconClassName = "h-6 w-6";
+  const iconClassName = "h-5 w-5";
 
   const getIconContainerClassName = (isActive: boolean) =>
-    `rounded-full p-2.5 transition-colors ${
-      isActive ? "bg-emerald-200/85 text-emerald-700" : "bg-white/65 text-slate-500"
+    `rounded-full p-2 transition-colors ${
+      isActive
+        ? "bg-emerald-200/85 text-emerald-700"
+        : "bg-white/65 text-slate-500"
     }`;
 
   const getLabelClassName = (isActive: boolean) =>
-    `text-xs ${isActive ? "font-semibold text-emerald-700" : "font-medium text-slate-600"}`;
+    `text-[10px] ${isActive ? "font-semibold text-emerald-700" : "font-medium text-slate-600"}`;
 
   return (
-    <div className="pointer-events-none fixed bottom-0 left-0 right-0 z-50 px-3 pb-2">
-      <nav className="pointer-events-auto mx-auto flex w-full max-w-md items-center justify-around rounded-[24px] border border-white/70 bg-[#e4ecef]/88 px-2 py-1.5 shadow-[0_16px_34px_rgba(15,23,42,0.15)] backdrop-blur-xl">
+    <div className="pointer-events-none fixed bottom-0 left-0 right-0 z-50 px-3 pb-1.5">
+      <nav className="pointer-events-auto mx-auto flex w-full max-w-md items-center justify-around rounded-[22px] border border-white/70 bg-[#e4ecef]/88 px-1.5 py-1 shadow-[0_16px_34px_rgba(15,23,42,0.15)] backdrop-blur-xl">
         <NavLink to="/tracker">
           {({ isActive }) => (
-            <div className="flex min-w-[84px] flex-col items-center gap-0.5 px-2 py-0.5">
+            <div className="flex min-w-[72px] flex-col items-center gap-0.5 px-1.5 py-0.5">
               <div className={getIconContainerClassName(isActive)}>
-                <svg className={iconClassName} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg
+                  className={iconClassName}
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -33,18 +40,21 @@ export function BottomNav() {
                   />
                 </svg>
               </div>
-              <span className={getLabelClassName(isActive)}>
-                Rastrear
-              </span>
+              <span className={getLabelClassName(isActive)}>Rastrear</span>
             </div>
           )}
         </NavLink>
 
         <NavLink to="/history">
           {() => (
-            <div className="flex min-w-[84px] flex-col items-center gap-0.5 px-2 py-0.5">
+            <div className="flex min-w-[72px] flex-col items-center gap-0.5 px-1.5 py-0.5">
               <div className={getIconContainerClassName(isHistoryTab)}>
-                <svg className={iconClassName} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg
+                  className={iconClassName}
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -60,9 +70,14 @@ export function BottomNav() {
 
         <NavLink to="/history?tab=report">
           {() => (
-            <div className="flex min-w-[84px] flex-col items-center gap-0.5 px-2 py-0.5">
+            <div className="flex min-w-[72px] flex-col items-center gap-0.5 px-1.5 py-0.5">
               <div className={getIconContainerClassName(isReportTab)}>
-                <svg className={iconClassName} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg
+                  className={iconClassName}
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -78,9 +93,14 @@ export function BottomNav() {
 
         <NavLink to="/settings">
           {({ isActive }) => (
-            <div className="flex min-w-[84px] flex-col items-center gap-0.5 px-2 py-0.5">
+            <div className="flex min-w-[72px] flex-col items-center gap-0.5 px-1.5 py-0.5">
               <div className={getIconContainerClassName(isActive)}>
-                <svg className={iconClassName} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg
+                  className={iconClassName}
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -95,9 +115,7 @@ export function BottomNav() {
                   />
                 </svg>
               </div>
-              <span className={getLabelClassName(isActive)}>
-                Config
-              </span>
+              <span className={getLabelClassName(isActive)}>Config</span>
             </div>
           )}
         </NavLink>

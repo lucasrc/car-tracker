@@ -214,11 +214,6 @@ export function TripDetail() {
               </p>
             </div>
 
-            <div className="rounded-2xl bg-gray-100 p-3 shadow-sm">
-              <p className="text-xs font-medium text-gray-500">Elevacao</p>
-              <p className="mt-1 text-3xl font-semibold leading-none text-gray-900">--</p>
-            </div>
-
             <div className="col-span-2 rounded-2xl bg-gray-100 p-3 shadow-sm">
               <p className="text-sm font-medium text-gray-700">
                 Paradas: {stops.length}

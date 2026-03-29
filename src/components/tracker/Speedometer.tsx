@@ -1,15 +1,15 @@
 import { useId } from "react";
 
-const CX = 140;
-const CY = 140;
-const ARC_R = 114;
-const ARC_STROKE = 14;
+const CX = 120;
+const CY = 120;
+const ARC_R = 98;
+const ARC_STROKE = 12;
 const START_DEG = 136;
 const SWEEP = 268;
 const MAX_SPEED = 180;
 const NUM_SEGS = 52;
 const SEG_DEG = SWEEP / NUM_SEGS;
-const TICK_LABEL_R = ARC_R + 12;
+const TICK_LABEL_R = ARC_R + 10;
 
 const KEY_COLORS = ["#22c55e", "#84cc16", "#eab308", "#f97316", "#ef4444"];
 
@@ -35,7 +35,10 @@ function deg2rad(d: number): number {
 }
 
 function polar(r: number, deg: number): { x: number; y: number } {
-  return { x: CX + r * Math.cos(deg2rad(deg)), y: CY + r * Math.sin(deg2rad(deg)) };
+  return {
+    x: CX + r * Math.cos(deg2rad(deg)),
+    y: CY + r * Math.sin(deg2rad(deg)),
+  };
 }
 
 function arcPath(r: number, startDeg: number, endDeg: number): string {
@@ -46,7 +49,9 @@ function arcPath(r: number, startDeg: number, endDeg: number): string {
 }
 
 function speedToAngle(speed: number): number {
-  return START_DEG + (Math.min(Math.max(speed, 0), MAX_SPEED) / MAX_SPEED) * SWEEP;
+  return (
+    START_DEG + (Math.min(Math.max(speed, 0), MAX_SPEED) / MAX_SPEED) * SWEEP
+  );
 }
 
 function speedColor(speed: number): string {
@@ -60,7 +65,10 @@ const SEGMENTS = Array.from({ length: NUM_SEGS }, (_, i) => ({
 }));
 
 const TICK_VALUES = [0, 20, 40, 60, 80, 100, 120, 140, 160, 180];
-const FRACTION_TICK_VALUES = Array.from({ length: MAX_SPEED / 5 + 1 }, (_, i) => i * 5);
+const FRACTION_TICK_VALUES = Array.from(
+  { length: MAX_SPEED / 5 + 1 },
+  (_, i) => i * 5,
+);
 
 const TICKS = TICK_VALUES.map((val) => {
   const deg = speedToAngle(val);
@@ -88,30 +96,45 @@ interface SpeedometerProps {
   avgSpeed: number;
 }
 
-export function Speedometer({ currentSpeed, maxSpeed, avgSpeed }: SpeedometerProps) {
+export function Speedometer({
+  currentSpeed,
+  maxSpeed,
+  avgSpeed,
+}: SpeedometerProps) {
   const svgId = useId();
   const color = speedColor(currentSpeed);
   const markerAngle = speedToAngle(currentSpeed);
   const markerPoint = polar(ARC_R, markerAngle);
 
   // Curved helper paths for labels that should track the inner ring.
-  const avgLabelPath = arcPath(88, 146, 212);
-  const maxLabelPath = arcPath(88, 328, 394);
+  const avgLabelPath = arcPath(76, 146, 212);
+  const maxLabelPath = arcPath(76, 328, 394);
 
   return (
     <div className="flex items-center justify-center">
       <div
         className="relative rounded-full border border-white/32 bg-black/32 shadow-[0_22px_48px_rgba(0,0,0,0.36)] backdrop-blur-[3px]"
-        style={{ width: "min(84vw, 345px)", height: "min(84vw, 345px)" }}
+        style={{ width: "min(72vw, 300px)", height: "min(72vw, 300px)" }}
       >
         <div className="pointer-events-none absolute inset-0 rounded-full bg-[radial-gradient(circle,rgba(2,6,23,0.08)_0%,rgba(2,6,23,0.34)_72%,rgba(2,6,23,0.5)_100%)]" />
         <div className="pointer-events-none absolute inset-[11.5%] rounded-full border border-white/30 bg-black/18" />
-        <svg viewBox="0 0 280 280" className="h-full w-full">
+        <svg viewBox="0 0 240 240" className="h-full w-full">
           <defs>
             <path id={`${svgId}-avg-path`} d={avgLabelPath} />
             <path id={`${svgId}-max-path`} d={maxLabelPath} />
-            <filter id={`${svgId}-contrast-shadow`} x="-40%" y="-40%" width="180%" height="180%">
-              <feDropShadow dx="0" dy="1" stdDeviation="1" floodColor="rgba(0,0,0,0.68)" />
+            <filter
+              id={`${svgId}-contrast-shadow`}
+              x="-40%"
+              y="-40%"
+              width="180%"
+              height="180%"
+            >
+              <feDropShadow
+                dx="0"
+                dy="1"
+                stdDeviation="1"
+                floodColor="rgba(0,0,0,0.68)"
+              />
             </filter>
           </defs>
 
@@ -119,7 +142,7 @@ export function Speedometer({ currentSpeed, maxSpeed, avgSpeed }: SpeedometerPro
             d={arcPath(ARC_R, START_DEG, START_DEG + SWEEP)}
             fill="none"
             stroke="rgba(255,255,255,0.34)"
-            strokeWidth={13}
+            strokeWidth={11}
             strokeLinecap="round"
           />
 
@@ -137,17 +160,17 @@ export function Speedometer({ currentSpeed, maxSpeed, avgSpeed }: SpeedometerPro
 
           <g filter={`url(#${svgId}-contrast-shadow)`}>
             {FRACTION_TICKS.map(({ val, outer, inner, isMain }) => (
-            <line
-              key={`fraction-${val}`}
-              x1={outer.x}
-              y1={outer.y}
-              x2={inner.x}
-              y2={inner.y}
-              stroke="rgba(255,255,255,0.98)"
-              strokeWidth={isMain ? 1.9 : 1.25}
-              strokeLinecap="round"
-              opacity={isMain ? 0.98 : 0.86}
-            />
+              <line
+                key={`fraction-${val}`}
+                x1={outer.x}
+                y1={outer.y}
+                x2={inner.x}
+                y2={inner.y}
+                stroke="rgba(255,255,255,0.98)"
+                strokeWidth={isMain ? 1.6 : 1.1}
+                strokeLinecap="round"
+                opacity={isMain ? 0.98 : 0.86}
+              />
             ))}
           </g>
 
@@ -158,10 +181,10 @@ export function Speedometer({ currentSpeed, maxSpeed, avgSpeed }: SpeedometerPro
               y={label.y}
               textAnchor="middle"
               dominantBaseline="central"
-              fontSize="9"
+              fontSize="8"
               fill="rgba(255,255,255,1)"
               stroke="rgba(2,6,23,0.85)"
-              strokeWidth="0.8"
+              strokeWidth="0.7"
               paintOrder="stroke"
               fontFamily="system-ui, sans-serif"
               fontWeight="700"
@@ -172,52 +195,79 @@ export function Speedometer({ currentSpeed, maxSpeed, avgSpeed }: SpeedometerPro
           ))}
 
           <text
-            fontSize="9.5"
+            fontSize="8.5"
             fill="rgba(220,252,231,0.99)"
             stroke="rgba(2,6,23,0.82)"
-            strokeWidth="0.58"
+            strokeWidth="0.5"
             paintOrder="stroke"
             fontFamily="system-ui, sans-serif"
             fontWeight="700"
-            letterSpacing="0.3"
+            letterSpacing="0.25"
             filter={`url(#${svgId}-contrast-shadow)`}
           >
-            <textPath href={`#${svgId}-avg-path`} startOffset="50%" textAnchor="middle">
+            <textPath
+              href={`#${svgId}-avg-path`}
+              startOffset="50%"
+              textAnchor="middle"
+            >
               Vel. Media: {Math.round(avgSpeed)} km/h
             </textPath>
           </text>
 
           <text
-            fontSize="9.5"
+            fontSize="8.5"
             fill="rgba(255,255,255,0.98)"
             stroke="rgba(2,6,23,0.82)"
-            strokeWidth="0.58"
+            strokeWidth="0.5"
             paintOrder="stroke"
             fontFamily="system-ui, sans-serif"
             fontWeight="700"
-            letterSpacing="0.3"
+            letterSpacing="0.25"
             filter={`url(#${svgId}-contrast-shadow)`}
           >
-            <textPath href={`#${svgId}-max-path`} startOffset="50%" textAnchor="middle">
+            <textPath
+              href={`#${svgId}-max-path`}
+              startOffset="50%"
+              textAnchor="middle"
+            >
               Vel. Max: {Math.round(maxSpeed)} km/h
             </textPath>
           </text>
 
-          <circle cx={markerPoint.x} cy={markerPoint.y} r="8" fill="rgba(255,255,255,0.18)" />
-          <circle cx={markerPoint.x} cy={markerPoint.y} r="5.2" fill={color} stroke="rgba(255,255,255,0.92)" strokeWidth="1.8" />
+          <circle
+            cx={markerPoint.x}
+            cy={markerPoint.y}
+            r="7"
+            fill="rgba(255,255,255,0.18)"
+          />
+          <circle
+            cx={markerPoint.x}
+            cy={markerPoint.y}
+            r="4.5"
+            fill={color}
+            stroke="rgba(255,255,255,0.92)"
+            strokeWidth="1.5"
+          />
 
-          <circle cx={CX} cy={CY} r="71" fill="rgba(9,22,33,0.2)" stroke="rgba(255,255,255,0.2)" strokeWidth="1.3" />
+          <circle
+            cx={CX}
+            cy={CY}
+            r="62"
+            fill="rgba(9,22,33,0.2)"
+            stroke="rgba(255,255,255,0.2)"
+            strokeWidth="1.2"
+          />
 
           <text
             x={CX}
-            y={CY - 6}
+            y={CY - 5}
             textAnchor="middle"
             dominantBaseline="central"
-            fontSize="92"
+            fontSize="80"
             fontWeight="bold"
             fill="rgba(255,255,255,1)"
             stroke="rgba(34,197,94,0.9)"
-            strokeWidth="2.15"
+            strokeWidth="1.8"
             paintOrder="stroke"
             fontFamily="system-ui, sans-serif"
             filter={`url(#${svgId}-contrast-shadow)`}
@@ -227,14 +277,14 @@ export function Speedometer({ currentSpeed, maxSpeed, avgSpeed }: SpeedometerPro
 
           <text
             x={CX}
-            y={CY + 58}
+            y={CY + 50}
             textAnchor="middle"
-            fontSize="21"
+            fontSize="18"
             fill="rgba(255,255,255,0.95)"
             fontFamily="system-ui, sans-serif"
             fontWeight="700"
             stroke="rgba(2,6,23,0.8)"
-            strokeWidth="0.5"
+            strokeWidth="0.45"
             paintOrder="stroke"
             filter={`url(#${svgId}-contrast-shadow)`}
           >

@@ -4,7 +4,8 @@ import { TripCard } from "@/components/tracker/TripCard";
 import { TripSummary } from "@/components/history/TripSummary";
 import { FuelCharts } from "@/components/history/FuelCharts";
 import { DateRangePicker } from "@/components/ui/DateRangePicker";
-import { deleteTrip, getAllTrips } from "@/lib/db";
+import { deleteTrip, getTripsInPeriod } from "@/lib/db";
+import { normalizeDateRange } from "@/lib/utils";
 import type { Trip } from "@/types";
 
 export function History() {
@@ -20,21 +21,15 @@ export function History() {
 
   const loadTrips = useCallback(async () => {
     try {
-      const allTrips = await getAllTrips();
-      const completedTrips = allTrips.filter((t) => t.status === "completed");
-
-      const startTime = startDate.getTime();
-      const filteredTrips = completedTrips.filter(
-        (t) => new Date(t.startTime).getTime() >= startTime,
-      );
-
+      const { start, end } = normalizeDateRange(startDate, endDate);
+      const filteredTrips = await getTripsInPeriod(start, end);
       setTrips(filteredTrips);
     } catch (err) {
       console.error("Error loading trips:", err);
     } finally {
       setLoading(false);
     }
-  }, [startDate]);
+  }, [startDate, endDate]);
 
   useEffect(() => {
     loadTrips();
