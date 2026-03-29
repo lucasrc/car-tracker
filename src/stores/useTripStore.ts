@@ -194,7 +194,7 @@ export const useTripStore = create<TripStore>((set, get) => ({
 
   tick: () => {
     const { elapsedTime, status } = get();
-    if (status === "idle") return;
+    if (status !== "recording") return;
 
     set({ elapsedTime: elapsedTime + 1 });
   },
@@ -208,25 +208,34 @@ export const useTripStore = create<TripStore>((set, get) => ({
       return;
     }
 
+    const recoveredTrip: Trip =
+      savedTrip.status === "recording"
+        ? { ...savedTrip, status: "paused" }
+        : savedTrip;
+
+    if (recoveredTrip !== savedTrip) {
+      await saveCurrentTrip(recoveredTrip);
+    }
+
     const stats: TripStats = {
-      distanceMeters: savedTrip.distanceMeters,
-      maxSpeed: savedTrip.maxSpeed,
-      durationSeconds: savedTrip.startTime
+      distanceMeters: recoveredTrip.distanceMeters,
+      maxSpeed: recoveredTrip.maxSpeed,
+      durationSeconds: recoveredTrip.startTime
         ? Math.floor(
-            (Date.now() - new Date(savedTrip.startTime).getTime()) / 1000,
+            (Date.now() - new Date(recoveredTrip.startTime).getTime()) / 1000,
           )
         : 0,
     };
 
-    const elapsedTime = savedTrip.startTime
+    const elapsedTime = recoveredTrip.startTime
       ? Math.floor(
-          (Date.now() - new Date(savedTrip.startTime).getTime()) / 1000,
+          (Date.now() - new Date(recoveredTrip.startTime).getTime()) / 1000,
         )
       : 0;
 
     set({
-      trip: savedTrip,
-      status: savedTrip.status,
+      trip: recoveredTrip,
+      status: recoveredTrip.status,
       stats,
       elapsedTime,
     });

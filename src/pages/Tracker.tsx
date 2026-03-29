@@ -314,11 +314,13 @@ export function Tracker() {
     }
   }, [simulatedPath, isSimulating, currentKmPerLiter]);
 
-  const displayDistance = isSimulating ? simulatedDistance : stats.distanceMeters;
+  const displayDistance = isSimulating
+    ? simulatedDistance
+    : stats.distanceMeters;
   const displayElapsedTime = isSimulating ? simulatedElapsedTime : elapsedTime;
   const avgSpeed =
     displayElapsedTime > 0
-      ? (displayDistance / 1000) / (displayElapsedTime / 3600)
+      ? displayDistance / 1000 / (displayElapsedTime / 3600)
       : 0;
 
   return (
@@ -353,7 +355,9 @@ export function Tracker() {
             elapsedTime={isSimulating ? simulatedElapsedTime : elapsedTime}
             fuelUsed={isRecordingOrSimulating ? totalFuelUsed : 0}
             fuelPrice={settings.fuelPrice}
-            range={isRecordingOrSimulating && isInitialized ? estimatedRange : 250}
+            range={
+              isRecordingOrSimulating && isInitialized ? estimatedRange : 250
+            }
           />
         </div>
 
@@ -365,22 +369,9 @@ export function Tracker() {
           />
         </div>
 
-        <div className="pointer-events-auto px-4 pb-20">
-          <TripControls
-            status={status}
-            battery={battery}
-            onStart={handleStart}
-            onPause={handlePause}
-            onResume={handleResume}
-            onStop={handleStop}
-          />
-        <div className="pointer-events-auto bg-gradient-to-t from-black/90 via-black/70 to-transparent pb-8 pt-8">
-          <div className="flex items-center justify-between">
-            <Speedometer
-              currentSpeed={displaySpeed}
-              maxSpeed={simulatedMaxSpeed}
-            />
-            <div className="pr-4">
+        <div className="pointer-events-auto bg-gradient-to-t from-black/90 via-black/70 to-transparent pb-24 pt-5">
+          <div className="flex items-center justify-center">
+            <div>
               <TripControls
                 status={status}
                 battery={battery}

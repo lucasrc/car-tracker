@@ -111,7 +111,7 @@ export function Speedometer({ currentSpeed, maxSpeed, avgSpeed }: SpeedometerPro
             <path id={`${svgId}-avg-path`} d={avgLabelPath} />
             <path id={`${svgId}-max-path`} d={maxLabelPath} />
             <filter id={`${svgId}-contrast-shadow`} x="-40%" y="-40%" width="180%" height="180%">
-              <feDropShadow dx="0" dy="1" stdDeviation="1.6" floodColor="rgba(0,0,0,0.95)" />
+              <feDropShadow dx="0" dy="1" stdDeviation="1" floodColor="rgba(0,0,0,0.68)" />
             </filter>
           </defs>
 
@@ -158,13 +158,13 @@ export function Speedometer({ currentSpeed, maxSpeed, avgSpeed }: SpeedometerPro
               y={label.y}
               textAnchor="middle"
               dominantBaseline="central"
-              fontSize="7.5"
-              fill="rgba(255,255,255,0.98)"
-              stroke="rgba(2,6,23,0.9)"
+              fontSize="9"
+              fill="rgba(255,255,255,1)"
+              stroke="rgba(2,6,23,0.85)"
               strokeWidth="0.8"
               paintOrder="stroke"
               fontFamily="system-ui, sans-serif"
-              fontWeight="600"
+              fontWeight="700"
               filter={`url(#${svgId}-contrast-shadow)`}
             >
               {val}
@@ -172,13 +172,13 @@ export function Speedometer({ currentSpeed, maxSpeed, avgSpeed }: SpeedometerPro
           ))}
 
           <text
-            fontSize="8"
-            fill="rgba(216,249,202,0.94)"
-            stroke="rgba(2,6,23,0.9)"
-            strokeWidth="0.6"
+            fontSize="9.5"
+            fill="rgba(220,252,231,0.99)"
+            stroke="rgba(2,6,23,0.82)"
+            strokeWidth="0.58"
             paintOrder="stroke"
             fontFamily="system-ui, sans-serif"
-            fontWeight="600"
+            fontWeight="700"
             letterSpacing="0.3"
             filter={`url(#${svgId}-contrast-shadow)`}
           >
@@ -188,13 +188,13 @@ export function Speedometer({ currentSpeed, maxSpeed, avgSpeed }: SpeedometerPro
           </text>
 
           <text
-            fontSize="8"
-            fill="rgba(255,255,255,0.9)"
-            stroke="rgba(2,6,23,0.9)"
-            strokeWidth="0.6"
+            fontSize="9.5"
+            fill="rgba(255,255,255,0.98)"
+            stroke="rgba(2,6,23,0.82)"
+            strokeWidth="0.58"
             paintOrder="stroke"
             fontFamily="system-ui, sans-serif"
-            fontWeight="600"
+            fontWeight="700"
             letterSpacing="0.3"
             filter={`url(#${svgId}-contrast-shadow)`}
           >
@@ -213,13 +213,14 @@ export function Speedometer({ currentSpeed, maxSpeed, avgSpeed }: SpeedometerPro
             y={CY - 6}
             textAnchor="middle"
             dominantBaseline="central"
-            fontSize="84"
+            fontSize="92"
             fontWeight="bold"
-            fill="rgba(255,255,255,0.98)"
-            stroke="rgba(34,197,94,0.95)"
-            strokeWidth="2.4"
+            fill="rgba(255,255,255,1)"
+            stroke="rgba(34,197,94,0.9)"
+            strokeWidth="2.15"
             paintOrder="stroke"
             fontFamily="system-ui, sans-serif"
+            filter={`url(#${svgId}-contrast-shadow)`}
           >
             {Math.round(currentSpeed)}
           </text>
@@ -228,10 +229,14 @@ export function Speedometer({ currentSpeed, maxSpeed, avgSpeed }: SpeedometerPro
             x={CX}
             y={CY + 58}
             textAnchor="middle"
-            fontSize="18"
-            fill="rgba(255,255,255,0.88)"
+            fontSize="21"
+            fill="rgba(255,255,255,0.95)"
             fontFamily="system-ui, sans-serif"
             fontWeight="700"
+            stroke="rgba(2,6,23,0.8)"
+            strokeWidth="0.5"
+            paintOrder="stroke"
+            filter={`url(#${svgId}-contrast-shadow)`}
           >
             km/h
           </text>

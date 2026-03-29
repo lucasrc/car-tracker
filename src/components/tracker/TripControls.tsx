@@ -38,7 +38,7 @@ export function TripControls({
               <path d="M8 5v14l11-7z" />
             </svg>
             <span className="font-bold tracking-[0.03em] [font-size:clamp(0.98rem,3.7vw,1.25rem)]">
-              INICIAR RASTREAMENTO
+              INICIAR
             </span>
           </button>
         )}
