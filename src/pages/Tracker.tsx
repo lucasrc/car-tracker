@@ -412,7 +412,7 @@ export function Tracker() {
         : idleWorstCaseRange;
 
   return (
-    <div className="h-dvh w-screen overflow-hidden bg-[#bdd2d9]">
+    <div className="fixed inset-0 bg-[#bdd2d9]">
       {/* Map: full screen background */}
       <div className="fixed inset-0 z-0">
         <MapTracker position={effectivePosition} path={effectivePath} />
