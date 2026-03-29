@@ -80,7 +80,7 @@ export function TripInfo({
   };
 
   return (
-    <div className="space-y-2 px-3 pb-2">
+    <div className="mx-auto max-w-md space-y-2 px-3 pb-2">
       <div className="flex items-center rounded-3xl border border-white/65 bg-[#d8e8ec]/74 px-4 py-3 shadow-[0_10px_26px_rgba(15,23,42,0.1)] backdrop-blur-xl">
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <svg

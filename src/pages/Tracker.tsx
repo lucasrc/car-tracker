@@ -386,7 +386,7 @@ export function Tracker() {
 
         <div className="pointer-events-none flex-1" />
 
-        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-end pb-24">
+        <div className="pointer-events-none mx-auto max-w-md pb-24">
           <div className="flex flex-col items-center gap-4">
             <Speedometer
               currentSpeed={displaySpeed}
@@ -394,7 +394,7 @@ export function Tracker() {
               avgSpeed={avgSpeed}
             />
 
-            <div className="pointer-events-auto pb-16 pt-4">
+            <div className="pointer-events-auto pt-4">
               <TripControls
                 status={status}
                 battery={battery}
