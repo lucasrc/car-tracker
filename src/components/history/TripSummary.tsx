@@ -19,6 +19,8 @@ interface SummaryData {
   avgKmPerLiter: number;
   costPerKm: number;
   avgCostPerTrip: number;
+  avgPenalty: number;
+  totalPenalty: number;
 }
 
 export function TripSummary({ startDate, endDate }: TripSummaryProps) {
@@ -51,6 +53,18 @@ export function TripSummary({ startDate, endDate }: TripSummaryProps) {
         totalDistance > 0 ? totalCost / (totalDistance / 1000) : 0;
       const avgCostPerTrip = trips.length > 0 ? totalCost / trips.length : 0;
 
+      const tripsWithPenalty = trips.filter(
+        (t) => t.consumptionBreakdown && t.consumptionBreakdown.extraCost > 0,
+      );
+      const totalPenalty = tripsWithPenalty.reduce(
+        (acc, t) => acc + (t.consumptionBreakdown?.extraCost || 0),
+        0,
+      );
+      const avgPenalty =
+        tripsWithPenalty.length > 0
+          ? totalPenalty / tripsWithPenalty.length
+          : 0;
+
       setSummary({
         totalTrips: trips.length,
         totalDistance,
@@ -63,6 +77,8 @@ export function TripSummary({ startDate, endDate }: TripSummaryProps) {
         avgKmPerLiter,
         costPerKm,
         avgCostPerTrip,
+        avgPenalty,
+        totalPenalty,
       });
     } catch (err) {
       console.error("Error loading summary:", err);
@@ -147,11 +163,20 @@ export function TripSummary({ startDate, endDate }: TripSummaryProps) {
         </div>
 
         <div className="rounded-xl bg-white/20 p-3">
-          <p className="text-xs text-white/70">Média por Viagem</p>
+          <p className="text-xs text-white/70">Media por Viagem</p>
           <p className="text-xl font-bold text-white">
             R$ {summary.avgCostPerTrip.toFixed(2)}
           </p>
         </div>
+
+        {summary.totalPenalty > 0 && (
+          <div className="col-span-2 rounded-xl bg-red-500/20 p-3">
+            <p className="text-xs text-red-200">Penalidades de Consumo</p>
+            <p className="text-lg font-bold text-white">
+              R$ {summary.totalPenalty.toFixed(2)} total
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="mt-3 flex items-center justify-end text-xs text-white/60">

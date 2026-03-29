@@ -99,7 +99,6 @@ export function Tracker() {
     reset: resetDriveMode,
     isInitialized,
     currentKmPerLiter,
-    consumptionFactors,
     getAverageFactors,
     getEstimatedCosts,
   } = useDriveMode(stats.distanceMeters, settings.currentFuel);
