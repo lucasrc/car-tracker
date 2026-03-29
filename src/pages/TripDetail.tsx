@@ -48,10 +48,10 @@ export function TripDetail() {
     p.lat,
     p.lng,
   ]);
+
+  // Use first point as center if available, otherwise fallback
   const mapCenter: [number, number] =
-    pathPositions.length > 0
-      ? pathPositions[Math.floor(pathPositions.length / 2)]
-      : [-23.5505, -46.6333];
+    pathPositions.length > 0 ? pathPositions[0] : [-23.5505, -46.6333];
 
   const durationSeconds = trip.endTime
     ? Math.floor(
@@ -75,7 +75,7 @@ export function TripDetail() {
       <div className="h-[50vh] w-full">
         <MapContainer
           center={mapCenter}
-          zoom={14}
+          zoom={pathPositions.length > 1 ? 14 : 17}
           className="h-full w-full"
           zoomControl={false}
           attributionControl={false}
@@ -189,6 +189,18 @@ export function TripDetail() {
             <p className="text-xs font-medium text-red-600">Modo</p>
             <p className="text-lg font-bold text-red-900">
               {trip.driveMode === "city" ? "Cidade" : "Estrada"}
+            </p>
+          </div>
+          <div className="rounded-xl bg-emerald-50 p-3 text-center">
+            <p className="text-xs font-medium text-emerald-600">Gasto</p>
+            <p className="text-lg font-bold text-emerald-900">
+              R$ {(trip.totalCost || 0).toFixed(2)}
+            </p>
+          </div>
+          <div className="rounded-xl bg-sky-50 p-3 text-center">
+            <p className="text-xs font-medium text-sky-600">Km Rodado</p>
+            <p className="text-lg font-bold text-sky-900">
+              {distanceKm.toFixed(1)} km
             </p>
           </div>
         </div>

@@ -36,7 +36,12 @@ export function TripSummary({ startDate, endDate }: TripSummaryProps) {
         0,
       );
       const totalLitersRefueled = refuels.reduce((acc, r) => acc + r.amount, 0);
-      const totalSpent = refuels.reduce((acc, r) => acc + r.totalCost, 0);
+      const totalTripCost = trips.reduce(
+        (acc, t) => acc + (t.totalCost || 0),
+        0,
+      );
+      const totalRefuelCost = refuels.reduce((acc, r) => acc + r.totalCost, 0);
+      const totalSpent = totalTripCost + totalRefuelCost;
       const avgKmPerLiter =
         totalFuelUsed > 0 ? totalDistance / 1000 / totalFuelUsed : 0;
 
@@ -102,11 +107,17 @@ export function TripSummary({ startDate, endDate }: TripSummaryProps) {
             {summary.avgKmPerLiter.toFixed(1)}
           </p>
         </div>
+
+        <div className="rounded-xl bg-white/20 p-3">
+          <p className="text-xs text-white/70">Km Rodado</p>
+          <p className="text-xl font-bold text-white">
+            {(summary.totalDistance / 1000).toFixed(1)} km
+          </p>
+        </div>
       </div>
 
-      <div className="mt-3 flex items-center justify-between text-xs text-white/60">
+      <div className="mt-3 flex items-center justify-end text-xs text-white/60">
         <span>{summary.totalTrips} viagens</span>
-        <span>{(summary.totalDistance / 1000).toFixed(1)} km percorridos</span>
       </div>
     </div>
   );

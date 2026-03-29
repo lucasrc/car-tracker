@@ -1,4 +1,4 @@
-import { formatDateTime, formatDistance } from "@/lib/utils";
+import { formatDate, formatDistance } from "@/lib/utils";
 import type { Trip } from "@/types";
 
 interface TripCardProps {
@@ -17,7 +17,16 @@ export function TripCard({ trip, onClick, onDelete }: TripCardProps) {
     : 0;
 
   const fuelUsed = trip.fuelUsed || 0;
-  const consumption = trip.consumption || 0;
+
+  const formatTimeDisplay = (dateStr: string) =>
+    new Date(dateStr).toLocaleTimeString("pt-BR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+
+  const startTime = formatTimeDisplay(trip.startTime);
+  const endTime = trip.endTime ? formatTimeDisplay(trip.endTime) : "--:--:--";
 
   return (
     <div className="relative overflow-hidden rounded-2xl bg-white p-4 shadow-md transition-all hover:shadow-xl">
@@ -27,25 +36,22 @@ export function TripCard({ trip, onClick, onDelete }: TripCardProps) {
       />
 
       <div className="relative">
-        <div className="mb-3 flex items-center justify-between">
-          <span className="flex items-center gap-2 font-semibold text-gray-900">
-            <svg
-              className="h-5 w-5 text-blue-500"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"
-              />
-            </svg>
-            {formatDateTime(trip.startTime)}
-          </span>
-          <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-600">
-            {trip.path.length} pts
+        <div className="mb-3 flex items-center gap-2">
+          <svg
+            className="h-4 w-4 text-blue-500"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+            />
+          </svg>
+          <span className="text-sm text-gray-500">
+            {formatDate(trip.startTime)} &mdash; {startTime} — {endTime}
           </span>
         </div>
 
@@ -77,9 +83,9 @@ export function TripCard({ trip, onClick, onDelete }: TripCardProps) {
               </span>
             </div>
             <div className="flex flex-col">
-              <span className="text-xs font-medium text-gray-400">Média</span>
+              <span className="text-xs font-medium text-gray-400">Gasto</span>
               <span className="text-sm font-bold text-gray-900">
-                {consumption.toFixed(1)} km/L
+                R$ {(trip.totalCost || 0).toFixed(2)}
               </span>
             </div>
           </div>

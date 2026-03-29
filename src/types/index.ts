@@ -23,6 +23,7 @@ export interface Trip {
   consumption: number;
   fuelCapacity: number;
   fuelUsed: number;
+  totalCost: number;
 }
 
 export interface Settings {
