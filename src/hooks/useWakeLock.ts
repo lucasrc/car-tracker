@@ -9,10 +9,10 @@ interface WakeLockState {
 export function useWakeLock(): WakeLockState {
   const wakeLock = useRef<WakeLockSentinel | null>(null);
   const [isActive, setIsActive] = useState(false);
+  const isRequestedRef = useRef(false);
 
-  const request = useCallback(async () => {
+  const acquireLock = useCallback(async () => {
     if (!("wakeLock" in navigator)) return;
-
     try {
       wakeLock.current = await navigator.wakeLock.request("screen");
       wakeLock.current.addEventListener("release", () => {
@@ -24,7 +24,13 @@ export function useWakeLock(): WakeLockState {
     }
   }, []);
 
+  const request = useCallback(async () => {
+    isRequestedRef.current = true;
+    await acquireLock();
+  }, [acquireLock]);
+
   const release = useCallback(async () => {
+    isRequestedRef.current = false;
     if (wakeLock.current) {
       try {
         await wakeLock.current.release();
@@ -35,6 +41,23 @@ export function useWakeLock(): WakeLockState {
       }
     }
   }, []);
+
+  useEffect(() => {
+    const handleVisibilityChange = async () => {
+      if (
+        document.visibilityState === "visible" &&
+        isRequestedRef.current &&
+        !wakeLock.current
+      ) {
+        await acquireLock();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [acquireLock]);
 
   useEffect(() => {
     return () => {

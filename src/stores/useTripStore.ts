@@ -333,7 +333,7 @@ export const useTripStore = create<TripStore>((set, get) => ({
     if (!trip) return;
 
     const updatedTrip: Trip = { ...trip, totalFuelUsed };
-    set({ trip: updatedTrip });
+    set({ trip: updatedTrip, totalFuelUsed });
     saveCurrentTrip(updatedTrip);
   },
 
