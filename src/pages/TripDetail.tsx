@@ -24,13 +24,24 @@ function createStopIcon(index: number): L.DivIcon {
 function formatDurationForCard(seconds: number): string {
   const totalMinutes = Math.max(0, seconds / 60);
   const hours = Math.floor(totalMinutes / 60);
-  const minutes = Math.round(totalMinutes % 60);
+  const mins = Math.floor(totalMinutes % 60);
+  const secs = Math.round(seconds % 60);
 
   if (hours > 0) {
-    return `${hours}h ${minutes.toString().padStart(2, "0")}m`;
+    if (mins > 0) {
+      return `${hours}h ${mins.toString().padStart(2, "0")}m`;
+    }
+    return `${hours}h`;
   }
 
-  return `${minutes.toFixed(0)}m`;
+  if (mins > 0) {
+    if (secs > 0 && mins < 10) {
+      return `${mins}m ${secs}s`;
+    }
+    return `${mins}m`;
+  }
+
+  return `${secs}s`;
 }
 
 function splitDistance(distanceInMeters: number): {
