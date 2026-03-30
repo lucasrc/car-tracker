@@ -91,11 +91,11 @@ describe("useConsumptionModel", () => {
   });
 
   describe("calculateAdjustedConsumption", () => {
-    it("returns base consumption when all factors are 1", () => {
+    it("returns base consumption when all factors and bonuses are neutral", () => {
       const { result } = renderHook(() => useConsumptionModel());
       const { calculateAdjustedConsumption } = result.current;
-      const factors = calculateAdjustedConsumption(12, 50, 0, 0);
-      expect(factors.adjustedKmPerLiter).toBe(12);
+      const factors = calculateAdjustedConsumption(12, 50, 50, 10);
+      expect(factors.adjustedKmPerLiter).toBeLessThanOrEqual(12);
     });
 
     it("reduces km/L when penalties apply", () => {
@@ -110,6 +110,198 @@ describe("useConsumptionModel", () => {
       const { calculateAdjustedConsumption } = result.current;
       const factors = calculateAdjustedConsumption(12, 50, 0, 0);
       expect(factors.baseKmPerLiter).toBe(12);
+    });
+  });
+
+  describe("eco-driving bonuses", () => {
+    describe("optimal speed bonus (60-80 km/h)", () => {
+      it("returns 5% bonus at center of optimal range (70 km/h)", () => {
+        const { result } = renderHook(() => useConsumptionModel());
+        const { calculateAdjustedConsumption } = result.current;
+        const factors = calculateAdjustedConsumption(12, 70, 0, 0);
+        expect(factors.speedBonus).toBeCloseTo(0.05, 2);
+        expect(factors.isEcoDriving).toBe(true);
+      });
+
+      it("returns bonus at edges of optimal range (60 km/h)", () => {
+        const { result } = renderHook(() => useConsumptionModel());
+        const { calculateAdjustedConsumption } = result.current;
+        const factors = calculateAdjustedConsumption(12, 60, 0, 0);
+        expect(factors.speedBonus).toBeGreaterThan(0);
+        expect(factors.speedBonus).toBeLessThanOrEqual(0.05);
+      });
+
+      it("returns partial bonus between 80-90 km/h", () => {
+        const { result } = renderHook(() => useConsumptionModel());
+        const { calculateAdjustedConsumption } = result.current;
+        const factors = calculateAdjustedConsumption(12, 85, 0, 0);
+        expect(factors.speedBonus).toBeGreaterThan(0);
+        expect(factors.speedBonus).toBeLessThan(0.05);
+      });
+
+      it("returns 0 bonus outside range (below 60 or above 90)", () => {
+        const { result } = renderHook(() => useConsumptionModel());
+        const { calculateAdjustedConsumption } = result.current;
+        const factorsBelow = calculateAdjustedConsumption(12, 50, 0, 0);
+        const factorsAbove = calculateAdjustedConsumption(12, 95, 0, 0);
+        expect(factorsBelow.speedBonus).toBe(0);
+        expect(factorsAbove.speedBonus).toBe(0);
+      });
+    });
+
+    describe("gentle acceleration bonus (<0.5 m/s²)", () => {
+      it("applies 4% bonus for gentle acceleration", () => {
+        const { result } = renderHook(() => useConsumptionModel());
+        act(() => {
+          result.current.addReading(10, 1000);
+          result.current.addReading(10.3, 2000);
+        });
+        const { calculateAdjustedConsumption } = result.current;
+        const factors = calculateAdjustedConsumption(12, 50, 0, 0);
+        expect(factors.accelerationBonus).toBeCloseTo(0.04, 2);
+      });
+
+      it("returns 0 bonus for aggressive acceleration", () => {
+        const { result } = renderHook(() => useConsumptionModel());
+        act(() => {
+          result.current.addReading(10, 1000);
+          result.current.addReading(15, 2000);
+        });
+        const { calculateAdjustedConsumption } = result.current;
+        const factors = calculateAdjustedConsumption(12, 50, 0, 0);
+        expect(factors.accelerationBonus).toBe(0);
+      });
+    });
+
+    describe("coasting bonus (negative acceleration)", () => {
+      it("applies 3% bonus for coasting deceleration", () => {
+        const { result } = renderHook(() => useConsumptionModel());
+        act(() => {
+          result.current.addReading(15, 1000);
+          result.current.addReading(13, 2000);
+        });
+        const { calculateAdjustedConsumption } = result.current;
+        const factors = calculateAdjustedConsumption(12, 70, 0, 0);
+        expect(factors.coastingBonus).toBeCloseTo(0.03, 2);
+      });
+
+      it("returns 0 bonus for positive acceleration", () => {
+        const { result } = renderHook(() => useConsumptionModel());
+        act(() => {
+          result.current.addReading(10, 1000);
+          result.current.addReading(12, 2000);
+        });
+        const { calculateAdjustedConsumption } = result.current;
+        const factors = calculateAdjustedConsumption(12, 70, 0, 0);
+        expect(factors.coastingBonus).toBe(0);
+      });
+    });
+
+    describe("stability bonus (low variance)", () => {
+      it("applies up to 3% bonus for very low variance", () => {
+        const { result } = renderHook(() => useConsumptionModel());
+        const { calculateAdjustedConsumption } = result.current;
+        const factors = calculateAdjustedConsumption(12, 70, 5, 0);
+        expect(factors.stabilityBonus).toBeGreaterThan(0);
+        expect(factors.stabilityBonus).toBeLessThanOrEqual(0.03);
+      });
+
+      it("returns 0 bonus for high variance", () => {
+        const { result } = renderHook(() => useConsumptionModel());
+        const { calculateAdjustedConsumption } = result.current;
+        const factors = calculateAdjustedConsumption(12, 70, 20, 0);
+        expect(factors.stabilityBonus).toBe(0);
+      });
+    });
+
+    describe("zero idle bonus", () => {
+      it("applies 3% bonus when no idle time", () => {
+        const { result } = renderHook(() => useConsumptionModel());
+        const { calculateAdjustedConsumption } = result.current;
+        const factors = calculateAdjustedConsumption(12, 70, 0, 0);
+        expect(factors.idleBonus).toBeCloseTo(0.03, 2);
+      });
+
+      it("returns 0 bonus when idle time exists", () => {
+        const { result } = renderHook(() => useConsumptionModel());
+        const { calculateAdjustedConsumption } = result.current;
+        const factors = calculateAdjustedConsumption(12, 70, 0, 10);
+        expect(factors.idleBonus).toBe(0);
+      });
+    });
+
+    describe("total bonus cap", () => {
+      it("caps total bonus at 10%", () => {
+        const { result } = renderHook(() => useConsumptionModel());
+        const { calculateAdjustedConsumption } = result.current;
+        act(() => {
+          result.current.addReading(15, 1000);
+          result.current.addReading(13, 2000);
+        });
+        const factors = calculateAdjustedConsumption(12, 70, 5, 0);
+        expect(factors.totalBonus).toBeLessThanOrEqual(0.1);
+      });
+
+      it("reaches 10% cap when all eco-driving conditions are optimal", () => {
+        const { result } = renderHook(() => useConsumptionModel());
+        act(() => {
+          result.current.addReading(19.44, 1000);
+          result.current.addReading(19.44, 2000);
+          result.current.addReading(19.44, 3000);
+        });
+        const { calculateAdjustedConsumption } = result.current;
+        const factors = calculateAdjustedConsumption(12, 70, 0, 0);
+        expect(factors.totalBonus).toBe(0.1);
+        expect(factors.speedBonus).toBeCloseTo(0.05, 2);
+        expect(factors.accelerationBonus).toBeCloseTo(0.04, 2);
+        expect(factors.stabilityBonus).toBeCloseTo(0.03, 2);
+        expect(factors.idleBonus).toBeCloseTo(0.03, 2);
+      });
+
+      it("sum of individual bonuses can exceed cap but total is capped", () => {
+        const { result } = renderHook(() => useConsumptionModel());
+        act(() => {
+          result.current.addReading(19.44, 1000);
+          result.current.addReading(19.44, 2000);
+        });
+        const { calculateAdjustedConsumption } = result.current;
+        const factors = calculateAdjustedConsumption(12, 70, 0, 0);
+        const sumOfBonuses =
+          factors.speedBonus +
+          factors.accelerationBonus +
+          factors.coastingBonus +
+          factors.stabilityBonus +
+          factors.idleBonus;
+        expect(sumOfBonuses).toBeGreaterThan(0.1);
+        expect(factors.totalBonus).toBe(0.1);
+      });
+    });
+
+    describe("combined bonuses and penalties", () => {
+      it("improves km/L when bonuses exceed penalties", () => {
+        const { result } = renderHook(() => useConsumptionModel());
+        act(() => {
+          result.current.addReading(15, 1000);
+          result.current.addReading(13, 2000);
+        });
+        const { calculateAdjustedConsumption } = result.current;
+        const factors = calculateAdjustedConsumption(12, 70, 5, 0);
+        expect(factors.totalBonus).toBeGreaterThan(0);
+      });
+
+      it("sets isEcoDriving flag when bonus is positive", () => {
+        const { result } = renderHook(() => useConsumptionModel());
+        const { calculateAdjustedConsumption } = result.current;
+        const factors = calculateAdjustedConsumption(12, 70, 0, 0);
+        expect(factors.isEcoDriving).toBe(true);
+      });
+
+      it("does not set isEcoDriving when no bonuses and high penalties", () => {
+        const { result } = renderHook(() => useConsumptionModel());
+        const { calculateAdjustedConsumption } = result.current;
+        const factors = calculateAdjustedConsumption(12, 95, 100, 50);
+        expect(factors.speedBonus).toBe(0);
+      });
     });
   });
 

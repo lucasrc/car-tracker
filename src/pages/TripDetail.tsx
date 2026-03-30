@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { MapContainer, TileLayer, Polyline, Marker } from "react-leaflet";
+import {
+  MapContainer,
+  TileLayer,
+  Polyline,
+  Marker,
+  Popup,
+} from "react-leaflet";
 import L from "leaflet";
 import { getTripById } from "@/lib/db";
 import { formatDateTime, formatDistance, formatTime } from "@/lib/utils";
@@ -16,15 +22,15 @@ function createStopIcon(index: number): L.DivIcon {
 }
 
 function formatDurationForCard(seconds: number): string {
-  const totalMinutes = Math.max(0, Math.floor(seconds / 60));
+  const totalMinutes = Math.max(0, seconds / 60);
   const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
+  const minutes = Math.round(totalMinutes % 60);
 
   if (hours > 0) {
     return `${hours}h ${minutes.toString().padStart(2, "0")}m`;
   }
 
-  return `${minutes}m`;
+  return `${minutes.toFixed(0)}m`;
 }
 
 function splitDistance(distanceInMeters: number): {
@@ -114,8 +120,6 @@ export function TripDetail() {
     (acc, stop) => acc + stop.durationSeconds,
     0,
   );
-  const averageStopSeconds =
-    stops.length > 0 ? Math.round(totalStopSeconds / stops.length) : 0;
   const stopRatioPercent =
     durationSeconds > 0
       ? Math.max(
@@ -185,13 +189,50 @@ export function TripDetail() {
                       })
                     }
                   />
-                  {stops.map((stop, idx) => (
-                    <Marker
-                      key={`${stop.timestamp}-${idx}`}
-                      position={[stop.lat, stop.lng]}
-                      icon={createStopIcon(idx + 1)}
-                    />
-                  ))}
+                  {stops.map((stop, idx) => {
+                    const startTime = new Date(stop.timestamp);
+                    const endTime = new Date(
+                      stop.timestamp + stop.durationSeconds * 1000,
+                    );
+                    const formattedStart = startTime.toLocaleTimeString(
+                      "pt-BR",
+                      {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      },
+                    );
+                    const formattedEnd = endTime.toLocaleTimeString("pt-BR", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    });
+                    return (
+                      <Marker
+                        key={`${stop.timestamp}-${idx}`}
+                        position={[stop.lat, stop.lng]}
+                        icon={createStopIcon(idx + 1)}
+                      >
+                        <Popup>
+                          <div className="text-sm">
+                            <p className="font-semibold mb-1">
+                              Parada {idx + 1}
+                            </p>
+                            <p className="text-gray-600">
+                              <span className="font-medium">Inicio:</span>{" "}
+                              {formattedStart}
+                            </p>
+                            <p className="text-gray-600">
+                              <span className="font-medium">Fim:</span>{" "}
+                              {formattedEnd}
+                            </p>
+                            <p className="text-gray-600">
+                              <span className="font-medium">Duracao:</span>{" "}
+                              {formatDurationForCard(stop.durationSeconds)}
+                            </p>
+                          </div>
+                        </Popup>
+                      </Marker>
+                    );
+                  })}
                 </>
               )}
             </MapContainer>
@@ -216,7 +257,7 @@ export function TripDetail() {
               <p className="text-xs font-medium text-purple-600">
                 Tempo de Viagem
               </p>
-              <p className="mt-2 text-4xl font-semibold leading-none text-purple-900">
+              <p className="mt-2 text-xl font-semibold leading-none text-purple-900">
                 {compactDuration}
               </p>
             </div>
@@ -244,7 +285,7 @@ export function TripDetail() {
                 <span>0%</span>
                 <span>
                   {stops.length > 0
-                    ? `${stopRatioPercent}% do tempo parado • Media ${averageStopSeconds}s`
+                    ? `${stopRatioPercent}% do tempo parado • Total ${formatDurationForCard(totalStopSeconds)}`
                     : "Sem paradas registradas"}
                 </span>
                 <span>100%</span>
@@ -274,8 +315,18 @@ export function TripDetail() {
                       : "Misto"}
                 </p>
               </div>
+              <div className="rounded-2xl bg-rose-50 p-3 shadow-sm">
+                <p className="text-xs font-medium text-rose-600">
+                  Preco Combustivel
+                </p>
+                <p className="mt-1 text-xl font-semibold text-rose-900">
+                  R$ {(trip.fuelPrice || 0).toFixed(2)}/L
+                </p>
+              </div>
               <div className="rounded-2xl bg-emerald-50 p-3 shadow-sm">
-                <p className="text-xs font-medium text-emerald-600">Gasto</p>
+                <p className="text-xs font-medium text-emerald-600">
+                  Gasto Total
+                </p>
                 <p className="mt-1 text-xl font-semibold text-emerald-900">
                   R$ {(trip.totalCost || 0).toFixed(2)}
                 </p>
@@ -288,93 +339,211 @@ export function TripDetail() {
               </div>
             </div>
 
-            {trip.consumptionBreakdown &&
-              trip.consumptionBreakdown.extraCost > 0 &&
-              (() => {
-                const b = trip.consumptionBreakdown;
-                const totalPenalty =
-                  b.speedPenaltyPct +
-                  b.aggressionPenaltyPct +
-                  b.idlePenaltyPct +
-                  b.stabilityPenaltyPct;
-                const speedCost =
-                  totalPenalty > 0
-                    ? (b.speedPenaltyPct / totalPenalty) * b.extraCost
-                    : 0;
-                const aggressionCost =
-                  totalPenalty > 0
-                    ? (b.aggressionPenaltyPct / totalPenalty) * b.extraCost
-                    : 0;
-                const idleCost =
-                  totalPenalty > 0
-                    ? (b.idlePenaltyPct / totalPenalty) * b.extraCost
-                    : 0;
-                const stabilityCost =
-                  totalPenalty > 0
-                    ? (b.stabilityPenaltyPct / totalPenalty) * b.extraCost
-                    : 0;
+            {trip.consumptionBreakdown && (
+              <>
+                {trip.consumptionBreakdown.totalPenaltyPct > 0 &&
+                  (() => {
+                    const b = trip.consumptionBreakdown;
+                    const totalPenalty =
+                      b.speedPenaltyPct +
+                      b.aggressionPenaltyPct +
+                      b.idlePenaltyPct +
+                      b.stabilityPenaltyPct;
+                    const speedCost =
+                      totalPenalty > 0
+                        ? (b.speedPenaltyPct / totalPenalty) * b.extraCost
+                        : 0;
+                    const aggressionCost =
+                      totalPenalty > 0
+                        ? (b.aggressionPenaltyPct / totalPenalty) * b.extraCost
+                        : 0;
+                    const idleCost =
+                      totalPenalty > 0
+                        ? (b.idlePenaltyPct / totalPenalty) * b.extraCost
+                        : 0;
+                    const stabilityCost =
+                      totalPenalty > 0
+                        ? (b.stabilityPenaltyPct / totalPenalty) * b.extraCost
+                        : 0;
 
-                return (
-                  <div className="col-span-2 mt-2 rounded-2xl bg-red-50 border border-red-100 p-4 shadow-sm">
-                    <p className="text-sm font-semibold text-red-800 mb-3">
-                      Fatores que Aumentaram o Consumo
-                    </p>
-                    <div className="space-y-2">
-                      {b.speedPenaltyPct > 0 && (
-                        <div className="flex justify-between items-center text-sm">
-                          <span className="text-red-700">
-                            Excesso de velocidade (+
-                            {b.speedPenaltyPct.toFixed(1)}%)
-                          </span>
-                          <span className="font-medium text-red-900">
-                            +R$ {speedCost.toFixed(2)}
-                          </span>
+                    return (
+                      <div className="col-span-2 mt-2 rounded-2xl bg-red-50 border border-red-100 p-4 shadow-sm">
+                        <p className="text-sm font-semibold text-red-800 mb-3">
+                          Penalidades (-)
+                        </p>
+                        <div className="space-y-2">
+                          {b.speedPenaltyPct > 0 && (
+                            <div className="flex justify-between items-center text-sm">
+                              <span className="text-red-700">
+                                Excesso de velocidade (+
+                                {b.speedPenaltyPct.toFixed(1)}%)
+                              </span>
+                              <span className="font-medium text-red-900">
+                                +R$ {speedCost.toFixed(2)}
+                              </span>
+                            </div>
+                          )}
+                          {b.idlePenaltyPct > 0 && (
+                            <div className="flex justify-between items-center text-sm">
+                              <span className="text-red-700">
+                                Tempo ocioso (+{b.idlePenaltyPct.toFixed(1)}%)
+                              </span>
+                              <span className="font-medium text-red-900">
+                                +R$ {idleCost.toFixed(2)}
+                              </span>
+                            </div>
+                          )}
+                          {b.aggressionPenaltyPct > 0 && (
+                            <div className="flex justify-between items-center text-sm">
+                              <span className="text-red-700">
+                                Acelerações bruscas (+
+                                {b.aggressionPenaltyPct.toFixed(1)}%)
+                              </span>
+                              <span className="font-medium text-red-900">
+                                +R$ {aggressionCost.toFixed(2)}
+                              </span>
+                            </div>
+                          )}
+                          {b.stabilityPenaltyPct > 0 && (
+                            <div className="flex justify-between items-center text-sm">
+                              <span className="text-red-700">
+                                Irregularidade na dirigibilidade (+
+                                {b.stabilityPenaltyPct.toFixed(1)}%)
+                              </span>
+                              <span className="font-medium text-red-900">
+                                +R$ {stabilityCost.toFixed(2)}
+                              </span>
+                            </div>
+                          )}
+                          <div className="mt-3 pt-2 border-t border-red-200 flex justify-between items-center">
+                            <span className="text-sm font-semibold text-red-800">
+                              Total em Penalidades
+                            </span>
+                            <span className="text-lg font-bold text-red-900">
+                              R$ {b.extraCost.toFixed(2)}
+                            </span>
+                          </div>
                         </div>
-                      )}
-                      {b.idlePenaltyPct > 0 && (
-                        <div className="flex justify-between items-center text-sm">
-                          <span className="text-red-700">
-                            Tempo ocioso (+{b.idlePenaltyPct.toFixed(1)}%)
-                          </span>
-                          <span className="font-medium text-red-900">
-                            +R$ {idleCost.toFixed(2)}
-                          </span>
-                        </div>
-                      )}
-                      {b.aggressionPenaltyPct > 0 && (
-                        <div className="flex justify-between items-center text-sm">
-                          <span className="text-red-700">
-                            Aceleracoes bruscas (+
-                            {b.aggressionPenaltyPct.toFixed(1)}%)
-                          </span>
-                          <span className="font-medium text-red-900">
-                            +R$ {aggressionCost.toFixed(2)}
-                          </span>
-                        </div>
-                      )}
-                      {b.stabilityPenaltyPct > 0 && (
-                        <div className="flex justify-between items-center text-sm">
-                          <span className="text-red-700">
-                            Irregularidade na dirigibilidade (+
-                            {b.stabilityPenaltyPct.toFixed(1)}%)
-                          </span>
-                          <span className="font-medium text-red-900">
-                            +R$ {stabilityCost.toFixed(2)}
-                          </span>
-                        </div>
-                      )}
-                      <div className="mt-3 pt-2 border-t border-red-200 flex justify-between items-center">
-                        <span className="text-sm font-semibold text-red-800">
-                          Total em Penalidades
-                        </span>
-                        <span className="text-lg font-bold text-red-900">
-                          R$ {b.extraCost.toFixed(2)}
-                        </span>
                       </div>
+                    );
+                  })()}
+
+                {trip.consumptionBreakdown.totalBonusPct > 0 &&
+                  (() => {
+                    const b = trip.consumptionBreakdown;
+                    const totalBonus =
+                      b.speedBonusPct +
+                      b.accelerationBonusPct +
+                      b.coastingBonusPct +
+                      b.stabilityBonusPct +
+                      b.idleBonusPct;
+                    const speedSavings =
+                      totalBonus > 0
+                        ? (b.speedBonusPct / totalBonus) * b.savedCost
+                        : 0;
+                    const accelSavings =
+                      totalBonus > 0
+                        ? (b.accelerationBonusPct / totalBonus) * b.savedCost
+                        : 0;
+                    const coastingSavings =
+                      totalBonus > 0
+                        ? (b.coastingBonusPct / totalBonus) * b.savedCost
+                        : 0;
+                    const stabilitySavings =
+                      totalBonus > 0
+                        ? (b.stabilityBonusPct / totalBonus) * b.savedCost
+                        : 0;
+                    const idleSavings =
+                      totalBonus > 0
+                        ? (b.idleBonusPct / totalBonus) * b.savedCost
+                        : 0;
+
+                    return (
+                      <div className="col-span-2 mt-2 rounded-2xl bg-green-50 border border-green-100 p-4 shadow-sm">
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className="text-lg">🌿</span>
+                          <p className="text-sm font-semibold text-green-800">
+                            Condução Ecológica (+{b.totalBonusPct.toFixed(1)}%)
+                          </p>
+                        </div>
+                        <div className="space-y-2">
+                          {b.speedBonusPct > 0 && (
+                            <div className="flex justify-between items-center text-sm">
+                              <span className="text-green-700">
+                                Velocidade ideal (60-80 km/h) (+
+                                {b.speedBonusPct.toFixed(1)}%)
+                              </span>
+                              <span className="font-medium text-green-900">
+                                -R$ {speedSavings.toFixed(2)}
+                              </span>
+                            </div>
+                          )}
+                          {b.accelerationBonusPct > 0 && (
+                            <div className="flex justify-between items-center text-sm">
+                              <span className="text-green-700">
+                                Aceleração suave (+
+                                {b.accelerationBonusPct.toFixed(1)}%)
+                              </span>
+                              <span className="font-medium text-green-900">
+                                -R$ {accelSavings.toFixed(2)}
+                              </span>
+                            </div>
+                          )}
+                          {b.coastingBonusPct > 0 && (
+                            <div className="flex justify-between items-center text-sm">
+                              <span className="text-green-700">
+                                Coasting detectado (+
+                                {b.coastingBonusPct.toFixed(1)}%)
+                              </span>
+                              <span className="font-medium text-green-900">
+                                -R$ {coastingSavings.toFixed(2)}
+                              </span>
+                            </div>
+                          )}
+                          {b.stabilityBonusPct > 0 && (
+                            <div className="flex justify-between items-center text-sm">
+                              <span className="text-green-700">
+                                Velocidade estável (+
+                                {b.stabilityBonusPct.toFixed(1)}%)
+                              </span>
+                              <span className="font-medium text-green-900">
+                                -R$ {stabilitySavings.toFixed(2)}
+                              </span>
+                            </div>
+                          )}
+                          {b.idleBonusPct > 0 && (
+                            <div className="flex justify-between items-center text-sm">
+                              <span className="text-green-700">
+                                Sem marcha lenta (+{b.idleBonusPct.toFixed(1)}%)
+                              </span>
+                              <span className="font-medium text-green-900">
+                                -R$ {idleSavings.toFixed(2)}
+                              </span>
+                            </div>
+                          )}
+                          <div className="mt-3 pt-2 border-t border-green-200 flex justify-between items-center">
+                            <span className="text-sm font-semibold text-green-800">
+                              Economia Total
+                            </span>
+                            <span className="text-lg font-bold text-green-900">
+                              R$ {b.savedCost.toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                {trip.consumptionBreakdown.totalPenaltyPct === 0 &&
+                  trip.consumptionBreakdown.totalBonusPct === 0 && (
+                    <div className="col-span-2 mt-2 rounded-2xl bg-gray-50 border border-gray-200 p-4 shadow-sm">
+                      <p className="text-sm text-gray-600 text-center">
+                        Nenhuma penalidade ou bônus registrado nesta viagem
+                      </p>
                     </div>
-                  </div>
-                );
-              })()}
+                  )}
+              </>
+            )}
 
             <button
               onClick={() => navigate("/history")}

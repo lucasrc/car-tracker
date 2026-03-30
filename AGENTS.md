@@ -146,3 +146,47 @@ src/
 - `vite.config.ts` - Vite configuration with path aliases
 - `tsconfig.app.json` - TypeScript configuration (strict mode)
 - `package.json` - Dependencies and scripts
+
+---
+
+## Quick Navigation Index
+
+### Core Architecture
+
+| Area         | Key Files                                         | Purpose                                      |
+| ------------ | ------------------------------------------------- | -------------------------------------------- |
+| **State**    | `stores/useTripStore.ts`, `stores/useAppStore.ts` | Trip recording, app theme                    |
+| **Database** | `lib/db.ts`                                       | Dexie tables: `trips`, `settings`, `refuels` |
+| **Types**    | `types/index.ts`                                  | `Trip`, `Settings`, `Refuel`, `Coordinates`  |
+
+### Components by Feature
+
+| Feature     | Components                                                                                        |
+| ----------- | ------------------------------------------------------------------------------------------------- |
+| **Tracker** | `Dashboard`, `MapTracker`, `Speedometer`, `TripInfo`, `TripControls`, `TripCard`, `TrackerHeader` |
+| **History** | `FuelCharts`, `SpeedAnalysis`, `UsagePatterns`, `TimeAnalysis`, `TripSummary`, `RefuelCard`       |
+| **UI**      | `Button`, `Input`, `ConfirmDialog`, `DateRangePicker`                                             |
+| **Layout**  | `Header`, `BottomNav`, `Layout`                                                                   |
+
+### Key Hooks
+
+| Hook                        | Purpose          |
+| --------------------------- | ---------------- |
+| `useGeolocation`            | GPS tracking     |
+| `useTripConsumptionTracker` | Fuel calculation |
+| `useConsumptionModel`       | Consumption math |
+| `useSimulation`             | Demo mode        |
+
+### DB Operations (`lib/db.ts`)
+
+- `getSettings()`, `saveSettings()` - User preferences
+- `saveTrip()`, `getAllTrips()`, `getTripById()`, `deleteTrip()` - Trip CRUD
+- `addRefuel()`, `getRefuels()`, `deleteRefuel()` - Fuel log
+- `refuel()`, `consumeFuel()` - Tank management
+
+### Routing (App.tsx)
+
+```
+/ → Home        /tracker → Tracker      /history → History
+/settings → Settings    /about → About    /trip/:id → TripDetail
+```

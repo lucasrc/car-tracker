@@ -8,6 +8,26 @@ export interface ConsumptionFactors {
   stabilityFactor: number;
   adjustedKmPerLiter: number;
   isAggressive: boolean;
+  totalBonus: number;
+  speedBonus: number;
+  accelerationBonus: number;
+  coastingBonus: number;
+  stabilityBonus: number;
+  idleBonus: number;
+  isEcoDriving: boolean;
+  currentSpeedKmh: number;
+  currentAcceleration: number;
+  idlePercentage: number;
+  speedVariance: number;
+}
+
+export interface BonusBreakdown {
+  speedBonus: number;
+  accelerationBonus: number;
+  coastingBonus: number;
+  stabilityBonus: number;
+  idleBonus: number;
+  totalBonus: number;
 }
 
 interface SpeedReading {
@@ -27,6 +47,23 @@ const AGGRESSIVE_PENALTY = 0.1;
 const MODERATE_PENALTY = 0.06;
 const IDLE_PENALTY_PERCENT = 0.08;
 const STABILITY_PENALTY_PER_VARIANCE = 0.05;
+
+const OPTIMAL_SPEED_MIN = 60;
+const OPTIMAL_SPEED_MAX = 80;
+const OPTIMAL_SPEED_BONUS = 0.05;
+
+const GENTLE_ACCEL_THRESHOLD = 0.5;
+const GENTLE_BONUS = 0.04;
+
+const COASTING_DECEL_THRESHOLD = -0.3;
+const COASTING_BONUS = 0.03;
+
+const STABLE_VARIANCE = 15;
+const STABILITY_BONUS = 0.03;
+
+const ZERO_IDLE_BONUS = 0.03;
+
+const MAX_TOTAL_BONUS = 0.1;
 
 export function useConsumptionModel() {
   const readingsRef = useRef<SpeedReading[]>([]);
@@ -69,6 +106,80 @@ export function useConsumptionModel() {
     [],
   );
 
+  const calculateSpeedBonus = useCallback((currentSpeedKmh: number): number => {
+    if (
+      currentSpeedKmh >= OPTIMAL_SPEED_MIN &&
+      currentSpeedKmh <= OPTIMAL_SPEED_MAX
+    ) {
+      const distanceFromCenter =
+        Math.abs(
+          currentSpeedKmh - (OPTIMAL_SPEED_MIN + OPTIMAL_SPEED_MAX) / 2,
+        ) /
+        ((OPTIMAL_SPEED_MAX - OPTIMAL_SPEED_MIN) / 2);
+      return OPTIMAL_SPEED_BONUS * (1 - distanceFromCenter * 0.9);
+    }
+    if (currentSpeedKmh > OPTIMAL_SPEED_MAX && currentSpeedKmh < 90) {
+      const excess = currentSpeedKmh - OPTIMAL_SPEED_MAX;
+      const decayRate = OPTIMAL_SPEED_BONUS / 10;
+      return Math.max(0, OPTIMAL_SPEED_BONUS - excess * decayRate);
+    }
+    return 0;
+  }, []);
+
+  const calculateAccelerationBonus = useCallback(
+    (avgAcceleration: number): number => {
+      if (Math.abs(avgAcceleration) < GENTLE_ACCEL_THRESHOLD) {
+        return GENTLE_BONUS;
+      }
+      return 0;
+    },
+    [],
+  );
+
+  const calculateCoastingBonus = useCallback(
+    (avgAcceleration: number): number => {
+      if (
+        avgAcceleration < COASTING_DECEL_THRESHOLD &&
+        avgAcceleration > -2.0
+      ) {
+        return COASTING_BONUS;
+      }
+      return 0;
+    },
+    [],
+  );
+
+  const calculateStabilityBonus = useCallback(
+    (speedVariance: number): number => {
+      if (speedVariance < STABLE_VARIANCE) {
+        const normalizedVariance = speedVariance / STABLE_VARIANCE;
+        return STABILITY_BONUS * (1 - normalizedVariance);
+      }
+      return 0;
+    },
+    [],
+  );
+
+  const calculateIdleBonus = useCallback((idlePercentage: number): number => {
+    if (idlePercentage === 0) {
+      return ZERO_IDLE_BONUS;
+    }
+    return 0;
+  }, []);
+
+  const calculateTotalBonus = useCallback(
+    (bonusBreakdown: BonusBreakdown): number => {
+      const total =
+        bonusBreakdown.speedBonus +
+        bonusBreakdown.accelerationBonus +
+        bonusBreakdown.coastingBonus +
+        bonusBreakdown.stabilityBonus +
+        bonusBreakdown.idleBonus;
+      return Math.min(total, MAX_TOTAL_BONUS);
+    },
+    [],
+  );
+
   const calculateAdjustedConsumption = useCallback(
     (
       baseConsumption: number,
@@ -78,22 +189,35 @@ export function useConsumptionModel() {
     ): ConsumptionFactors => {
       const speedFactor = calculateSpeedFactor(currentSpeedKmh);
 
+      const recentReadings = readingsRef.current.slice(-10);
       const avgAcceleration =
-        readingsRef.current.length > 1
-          ? readingsRef.current
-              .slice(-10)
-              .reduce((sum, r) => sum + r.acceleration, 0) /
-            Math.min(readingsRef.current.length, 10)
+        recentReadings.length > 0
+          ? recentReadings.reduce((sum, r) => sum + r.acceleration, 0) /
+            recentReadings.length
           : 0;
+
       const { factor: aggressionFactor, isAggressive } =
         calculateAggressionFactor(avgAcceleration);
 
       const idleFactor = calculateIdleFactor(idlePercentage);
       const stabilityFactor = calculateStabilityFactor(speedVariance);
 
+      const bonusBreakdown: BonusBreakdown = {
+        speedBonus: calculateSpeedBonus(currentSpeedKmh),
+        accelerationBonus: calculateAccelerationBonus(avgAcceleration),
+        coastingBonus: calculateCoastingBonus(avgAcceleration),
+        stabilityBonus: calculateStabilityBonus(speedVariance),
+        idleBonus: calculateIdleBonus(idlePercentage),
+        totalBonus: 0,
+      };
+
+      bonusBreakdown.totalBonus = calculateTotalBonus(bonusBreakdown);
+
       const totalPenalty =
         speedFactor * aggressionFactor * idleFactor * stabilityFactor;
-      const adjustedKmPerLiter = baseConsumption / totalPenalty;
+      const bonusMultiplier = 1 - bonusBreakdown.totalBonus;
+      const adjustedKmPerLiter =
+        (baseConsumption / totalPenalty) * bonusMultiplier;
 
       return {
         baseKmPerLiter: baseConsumption,
@@ -103,6 +227,17 @@ export function useConsumptionModel() {
         stabilityFactor,
         adjustedKmPerLiter,
         isAggressive,
+        totalBonus: bonusBreakdown.totalBonus,
+        speedBonus: bonusBreakdown.speedBonus,
+        accelerationBonus: bonusBreakdown.accelerationBonus,
+        coastingBonus: bonusBreakdown.coastingBonus,
+        stabilityBonus: bonusBreakdown.stabilityBonus,
+        idleBonus: bonusBreakdown.idleBonus,
+        isEcoDriving: bonusBreakdown.totalBonus > 0,
+        currentSpeedKmh,
+        currentAcceleration: avgAcceleration,
+        idlePercentage,
+        speedVariance,
       };
     },
     [
@@ -110,6 +245,12 @@ export function useConsumptionModel() {
       calculateAggressionFactor,
       calculateIdleFactor,
       calculateStabilityFactor,
+      calculateSpeedBonus,
+      calculateAccelerationBonus,
+      calculateCoastingBonus,
+      calculateStabilityBonus,
+      calculateIdleBonus,
+      calculateTotalBonus,
     ],
   );
 
@@ -154,6 +295,7 @@ export function useConsumptionModel() {
         speedVariance: 0,
         avgAcceleration: 0,
         idlePercentage: 0,
+        coastingPercentage: 0,
       };
     }
 
@@ -169,6 +311,11 @@ export function useConsumptionModel() {
       recentReadings.reduce((sum, r) => sum + r.acceleration, 0) /
       recentReadings.length;
 
+    const coastingCount = recentReadings.filter(
+      (r) => r.acceleration < COASTING_DECEL_THRESHOLD && r.acceleration > -2.0,
+    ).length;
+    const coastingPercentage = (coastingCount / recentReadings.length) * 100;
+
     const totalTimeWindow = WINDOW_SIZE_MS;
     const idlePercentage =
       totalTimeWindow > 0 ? (idleTimeRef.current / totalTimeWindow) * 100 : 0;
@@ -179,6 +326,7 @@ export function useConsumptionModel() {
       speedVariance,
       avgAcceleration,
       idlePercentage: Math.min(100, idlePercentage),
+      coastingPercentage,
     };
   }, []);
 
@@ -193,5 +341,10 @@ export function useConsumptionModel() {
     getMetrics,
     reset,
     calculateAdjustedConsumption,
+    calculateSpeedBonus,
+    calculateAccelerationBonus,
+    calculateCoastingBonus,
+    calculateStabilityBonus,
+    calculateIdleBonus,
   };
 }

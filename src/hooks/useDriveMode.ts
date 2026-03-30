@@ -28,15 +28,25 @@ interface UseDriveModeReturn {
     aggressionPenaltyPct: number;
     idlePenaltyPct: number;
     stabilityPenaltyPct: number;
+    speedBonusPct: number;
+    accelerationBonusPct: number;
+    coastingBonusPct: number;
+    stabilityBonusPct: number;
+    idleBonusPct: number;
+    totalBonusPct: number;
+    isEcoDriving: boolean;
   };
   getEstimatedCosts: (
     distanceKm: number,
     baseKmPerLiter: number,
     fuelPrice: number,
+    totalBonusPct?: number,
   ) => {
     baseFuelUsed: number;
     extraFuelUsed: number;
+    savedFuel: number;
     extraCost: number;
+    savedCost: number;
     totalFuelUsed: number;
     totalCost: number;
   };
@@ -83,7 +93,7 @@ export function useDriveMode(
   useEffect(() => {
     getSettings().then((s) => {
       setSettings(s);
-      setCurrentKmPerLiter(s.cityKmPerLiter);
+      setCurrentKmPerLiter(s.manualCityKmPerLiter);
       setIsInitialized(true);
     });
   }, []);
@@ -184,9 +194,18 @@ export function useDriveMode(
       addConsumptionReading(position.speed, now);
       calculateMetrics();
 
+      let baseConsumption: number;
+      if (driveMode === "highway") {
+        baseConsumption = settings.manualHighwayKmPerLiter;
+      } else if (driveMode === "mixed") {
+        baseConsumption = settings.manualMixedKmPerLiter;
+      } else {
+        baseConsumption = settings.manualCityKmPerLiter;
+      }
+
       const metrics = getMetrics(now);
       const newFactors = calculateAdjustedConsumption(
-        currentKmPerLiter,
+        baseConsumption,
         metrics.avgSpeedKmh,
         metrics.speedVariance,
         metrics.idlePercentage,
@@ -205,11 +224,11 @@ export function useDriveMode(
         lastModeChangeRef.current = now;
         let baseConsumption: number;
         if (newMode === "highway") {
-          baseConsumption = settings.highwayKmPerLiter;
+          baseConsumption = settings.manualHighwayKmPerLiter;
         } else if (newMode === "mixed") {
-          baseConsumption = settings.mixedKmPerLiter;
+          baseConsumption = settings.manualMixedKmPerLiter;
         } else {
-          baseConsumption = settings.cityKmPerLiter;
+          baseConsumption = settings.manualCityKmPerLiter;
         }
         setCurrentKmPerLiter(baseConsumption);
       }
@@ -223,7 +242,6 @@ export function useDriveMode(
       addSample,
       getMetrics,
       calculateAdjustedConsumption,
-      currentKmPerLiter,
     ],
   );
 
@@ -236,7 +254,7 @@ export function useDriveMode(
     setAvgSpeed(0);
     setStopPercentage(0);
     if (settings) {
-      setCurrentKmPerLiter(settings.cityKmPerLiter);
+      setCurrentKmPerLiter(settings.manualCityKmPerLiter);
     }
     resetConsumptionModel();
     resetTripTracker();
@@ -254,17 +272,28 @@ export function useDriveMode(
         stabilityFactor: 1,
         adjustedKmPerLiter: currentKmPerLiter,
         isAggressive: false,
+        totalBonus: 0,
+        speedBonus: 0,
+        accelerationBonus: 0,
+        coastingBonus: 0,
+        stabilityBonus: 0,
+        idleBonus: 0,
+        isEcoDriving: false,
+        currentSpeedKmh: 0,
+        currentAcceleration: 0,
+        idlePercentage: 0,
+        speedVariance: 0,
       };
     }
 
     const metrics = getMetrics();
     let baseConsumption: number;
     if (driveMode === "highway") {
-      baseConsumption = settings.highwayKmPerLiter;
+      baseConsumption = settings.manualHighwayKmPerLiter;
     } else if (driveMode === "mixed") {
-      baseConsumption = settings.mixedKmPerLiter;
+      baseConsumption = settings.manualMixedKmPerLiter;
     } else {
-      baseConsumption = settings.cityKmPerLiter;
+      baseConsumption = settings.manualCityKmPerLiter;
     }
 
     return calculateAdjustedConsumption(

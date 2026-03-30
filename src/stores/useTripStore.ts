@@ -113,7 +113,7 @@ export const useTripStore = create<TripStore>((set, get) => ({
       path: [],
       status: "recording",
       driveMode: "city",
-      consumption: settings.cityKmPerLiter,
+      consumption: settings.manualCityKmPerLiter,
       fuelCapacity: settings.fuelCapacity,
       fuelUsed: 0,
       fuelPrice: settings.fuelPrice,

@@ -22,9 +22,19 @@ export interface TripConsumptionBreakdown {
   aggressionPenaltyPct: number;
   idlePenaltyPct: number;
   stabilityPenaltyPct: number;
+  totalPenaltyPct: number;
+  speedBonusPct: number;
+  accelerationBonusPct: number;
+  coastingBonusPct: number;
+  stabilityBonusPct: number;
+  idleBonusPct: number;
+  totalBonusPct: number;
+  isEcoDriving: boolean;
   baseFuelUsed: number;
   extraFuelUsed: number;
+  savedFuel: number;
   extraCost: number;
+  savedCost: number;
 }
 
 export interface Trip {
@@ -53,9 +63,15 @@ export interface Settings {
   cityKmPerLiter: number;
   highwayKmPerLiter: number;
   mixedKmPerLiter: number;
+  manualCityKmPerLiter: number;
+  manualHighwayKmPerLiter: number;
+  manualMixedKmPerLiter: number;
   fuelCapacity: number;
   currentFuel: number;
   fuelPrice: number;
+  avgCityKmPerLiter?: number;
+  avgHighwayKmPerLiter?: number;
+  avgMixedKmPerLiter?: number;
 }
 
 export interface Refuel {

@@ -85,6 +85,9 @@ export function Tracker() {
     cityKmPerLiter: 8,
     highwayKmPerLiter: 12,
     mixedKmPerLiter: 10,
+    manualCityKmPerLiter: 10,
+    manualHighwayKmPerLiter: 14,
+    manualMixedKmPerLiter: 12,
     fuelCapacity: 50,
     currentFuel: 50,
     fuelPrice: 5.0,
@@ -110,6 +113,9 @@ export function Tracker() {
         cityKmPerLiter: s.cityKmPerLiter,
         highwayKmPerLiter: s.highwayKmPerLiter,
         mixedKmPerLiter: s.mixedKmPerLiter,
+        manualCityKmPerLiter: s.manualCityKmPerLiter,
+        manualHighwayKmPerLiter: s.manualHighwayKmPerLiter,
+        manualMixedKmPerLiter: s.manualMixedKmPerLiter,
         fuelCapacity: s.fuelCapacity,
         currentFuel: s.currentFuel,
         fuelPrice: s.fuelPrice,
@@ -164,6 +170,7 @@ export function Tracker() {
       distanceKm,
       currentKmPerLiter,
       settings.fuelPrice,
+      avgFactors.totalBonusPct,
     );
 
     const breakdown = {
@@ -171,9 +178,23 @@ export function Tracker() {
       aggressionPenaltyPct: avgFactors.aggressionPenaltyPct,
       idlePenaltyPct: avgFactors.idlePenaltyPct,
       stabilityPenaltyPct: avgFactors.stabilityPenaltyPct,
+      totalPenaltyPct:
+        avgFactors.speedPenaltyPct +
+        avgFactors.aggressionPenaltyPct +
+        avgFactors.idlePenaltyPct +
+        avgFactors.stabilityPenaltyPct,
+      speedBonusPct: avgFactors.speedBonusPct,
+      accelerationBonusPct: avgFactors.accelerationBonusPct,
+      coastingBonusPct: avgFactors.coastingBonusPct,
+      stabilityBonusPct: avgFactors.stabilityBonusPct,
+      idleBonusPct: avgFactors.idleBonusPct,
+      totalBonusPct: avgFactors.totalBonusPct,
+      isEcoDriving: avgFactors.isEcoDriving,
       baseFuelUsed: costs.baseFuelUsed,
       extraFuelUsed: costs.extraFuelUsed,
+      savedFuel: costs.savedFuel,
       extraCost: costs.extraCost,
+      savedCost: costs.savedCost,
     };
 
     const tripId = await stopTrip(

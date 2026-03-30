@@ -13,6 +13,17 @@ const createFactors = (
   stabilityFactor: 1,
   adjustedKmPerLiter: 12,
   isAggressive: false,
+  totalBonus: 0,
+  speedBonus: 0,
+  accelerationBonus: 0,
+  coastingBonus: 0,
+  stabilityBonus: 0,
+  idleBonus: 0,
+  isEcoDriving: false,
+  currentSpeedKmh: 0,
+  currentAcceleration: 0,
+  idlePercentage: 0,
+  speedVariance: 0,
   ...overrides,
 });
 
@@ -284,5 +295,96 @@ describe("useTripConsumptionTracker", () => {
     expect(factors.speedPenaltyPct).toBeGreaterThan(0);
     expect(factors.idlePenaltyPct).toBeGreaterThan(0);
     expect(factors.speedPenaltyPct).toBeGreaterThan(factors.idlePenaltyPct);
+  });
+
+  describe("bonus calculations", () => {
+    it("caps total bonus at 10% in getAverageFactors", () => {
+      const { result } = renderHook(() => useTripConsumptionTracker());
+
+      const maxBonusFactors = createFactors({
+        speedBonus: 0.05,
+        accelerationBonus: 0.04,
+        coastingBonus: 0.03,
+        stabilityBonus: 0.03,
+        idleBonus: 0.03,
+      });
+
+      act(() => {
+        for (let i = 0; i < 5; i++) {
+          result.current.addSample(maxBonusFactors, 2000);
+        }
+      });
+
+      const factors = result.current.getAverageFactors();
+      expect(factors.totalBonusPct).toBe(10);
+    });
+
+    it("isEcoDriving is true when bonuses exist, even if capped", () => {
+      const { result } = renderHook(() => useTripConsumptionTracker());
+
+      const maxBonusFactors = createFactors({
+        speedBonus: 0.05,
+        accelerationBonus: 0.04,
+        coastingBonus: 0.03,
+        stabilityBonus: 0.03,
+        idleBonus: 0.03,
+      });
+
+      act(() => {
+        for (let i = 0; i < 5; i++) {
+          result.current.addSample(maxBonusFactors, 2000);
+        }
+      });
+
+      const factors = result.current.getAverageFactors();
+      expect(factors.isEcoDriving).toBe(true);
+    });
+
+    it("calculates individual bonus percentages correctly", () => {
+      const { result } = renderHook(() => useTripConsumptionTracker());
+
+      const speedBonusFactors = createFactors({
+        speedBonus: 0.05,
+        accelerationBonus: 0,
+        coastingBonus: 0,
+        stabilityBonus: 0,
+        idleBonus: 0,
+      });
+
+      act(() => {
+        for (let i = 0; i < 5; i++) {
+          result.current.addSample(speedBonusFactors, 2000);
+        }
+      });
+
+      const factors = result.current.getAverageFactors();
+      expect(factors.speedBonusPct).toBeCloseTo(5, 1);
+      expect(factors.accelerationBonusPct).toBe(0);
+      expect(factors.coastingBonusPct).toBe(0);
+      expect(factors.stabilityBonusPct).toBe(0);
+      expect(factors.idleBonusPct).toBe(0);
+    });
+
+    it("sums multiple bonuses correctly up to cap", () => {
+      const { result } = renderHook(() => useTripConsumptionTracker());
+
+      const partialBonusFactors = createFactors({
+        speedBonus: 0.03,
+        accelerationBonus: 0.02,
+        coastingBonus: 0.01,
+        stabilityBonus: 0.01,
+        idleBonus: 0.01,
+      });
+
+      act(() => {
+        for (let i = 0; i < 5; i++) {
+          result.current.addSample(partialBonusFactors, 2000);
+        }
+      });
+
+      const factors = result.current.getAverageFactors();
+      expect(factors.totalBonusPct).toBe(8);
+      expect(factors.isEcoDriving).toBe(true);
+    });
   });
 });

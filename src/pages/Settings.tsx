@@ -90,10 +90,14 @@ export function Settings() {
       <main className="-mt-4 flex-1 overflow-auto p-4 pt-6">
         <div className="rounded-3xl bg-white p-6 shadow-lg">
           <h2 className="mb-6 text-lg font-semibold text-gray-900">
-            Consumo de Combustível
+            Consumo do Veículo
           </h2>
+          <p className="mb-6 text-sm text-gray-500">
+            Valores do manual do fabricante. Estos são usados como referência
+            para calcular bônus de condução ecológica.
+          </p>
 
-          <div className="space-y-6">
+          <div className="space-y-4">
             <div>
               <label className="mb-2 block text-sm font-medium text-gray-700">
                 km/l na Cidade
@@ -103,20 +107,17 @@ export function Settings() {
                   type="number"
                   step="0.1"
                   min="0"
-                  value={settings?.cityKmPerLiter || ""}
+                  value={settings?.manualCityKmPerLiter || ""}
                   onChange={(e) =>
-                    handleChange("cityKmPerLiter", e.target.value)
+                    handleChange("manualCityKmPerLiter", e.target.value)
                   }
                   className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 pr-12 text-lg font-medium text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                  placeholder="8.0"
+                  placeholder="10.0"
                 />
                 <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-gray-400">
                   km/L
                 </span>
               </div>
-              <p className="mt-1 text-xs text-gray-500">
-                Consumo médio em via urbana
-              </p>
             </div>
 
             <div>
@@ -128,20 +129,17 @@ export function Settings() {
                   type="number"
                   step="0.1"
                   min="0"
-                  value={settings?.mixedKmPerLiter || ""}
+                  value={settings?.manualMixedKmPerLiter || ""}
                   onChange={(e) =>
-                    handleChange("mixedKmPerLiter", e.target.value)
+                    handleChange("manualMixedKmPerLiter", e.target.value)
                   }
                   className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 pr-12 text-lg font-medium text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                  placeholder="10.0"
+                  placeholder="12.0"
                 />
                 <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-gray-400">
                   km/L
                 </span>
               </div>
-              <p className="mt-1 text-xs text-gray-500">
-                Consumo médio combinando cidade e estrada
-              </p>
             </div>
 
             <div>
@@ -153,23 +151,20 @@ export function Settings() {
                   type="number"
                   step="0.1"
                   min="0"
-                  value={settings?.highwayKmPerLiter || ""}
+                  value={settings?.manualHighwayKmPerLiter || ""}
                   onChange={(e) =>
-                    handleChange("highwayKmPerLiter", e.target.value)
+                    handleChange("manualHighwayKmPerLiter", e.target.value)
                   }
                   className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 pr-12 text-lg font-medium text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                  placeholder="12.0"
+                  placeholder="14.0"
                 />
                 <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-gray-400">
                   km/L
                 </span>
               </div>
-              <p className="mt-1 text-xs text-gray-500">
-                Consumo médio em via rápida
-              </p>
             </div>
 
-            <div>
+            <div className="border-t border-gray-200 pt-4 mt-4">
               <label className="mb-2 block text-sm font-medium text-gray-700">
                 Capacidade do Tanque
               </label>
@@ -187,9 +182,6 @@ export function Settings() {
                   L
                 </span>
               </div>
-              <p className="mt-1 text-xs text-gray-500">
-                Capacidade total do tanque de combustível
-              </p>
             </div>
 
             <div>
@@ -213,9 +205,6 @@ export function Settings() {
                   /L
                 </span>
               </div>
-              <p className="mt-1 text-xs text-gray-500">
-                Preço do litro de combustível
-              </p>
             </div>
           </div>
 
@@ -394,27 +383,29 @@ export function Settings() {
             <h3 className="font-semibold text-gray-900">
               Factores que Afectam o Consumo
             </h3>
-            <ul className="ml-4 list-disc space-y-2">
-              <li>
-                <strong>Velocidade:</strong> velocidades muito acima ou abaixo
-                do ideal aumentam o consumo.
-              </li>
-              <li>
-                <strong>Aceleração agressiva:</strong> acelerações bruscas
-                consomem mais combustível.
-              </li>
-              <li>
-                <strong>Paradas (idle):</strong> o motor continua consumindo
-                mesmo parado.
-              </li>
-              <li>
-                <strong>Estabilidade:</strong> variações constantes de
-                velocidade aumentam o consumo.
-              </li>
-            </ul>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="rounded-lg bg-red-50 p-3">
+                <p className="font-medium text-red-700">Penalidades (-)</p>
+                <ul className="mt-1 space-y-1 text-xs text-red-600">
+                  <li>• Velocidade acima de 90 km/h</li>
+                  <li>• Aceleração agressiva (&gt;1.5 m/s²)</li>
+                  <li>• Marcha lenta prolongada</li>
+                  <li>• Variações constantes de velocidade</li>
+                </ul>
+              </div>
+              <div className="rounded-lg bg-green-50 p-3">
+                <p className="font-medium text-green-700">Bônus (+)</p>
+                <ul className="mt-1 space-y-1 text-xs text-green-600">
+                  <li>• Velocidade ideal (60-80 km/h)</li>
+                  <li>• Aceleração suave (&lt;0.5 m/s²)</li>
+                  <li>• Coasting (desaceleração natural)</li>
+                  <li>• Zero marcha lenta</li>
+                </ul>
+              </div>
+            </div>
             <p className="mt-3 text-xs text-gray-400">
-              Estes factores são aplicados como multiplicadores ao consumo base
-              do modo de condução.
+              Base de referência: Consumo do Manual do Fabricante. Penalidades e
+              bônus são aplicados como multiplicadores. Bônus máximo: 10%.
             </p>
           </div>
         </div>
