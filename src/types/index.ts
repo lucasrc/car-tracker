@@ -10,6 +10,8 @@ export type TripStatus = "idle" | "recording" | "paused" | "completed";
 
 export type DriveMode = "city" | "highway" | "mixed";
 
+export type ActivityType = "MA" | "SA_ENGINE_ON" | "SA_ENGINE_OFF";
+
 export interface TripStop {
   lat: number;
   lng: number;

@@ -4,6 +4,7 @@ import { MapTracker } from "@/components/tracker/MapTracker";
 import { Speedometer } from "@/components/tracker/Speedometer";
 import { TripControls } from "@/components/tracker/TripControls";
 import { TripInfo } from "@/components/tracker/TripInfo";
+import { FuelBar } from "@/components/tracker/FuelBar";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useTripStore } from "@/stores/useTripStore";
 import { useGeolocation } from "@/hooks/useGeolocation";
@@ -434,6 +435,11 @@ export function Tracker() {
 
   return (
     <>
+      <FuelBar
+        currentFuel={settings.currentFuel}
+        fuelCapacity={settings.fuelCapacity}
+      />
+
       <div className="fixed inset-0 z-0">
         <MapTracker position={effectivePosition} path={effectivePath} />
       </div>
@@ -463,6 +469,11 @@ export function Tracker() {
             fuelUsed={isRecordingOrSimulating ? storeTotalFuelUsed : 0}
             fuelPrice={settings.fuelPrice}
             range={displayedRange}
+            currentConsumption={
+              isRecordingOrSimulating
+                ? currentKmPerLiter
+                : settings.cityKmPerLiter
+            }
           />
         </div>
 

@@ -8,6 +8,7 @@ interface TripInfoProps {
   fuelUsed?: number;
   fuelPrice?: number;
   range?: number;
+  currentConsumption?: number;
   cityKmPerLiter?: number;
   highwayKmPerLiter?: number;
   mixedKmPerLiter?: number;
@@ -34,6 +35,7 @@ export function TripInfo({
   fuelUsed = 0,
   fuelPrice = 5.0,
   range = 0,
+  currentConsumption,
 }: TripInfoProps) {
   const cost = fuelUsed * fuelPrice;
   const formattedCost = cost.toLocaleString("pt-BR", {
@@ -143,6 +145,12 @@ export function TripInfo({
             </p>
             <p className="mt-1 truncate font-semibold leading-none tracking-[-0.02em] text-slate-950 [font-size:clamp(0.875rem,3vw,1.2rem)]">
               {Math.round(range)} km
+              {currentConsumption && (
+                <span className="text-[0.65rem] font-normal text-slate-600">
+                  {" "}
+                  / {currentConsumption.toFixed(1)} km/l
+                </span>
+              )}
             </p>
           </div>
         </div>

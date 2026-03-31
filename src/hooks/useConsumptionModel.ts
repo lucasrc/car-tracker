@@ -1,4 +1,5 @@
 import { useCallback, useRef } from "react";
+import type { ActivityType } from "@/types";
 
 export interface ConsumptionFactors {
   baseKmPerLiter: number;
@@ -19,6 +20,9 @@ export interface ConsumptionFactors {
   currentAcceleration: number;
   idlePercentage: number;
   speedVariance: number;
+  activityType: ActivityType;
+  copertKmPerLiter: number;
+  hybridKmPerLiter: number;
 }
 
 export interface BonusBreakdown {
@@ -64,6 +68,23 @@ const STABILITY_BONUS = 0.03;
 const ZERO_IDLE_BONUS = 0.03;
 
 const MAX_TOTAL_BONUS = 0.1;
+
+const COPERT_WEIGHT = 0.6;
+const CURRENT_MODEL_WEIGHT = 0.4;
+
+export function copertFuelConsumption(speedKmh: number): number {
+  if (speedKmh <= 0) return 0;
+  const v = speedKmh;
+  const fcPerKm =
+    (217 + 0.253 * v + 0.00965 * v * v) / (1 + 0.096 * v - 0.000421 * v * v);
+  return 100 / fcPerKm;
+}
+
+export function calculateIdleConsumptionLiters(durationMs: number): number {
+  const durationSeconds = durationMs / 1000;
+  const mlPerSecond = 0.361;
+  return (mlPerSecond * durationSeconds) / 1000;
+}
 
 export function useConsumptionModel() {
   const readingsRef = useRef<SpeedReading[]>([]);
@@ -186,6 +207,8 @@ export function useConsumptionModel() {
       currentSpeedKmh: number,
       speedVariance: number,
       idlePercentage: number,
+      activityType: ActivityType = "MA",
+      idleDurationMs: number = 0,
     ): ConsumptionFactors => {
       const speedFactor = calculateSpeedFactor(currentSpeedKmh);
 
@@ -216,8 +239,39 @@ export function useConsumptionModel() {
       const totalPenalty =
         speedFactor * aggressionFactor * idleFactor * stabilityFactor;
       const bonusMultiplier = 1 - bonusBreakdown.totalBonus;
-      const adjustedKmPerLiter =
+      const currentModelKmPerLiter =
         (baseConsumption / totalPenalty) * bonusMultiplier;
+
+      let copertKmPerLiter: number;
+      let hybridKmPerLiter: number;
+
+      if (activityType === "SA_ENGINE_OFF") {
+        copertKmPerLiter = 0;
+        hybridKmPerLiter = 0;
+      } else if (activityType === "SA_ENGINE_ON") {
+        const idleConsumptionLiters =
+          calculateIdleConsumptionLiters(idleDurationMs);
+        const idleKmPerLiter =
+          idleDurationMs > 0
+            ? (((idleDurationMs / 1000 / 3600) * 60) / idleConsumptionLiters) *
+              60
+            : 0;
+        copertKmPerLiter =
+          idleKmPerLiter > 0 ? idleKmPerLiter : baseConsumption * 0.5;
+        hybridKmPerLiter =
+          copertKmPerLiter * COPERT_WEIGHT +
+          currentModelKmPerLiter * CURRENT_MODEL_WEIGHT;
+      } else {
+        copertKmPerLiter = copertFuelConsumption(currentSpeedKmh);
+        if (copertKmPerLiter <= 0) {
+          copertKmPerLiter = baseConsumption;
+        }
+        hybridKmPerLiter =
+          copertKmPerLiter * COPERT_WEIGHT +
+          currentModelKmPerLiter * CURRENT_MODEL_WEIGHT;
+      }
+
+      const adjustedKmPerLiter = hybridKmPerLiter;
 
       return {
         baseKmPerLiter: baseConsumption,
@@ -238,6 +292,9 @@ export function useConsumptionModel() {
         currentAcceleration: avgAcceleration,
         idlePercentage,
         speedVariance,
+        activityType,
+        copertKmPerLiter,
+        hybridKmPerLiter,
       };
     },
     [

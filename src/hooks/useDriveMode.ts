@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import type { DriveMode, Settings, Coordinates } from "@/types";
+import type { DriveMode, Settings, Coordinates, ActivityType } from "@/types";
 import { getSettings } from "@/lib/db";
 import {
   useConsumptionModel,
@@ -70,11 +70,13 @@ export function useDriveMode(
   const [settings, setSettings] = useState<Settings | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
   const [currentKmPerLiter, setCurrentKmPerLiter] = useState(8);
+  const [activityType, setActivityType] = useState<ActivityType>("MA");
 
   const speedReadingsRef = useRef<SpeedReading[]>([]);
   const stopsRef = useRef<{ start: number; end?: number }[]>([]);
   const lastModeChangeRef = useRef<number>(0);
   const lastSampleTimeRef = useRef<number>(0);
+  const idleStartTimeRef = useRef<number>(0);
 
   const {
     addReading: addConsumptionReading,
@@ -180,6 +182,18 @@ export function useDriveMode(
         lastReading && lastReading.speed < STOP_SPEED_THRESHOLD;
       const isStopped = position.speed < STOP_SPEED_THRESHOLD;
 
+      let newActivityType: ActivityType;
+      if (position.speed > STOP_SPEED_THRESHOLD) {
+        newActivityType = "MA";
+        idleStartTimeRef.current = 0;
+      } else {
+        newActivityType = "SA_ENGINE_ON";
+        if (idleStartTimeRef.current === 0) {
+          idleStartTimeRef.current = now;
+        }
+      }
+      setActivityType(newActivityType);
+
       if (wasStopped && !isStopped && stopsRef.current.length > 0) {
         const lastStop = stopsRef.current[stopsRef.current.length - 1];
         if (!lastStop.end) {
@@ -204,11 +218,19 @@ export function useDriveMode(
       }
 
       const metrics = getMetrics(now);
+
+      const idleDurationMs =
+        newActivityType === "SA_ENGINE_ON" && idleStartTimeRef.current > 0
+          ? now - idleStartTimeRef.current
+          : 0;
+
       const newFactors = calculateAdjustedConsumption(
         baseConsumption,
         metrics.avgSpeedKmh,
         metrics.speedVariance,
         metrics.idlePercentage,
+        newActivityType,
+        idleDurationMs,
       );
 
       const durationMs =
@@ -250,9 +272,11 @@ export function useDriveMode(
     stopsRef.current = [];
     lastModeChangeRef.current = 0;
     lastSampleTimeRef.current = 0;
+    idleStartTimeRef.current = 0;
     setDriveMode("city");
     setAvgSpeed(0);
     setStopPercentage(0);
+    setActivityType("MA");
     if (settings) {
       setCurrentKmPerLiter(settings.manualCityKmPerLiter);
     }
@@ -283,6 +307,9 @@ export function useDriveMode(
         currentAcceleration: 0,
         idlePercentage: 0,
         speedVariance: 0,
+        activityType: "MA",
+        copertKmPerLiter: currentKmPerLiter,
+        hybridKmPerLiter: currentKmPerLiter,
       };
     }
 
@@ -301,11 +328,14 @@ export function useDriveMode(
       metrics.avgSpeedKmh,
       metrics.speedVariance,
       metrics.idlePercentage,
+      activityType,
+      0,
     );
   }, [
     settings,
     currentKmPerLiter,
     driveMode,
+    activityType,
     getMetrics,
     calculateAdjustedConsumption,
   ]);

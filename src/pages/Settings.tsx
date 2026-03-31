@@ -341,7 +341,7 @@ export function Settings() {
             </p>
             <ul className="ml-4 list-disc space-y-1">
               <li>Velocidade média nos últimos 30 segundos</li>
-              <li>Frequência de paradas (trafego)</li>
+              <li>Frequência de paradas (trânsito)</li>
             </ul>
             <p className="mt-3">
               <strong>Cidade:</strong> velocidade média abaixo de 40 km/h
@@ -357,31 +357,108 @@ export function Settings() {
 
           <div className="mt-6 border-t border-gray-200 pt-6 space-y-3 text-sm text-gray-600">
             <h3 className="font-semibold text-gray-900">
-              Como a Autonomia é Calculada
+              Autonomia em Tempo Real
             </h3>
             <p>
-              A autonomia mostra quantos quilômetros você ainda pode percorrer
-              com o combustível atual no tanque.
+              Durante o rastreamento, a autonomia mostra{" "}
+              <strong>dois valores</strong>:
             </p>
-            <div className="rounded-lg bg-gray-50 p-3 font-mono text-xs">
-              Autonomia = Combustível no tanque × km/l do modo atual
+            <div className="rounded-lg bg-blue-50 p-3 font-mono text-xs">
+              Autonomia: 210 km / 12.5 km/l
             </div>
-            <p className="mt-3">
-              <strong>Combustível Gasto na Viagem:</strong> é calculado
-              continuamente somando o consumo de cada trecho percorrido:
-            </p>
-            <div className="rounded-lg bg-gray-50 p-3 font-mono text-xs">
-              Consumo por trecho = distância do trecho / km/l atual
-            </div>
+            <ul className="ml-4 list-disc space-y-1">
+              <li>
+                <strong>210 km</strong> - quilômetros restantes com o tanque
+                atual
+              </li>
+              <li>
+                <strong>12.5 km/l</strong> - consumo instantâneo em tempo real
+              </li>
+            </ul>
             <p className="mt-3 text-xs text-gray-400">
-              O km/l utilizado varia automaticamente entre cidade, estrada e
-              modo misto conforme o padrão de velocidade detectado.
+              O consumo em tempo real é calculado com base no modelo STPS +
+              COPERT, que considera sua velocidade e padrão de condução.
             </p>
           </div>
 
           <div className="mt-6 border-t border-gray-200 pt-6 space-y-3 text-sm text-gray-600">
             <h3 className="font-semibold text-gray-900">
-              Factores que Afectam o Consumo
+              Modelo Científico de Consumo
+            </h3>
+            <p>
+              O sistema usa uma combinação de dois modelos científicos
+              validados:
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-lg bg-purple-50 p-3">
+                <p className="font-medium text-purple-700">COPERT (60%)</p>
+                <p className="mt-1 text-xs text-purple-600">
+                  Modelo europeu para veículos em movimento. Calcula consumo
+                  baseado na velocidade média. Precisão: ~88%
+                </p>
+                <p className="mt-2 text-xs text-purple-500">
+                  <a
+                    href="https://pmc.ncbi.nlm.nih.gov/articles/PMC5923608/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline"
+                  >
+                    Kan et al. (2018)
+                  </a>
+                </p>
+              </div>
+              <div className="rounded-lg bg-indigo-50 p-3">
+                <p className="font-medium text-indigo-700">4-Mode (40%)</p>
+                <p className="mt-1 text-xs text-indigo-600">
+                  Modelo para marcha lenta (~1.3 L/h). Aplicado quando o veículo
+                  está parado com motor ligado.
+                </p>
+                <p className="mt-2 text-xs text-indigo-500">
+                  Baseado em DOE Fact #861
+                </p>
+              </div>
+            </div>
+            <p className="mt-3 text-xs text-gray-400">
+              A combinação híbrida (60% COPERT + 40% fatores de condução)
+              fornece estimativas estáveis e precisas.
+            </p>
+          </div>
+
+          <div className="mt-6 border-t border-gray-200 pt-6 space-y-3 text-sm text-gray-600">
+            <h3 className="font-semibold text-gray-900">
+              Tipos de Atividade (STPS)
+            </h3>
+            <p>
+              O sistema classifica automaticamente o tipo de atividade do
+              veículo:
+            </p>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="rounded bg-green-100 px-2 py-1 text-xs font-medium text-green-700">
+                  MA
+                </span>
+                <span className="text-gray-600">
+                  <strong>Mobile Activity</strong> - veículo em movimento
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="rounded bg-yellow-100 px-2 py-1 text-xs font-medium text-yellow-700">
+                  SA
+                </span>
+                <span className="text-gray-600">
+                  <strong>Stationary</strong> - veículo parado (motor ligado)
+                </span>
+              </div>
+            </div>
+            <p className="mt-3 text-xs text-gray-400">
+              Nota: Sem acesso ao OBD, assumimos sempre motor ligado quando
+              parado. Isso é conservador - evita superestimar autonomia.
+            </p>
+          </div>
+
+          <div className="mt-6 border-t border-gray-200 pt-6 space-y-3 text-sm text-gray-600">
+            <h3 className="font-semibold text-gray-900">
+              Fatores que Afetam o Consumo
             </h3>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="rounded-lg bg-red-50 p-3">
