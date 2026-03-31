@@ -24,6 +24,9 @@ const createFactors = (
   currentAcceleration: 0,
   idlePercentage: 0,
   speedVariance: 0,
+  activityType: "MA",
+  copertKmPerLiter: 12,
+  hybridKmPerLiter: 12,
   ...overrides,
 });
 
