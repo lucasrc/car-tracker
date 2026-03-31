@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 
-type Preset = 7 | 30 | 90 | "custom";
+type Preset = 1 | 7 | 30 | "custom";
 
 interface DateRangePickerProps {
   startDate: Date;
@@ -31,7 +31,7 @@ export function DateRangePicker({
   onChange,
 }: DateRangePickerProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [preset, setPreset] = useState<Preset>(30);
+  const [preset, setPreset] = useState<Preset>(7);
   const [viewMonth, setViewMonth] = useState(new Date());
   const [selecting, setSelecting] = useState<"start" | "end">("start");
   const [tempStart, setTempStart] = useState<Date | null>(null);
@@ -126,7 +126,7 @@ export function DateRangePicker({
   return (
     <div ref={containerRef} className="relative">
       <div className="flex gap-2">
-        {([7, 30, 90] as Preset[]).map((p) => (
+        {([1, 7, 30] as Preset[]).map((p) => (
           <button
             key={p}
             onClick={() => applyPreset(p)}
@@ -136,7 +136,7 @@ export function DateRangePicker({
                 : "bg-white text-gray-600 shadow-md hover:bg-gray-50"
             }`}
           >
-            {p} dias
+            {p} {p === 1 ? "dia" : "dias"}
           </button>
         ))}
         <button
@@ -266,17 +266,15 @@ export function DateRangePicker({
             </p>
             <button
               onClick={() => {
-                setPreset(30);
+                setPreset(7);
                 const now = new Date();
-                const start = new Date(
-                  now.getTime() - 30 * 24 * 60 * 60 * 1000,
-                );
+                const start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
                 onChange(start, now);
                 setIsOpen(false);
               }}
               className="w-full rounded-lg bg-gray-100 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200"
             >
-              Definir: Últimos 30 dias
+              Definir: Últimos 7 dias
             </button>
           </div>
         </div>
