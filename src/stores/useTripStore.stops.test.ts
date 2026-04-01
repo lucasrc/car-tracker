@@ -4,6 +4,7 @@ import { useTripStore } from "./useTripStore";
 import type { Settings, Trip } from "@/types";
 
 // Mock do db
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const mockSaveCurrentTrip = vi.fn((_trip: Trip) => Promise.resolve());
 const mockClearCurrentTrip = vi.fn(() => Promise.resolve());
 const mockSaveTrip = vi.fn((trip: Trip) => Promise.resolve(trip.id));
@@ -513,8 +514,8 @@ describe("useTripStore - Stops", () => {
       });
 
       const state = useTripStore.getState();
-      // Status should change to paused when loading recording trip
-      expect(state.status).toBe("paused");
+      // Status should remain as recording when loading recording trip (preserves original status)
+      expect(state.status).toBe("recording");
       expect(state.lastStopSampleTimestamp).toBe(timestamp + 30000);
     });
   });
