@@ -7,8 +7,10 @@ import {
   Marker,
   Popup,
 } from "react-leaflet";
+import { TrashIcon } from "@heroicons/react/24/outline";
 import L from "leaflet";
-import { getTripById } from "@/lib/db";
+import { getTripById, deleteTrip } from "@/lib/db";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { formatDateTime, formatDistance, formatTime } from "@/lib/utils";
 import type { Trip } from "@/types";
 
@@ -58,6 +60,8 @@ export function TripDetail() {
   const navigate = useNavigate();
   const [trip, setTrip] = useState<Trip | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -90,6 +94,13 @@ export function TripDetail() {
       </div>
     );
   }
+
+  const handleDelete = async () => {
+    if (!id) return;
+    setIsDeleting(true);
+    await deleteTrip(id);
+    navigate("/history");
+  };
 
   const pathPositions: [number, number][] = trip.path.map((p) => [
     p.lat,
@@ -142,9 +153,18 @@ export function TripDetail() {
   return (
     <div className="min-h-screen bg-gray-50 px-4 pb-24 pt-6">
       <div className="mx-auto w-full max-w-sm">
-        <h1 className="text-[31px] font-bold leading-tight text-slate-900">
-          Sua Viagem Finalizada
-        </h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-[31px] font-bold leading-tight text-slate-900">
+            Sua Viagem
+          </h1>
+          <button
+            onClick={() => setShowDeleteDialog(true)}
+            className="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-red-500 transition-colors"
+            disabled={isDeleting}
+          >
+            <TrashIcon className="h-6 w-6" />
+          </button>
+        </div>
 
         <p className="mt-1 text-sm text-slate-500">
           {formatDateTime(trip.startTime)}
@@ -569,6 +589,17 @@ export function TripDetail() {
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={showDeleteDialog}
+        title="Excluir viagem"
+        message="Tem certeza que deseja excluir esta viagem? Esta ação não pode ser desfeita."
+        confirmLabel="Excluir"
+        cancelLabel="Cancelar"
+        variant="danger"
+        onConfirm={handleDelete}
+        onCancel={() => setShowDeleteDialog(false)}
+      />
     </div>
   );
 }

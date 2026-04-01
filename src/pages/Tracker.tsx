@@ -12,6 +12,8 @@ import { useWakeLock } from "@/hooks/useWakeLock";
 import { useSpeedFilter } from "@/hooks/useSpeedFilter";
 import { useDriveMode } from "@/hooks/useDriveMode";
 import { useSimulation } from "@/hooks/useSimulation";
+import { useAutoTracker } from "@/hooks/useAutoTracker";
+import { useAppStore } from "@/stores/useAppStore";
 import { speedToKmh } from "@/lib/utils";
 import type { Settings } from "@/types";
 import {
@@ -20,8 +22,6 @@ import {
   calculateTotalDistance,
 } from "@/lib/distance";
 import { getSettings, consumeFuel } from "@/lib/db";
-
-const IS_DEV = import.meta.env.DEV;
 
 const GPS_CONFIG = {
   maxAccuracyMeters: 20,
@@ -71,9 +71,23 @@ export function Tracker() {
     speed: simulatedSpeed,
     simulatedPath,
     elapsedTime: simulatedElapsedTime,
-    startSimulation,
-    stopSimulation,
   } = useSimulation();
+  const {
+    isTracking: isAutoTracking,
+    points: autoTrackerPoints,
+    error: autoTrackerError,
+    initialize: initAutoTracker,
+    startMonitoring: startAutoMonitoring,
+    stop: stopAutoTracker,
+    setOnTripComplete,
+  } = useAutoTracker();
+  const selectedCarBluetoothAddress = useAppStore(
+    (s) => s.selectedCarBluetoothAddress,
+  );
+  const selectedCarBluetoothName = useAppStore(
+    (s) => s.selectedCarBluetoothName,
+  );
+  const autoTrackingEnabled = useAppStore((s) => s.autoTrackingEnabled);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastValidPositionRef = useRef<{
     lat: number;
@@ -96,6 +110,46 @@ export function Tracker() {
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [isGpsWarming, setIsGpsWarming] = useState(false);
   const [warmupStartTime, setWarmupStartTime] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (autoTrackingEnabled && selectedCarBluetoothAddress) {
+      setOnTripComplete((tripId: string) => {
+        if (tripId) {
+          navigate(`/history/${tripId}`);
+        }
+      });
+    }
+  }, [
+    autoTrackingEnabled,
+    selectedCarBluetoothAddress,
+    selectedCarBluetoothName,
+    navigate,
+    setOnTripComplete,
+  ]);
+
+  useEffect(() => {
+    if (autoTrackingEnabled && !isAutoTracking && selectedCarBluetoothAddress) {
+      initAutoTracker(selectedCarBluetoothAddress)
+        .then(() =>
+          startAutoMonitoring(
+            selectedCarBluetoothAddress,
+            selectedCarBluetoothName ?? undefined,
+          ),
+        )
+        .catch(() => {});
+    }
+    if (!autoTrackingEnabled && isAutoTracking) {
+      stopAutoTracker();
+    }
+  }, [
+    autoTrackingEnabled,
+    initAutoTracker,
+    startAutoMonitoring,
+    stopAutoTracker,
+    isAutoTracking,
+    selectedCarBluetoothAddress,
+    selectedCarBluetoothName,
+  ]);
 
   const {
     estimatedRange,
@@ -395,8 +449,16 @@ export function Tracker() {
     }
   }, [status, isWatching, startWatching, stopWatching]);
 
-  const effectivePosition = isSimulating ? simulatedPosition : position;
-  const effectivePath = isSimulating ? simulatedPath : trip?.path || [];
+  const effectivePosition = isSimulating
+    ? simulatedPosition
+    : isAutoTracking
+      ? (autoTrackerPoints[autoTrackerPoints.length - 1] ?? null)
+      : position;
+  const effectivePath = isSimulating
+    ? simulatedPath
+    : isAutoTracking
+      ? autoTrackerPoints
+      : trip?.path || [];
   const displaySpeed = isSimulating ? simulatedSpeed * 3.6 : currentSpeed;
   const simulatedDistance = isSimulating
     ? calculateTotalDistance(simulatedPath)
@@ -446,18 +508,11 @@ export function Tracker() {
 
       <div className="pointer-events-none fixed inset-0 z-[1] bg-[linear-gradient(180deg,rgba(214,228,233,0.5)_0%,rgba(214,228,233,0.14)_38%,rgba(18,38,58,0.22)_100%)]" />
 
-      {IS_DEV && (
-        <div className="fixed right-4 top-16 z-50">
-          <button
-            onClick={isSimulating ? stopSimulation : startSimulation}
-            className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-              isSimulating
-                ? "bg-red-500 text-white hover:bg-red-600"
-                : "bg-emerald-500 text-white hover:bg-emerald-600"
-            }`}
-          >
-            {isSimulating ? "Parar Simulação" : "Iniciar Simulação"}
-          </button>
+      {autoTrackerError && autoTrackingEnabled && (
+        <div className="fixed right-4 top-20 z-50">
+          <div className="rounded-lg bg-red-500 px-3 py-2 text-xs text-white shadow-lg">
+            {autoTrackerError}
+          </div>
         </div>
       )}
 

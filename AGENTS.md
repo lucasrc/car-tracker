@@ -58,6 +58,39 @@ bunx vitest run src/components/ui/Button.test.tsx
 bunx vitest run -t "Button"
 ```
 
+### Android Deployment
+
+**Setup (one-time):**
+
+1. Connect Android device via USB
+2. Enable Developer Options: Settings → About Phone → Build Number (tap 7x)
+3. Enable Wireless Debugging: Settings → System → Developer Options → Wireless Debugging
+4. Allow USB debugging when prompted
+5. Execute: `adb tcpip 5555` (restarts ADB in TCP mode)
+6. Get device IP: Settings → Wi-Fi → tap connected network
+7. Disconnect USB and connect via WiFi: `adb connect <DEVICE_IP>:5555`
+
+**Development workflow:**
+
+```bash
+bun run android:deploy     # Build + sync + install + launch (Recommended)
+bun run android:sync      # Build + sync only
+bun run android:install    # Install APK on connected device
+bun run android:start      # Launch app on device
+bun run android:open       # Open Android project in Android Studio
+```
+
+**Useful ADB commands:**
+
+```bash
+adb devices                           # List connected devices
+adb connect <IP>:PORT                # Connect via WiFi (e.g., adb connect 192.168.0.5:5555)
+adb disconnect                        # Disconnect current device
+adb install -r app.apk               # Install/reinstall APK
+adb shell am start -n com.car.tracker/.MainActivity  # Launch app
+adb -s <DEVICE_IP:PORT> <command>    # Target specific device
+```
+
 ## Code Style Guidelines
 
 ### Imports
@@ -165,7 +198,7 @@ src/
 | ----------- | ------------------------------------------------------------------------------------------------- |
 | **Tracker** | `Dashboard`, `MapTracker`, `Speedometer`, `TripInfo`, `TripControls`, `TripCard`, `TrackerHeader` |
 | **History** | `FuelCharts`, `SpeedAnalysis`, `UsagePatterns`, `TimeAnalysis`, `TripSummary`, `RefuelCard`       |
-| **UI**      | `Button`, `Input`, `ConfirmDialog`, `DateRangePicker`                                             |
+| **UI**      | `Button`, `Input`, `ConfirmDialog`, `DateRangePicker`, `Tabs`                                     |
 | **Layout**  | `Header`, `BottomNav`, `Layout`                                                                   |
 
 ### Key Hooks
