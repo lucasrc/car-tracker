@@ -73,23 +73,49 @@ bunx vitest run -t "Button"
 **Development workflow:**
 
 ```bash
-bun run android:deploy     # Build + sync + install + launch (Recommended)
-bun run android:sync      # Build + sync only
-bun run android:install    # Install APK on connected device
-bun run android:start      # Launch app on device
-bun run android:open       # Open Android project in Android Studio
+bun run android:deploy           # Quick deploy (may have cache issues)
+bun run android:clean-deploy     # Clean assets + rebuild (preserves app data)
+bun run android:sync             # Build + sync only
+bun run android:install          # Install APK on connected device
+bun run android:start            # Launch app on device
+bun run android:open             # Open Android project in Android Studio
 ```
+
+**IMPORTANT - Clean build before deploying:**
+
+Always clean caches before deploying to avoid stale bundles:
+
+```bash
+# Full clean + rebuild (recommended)
+rm -rf android/app/src/main/assets/public/* && rm -rf android/.gradle && rm -rf android/app/build && rm -rf node_modules/.vite && bun run build && bun x cap sync android && cd android && ./gradlew assembleDebug && cd .. && adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+**Android Cache Issues:**
+
+If the app doesn't update after deploy, it's usually stale Capacitor assets or Android WebView cache.
+
+```bash
+bun run android:clean-deploy     # Force-stop + clean assets + rebuild APK (preserves IndexedDB data)
+```
+
+**Important:**
+
+- `install -r` preserves app data (IndexedDB, settings, trips)
+- Never use `adb shell pm clear` unless you want to wipe all data
+- `android:clean-deploy` removes only web assets (JS/CSS/HTML), not app data
 
 **Useful ADB commands:**
 
 ```bash
 adb devices                           # List connected devices
-adb connect <IP>:PORT                # Connect via WiFi (e.g., adb connect 192.168.0.5:5555)
+adb connect <IP>:PORT                # Connect via WiFi (e.g., adb connect 192.168.0.5:38547)
 adb disconnect                        # Disconnect current device
 adb install -r app.apk               # Install/reinstall APK
 adb shell am start -n com.car.tracker/.MainActivity  # Launch app
 adb -s <DEVICE_IP:PORT> <command>    # Target specific device
 ```
+
+**Current device:** `192.168.0.5:38547`
 
 ## Code Style Guidelines
 
@@ -223,3 +249,22 @@ src/
 / → Home        /tracker → Tracker      /history → History
 /settings → Settings    /about → About    /trip/:id → TripDetail
 ```
+
+### Documentation
+
+| Doc                                 | Propósito                                           |
+| ----------------------------------- | --------------------------------------------------- |
+| `docs/architecture.md`              | Visão geral do sistema, camadas, fluxos             |
+| `docs/glossary.md`                  | Dicionário de termos de domínio                     |
+| `docs/data-flow.md`                 | Pipeline detalhado: GPS → distância, consumo, radar |
+| `docs/decisions.md`                 | Architecture Decision Records                       |
+| `docs/modelo-consumo-tempo-real.md` | Especificação do modelo híbrido de consumo          |
+| `docs/regras-negocio.md`            | Especificação das penalidades/bônus                 |
+
+### Tips for AI Agents
+
+- Antes de mexer em algoritmos de consumo, leia `docs/data-flow.md`
+- Para entender termos técnicos, consulte `docs/glossary.md`
+- Decisões de arquitetura estão em `docs/decisions.md`
+- Se algo já foi considerado e rejeitado, está nos ADRs
+- **Sempre que mudar lógica, atualize a documentação** — doc desatualizado é pior que nenhum doc

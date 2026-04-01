@@ -1,73 +1,65 @@
-# React + TypeScript + Vite
+# Car Tracker
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+App de rastreamento veicular 100% offline. Registra viagens via GPS, calcula consumo de combustível em tempo real, detecta radares e classifica automaticamente o tipo de via.
 
-Currently, two official plugins are available:
+## Quick Start
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```bash
+# Instalar dependências
+bun install
 
-## React Compiler
+# Desenvolvimento
+bun run dev
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+# Build
+bun run build
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+# Testes
+bun run test
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Para Agentes AI
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+1. Leia **AGENTS.md** — convenções de código, comandos, estrutura de arquivos
+2. Leia **docs/architecture.md** — visão geral de como as peças se conectam
+3. Use **docs/glossary.md** — para entender termos de domínio (COPERT, HMM, etc.)
+4. Plans em **.opencode/plans/** — contexto específico por task
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Stack
+
+| Camada    | Tecnologia              |
+| --------- | ----------------------- |
+| Frontend  | React 19 + TypeScript   |
+| Build     | Vite 8                  |
+| Estilo    | Tailwind CSS v4         |
+| Estado    | Zustand 5               |
+| Dados     | TanStack Query + Dexie  |
+| Maps      | Leaflet + react-leaflet |
+| Charts    | Recharts                |
+| Validação | Zod 4                   |
+
+## Recursos
+
+- Rastreamento GPS em tempo real
+- Cálculo de consumo híbrido (COPERT + modelo custom)
+- Detecção de radares via OpenStreetMap
+- Classificação automática de via (cidade/rodovia)
+- Histórico de viagens com gráficos
+- Tudo funciona offline (PWA)
+- Deploy Android via Capacitor
+
+## Estrutura
+
 ```
+src/
+├── components/     # UI components
+├── hooks/          # useGeolocation, useConsumptionModel, useDriveMode
+├── lib/            # db, utils, distance, radar-api
+├── pages/          # Home, Tracker, History, Settings
+├── stores/         # Zustand stores (trip, app, radar)
+└── types/          # TypeScript interfaces
+```
+
+## License
+
+MIT

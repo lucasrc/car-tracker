@@ -148,9 +148,9 @@ class AutoTracker {
         this.isGpsRunning = false;
       }
 
-      const { stopTrip } = useTripStore.getState();
+      const { stopTrip, totalFuelUsed } = useTripStore.getState();
       const settings = await getSettings();
-      const tripId = await stopTrip(settings.fuelPrice, 0);
+      const tripId = await stopTrip(settings.fuelPrice, totalFuelUsed);
       if (tripId) {
         this.callbacks.onTripComplete?.(tripId);
       }

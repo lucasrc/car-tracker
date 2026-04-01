@@ -16,9 +16,10 @@
     "android:sync": "bun run build && npx cap sync android",
     "android:open": "npx cap open android",
     "android:run": "npx cap run android",
-    "android:install": "adb -s 192.168.0.5:33783 install -r android/app/build/outputs/apk/debug/app-debug.apk",
-    "android:start": "adb -s 192.168.0.5:33783 shell am start -n com.car.tracker/.MainActivity",
-    "android:deploy": "bun run build && npx cap sync android && adb -s 192.168.0.5:33783 install -r android/app/build/outputs/apk/debug/app-debug.apk && adb -s 192.168.0.5:33783 shell am start -n com.car.tracker/.MainActivity"
+    "android:install": "adb -s 192.168.0.5:38547 install -r android/app/build/outputs/apk/debug/app-debug.apk",
+    "android:start": "adb -s 192.168.0.5:38547 shell am start -n com.car.tracker/.MainActivity",
+    "android:deploy": "bun run build && npx cap sync android && adb -s 192.168.0.5:38547 install -r android/app/build/outputs/apk/debug/app-debug.apk && adb -s 192.168.0.5:38547 shell am start -n com.car.tracker/.MainActivity",
+    "android:clean-deploy": "adb -s 192.168.0.5:38547 shell am force-stop com.car.tracker && rm -rf android/app/src/main/assets/public/* && bun run build && npx cap sync android && cd android && ./gradlew assembleDebug && cd .. && adb -s 192.168.0.5:38547 install -r android/app/build/outputs/apk/debug/app-debug.apk && adb -s 192.168.0.5:38547 shell am start -n com.car.tracker/.MainActivity"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.0",
@@ -26,6 +27,7 @@
     "@capacitor/core": "^8.3.0",
     "@capgo/background-geolocation": "^8.0.26",
     "@capgo/capacitor-bluetooth-low-energy": "^1.1.11",
+    "@capgo/capacitor-keep-awake": "^8.1.9",
     "@heroicons/react": "^2.2.0",
     "@squareetlabs/capacitor-dont-kill-my-app": "^7.0.0",
     "@tanstack/react-query": "^5.95.2",

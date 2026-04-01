@@ -8,5 +8,8 @@ project(':capgo-background-geolocation').projectDir = new File('../node_modules/
 include ':capgo-capacitor-bluetooth-low-energy'
 project(':capgo-capacitor-bluetooth-low-energy').projectDir = new File('../node_modules/@capgo/capacitor-bluetooth-low-energy/android')
 
+include ':capgo-capacitor-keep-awake'
+project(':capgo-capacitor-keep-awake').projectDir = new File('../node_modules/@capgo/capacitor-keep-awake/android')
+
 include ':squareetlabs-capacitor-dont-kill-my-app'
 project(':squareetlabs-capacitor-dont-kill-my-app').projectDir = new File('../node_modules/@squareetlabs/capacitor-dont-kill-my-app/android')

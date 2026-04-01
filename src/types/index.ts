@@ -4,6 +4,7 @@ export interface Coordinates {
   timestamp: number;
   accuracy?: number;
   speed?: number;
+  heading?: number;
 }
 
 export type TripStatus = "idle" | "recording" | "paused" | "completed";
@@ -58,7 +59,16 @@ export interface Trip {
   totalFuelUsed: number;
   stops?: TripStop[];
   consumptionBreakdown?: TripConsumptionBreakdown;
+  speedingEvents?: SpeedingEvent[];
+  pendingStopStart?: {
+    lat: number;
+    lng: number;
+    timestamp: number;
+  } | null;
+  pendingStopLastTimestamp?: number | null;
 }
+
+export type FuelType = "gasolina" | "etanol" | "flex";
 
 export interface Settings {
   id: string;
@@ -74,6 +84,8 @@ export interface Settings {
   avgCityKmPerLiter?: number;
   avgHighwayKmPerLiter?: number;
   avgMixedKmPerLiter?: number;
+  engineDisplacement: number;
+  fuelType: FuelType;
 }
 
 export interface Refuel {
@@ -87,4 +99,24 @@ export interface Refuel {
 export interface BatteryState {
   charging: boolean;
   level: number;
+}
+
+export interface SpeedingEvent {
+  radarId: string;
+  radarLat: number;
+  radarLng: number;
+  radarMaxSpeed: number;
+  currentSpeed: number;
+  timestamp: number;
+}
+
+export interface Radar {
+  id: string;
+  lat: number;
+  lng: number;
+  maxSpeed: number;
+  direction?: number;
+  directionTag?: string;
+  source: string;
+  wayGeometry?: [number, number][];
 }

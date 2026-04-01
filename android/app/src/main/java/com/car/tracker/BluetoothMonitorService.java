@@ -11,6 +11,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.IBinder;
@@ -31,6 +32,10 @@ public class BluetoothMonitorService extends Service {
 
     private static final String CHANNEL_ID = "bluetooth_monitor_channel";
     private static final int NOTIFICATION_ID = 1001;
+
+    private static final String PREFS_NAME = "car_tracker_prefs";
+    private static final String KEY_TRACKING_ACTIVE = "tracking_active";
+    private static final String KEY_TRIP_START_TIME = "trip_start_time";
 
     private String selectedDeviceAddress;
     private String selectedDeviceName;
@@ -81,10 +86,12 @@ public class BluetoothMonitorService extends Service {
             NotificationChannel channel = new NotificationChannel(
                 CHANNEL_ID,
                 "Bluetooth Monitor",
-                NotificationManager.IMPORTANCE_LOW
+                NotificationManager.IMPORTANCE_MAX
             );
             channel.setDescription("Monitoring car Bluetooth connection");
-            channel.setShowBadge(false);
+            channel.setShowBadge(true);
+            channel.enableVibration(true);
+            channel.setBypassDnd(true);
 
             NotificationManager manager = getSystemService(NotificationManager.class);
             if (manager != null) {
@@ -115,7 +122,10 @@ public class BluetoothMonitorService extends Service {
             .setContentIntent(launchPendingIntent)
             .addAction(0, "Stop", stopPendingIntent)
             .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setBadgeIconType(NotificationCompat.BADGE_ICON_SMALL)
             .build();
 
         android.util.Log.d("BluetoothMonitorService", "Calling startForeground with notification");
@@ -149,18 +159,12 @@ public class BluetoothMonitorService extends Service {
                 if (device == null || selectedDeviceAddress == null) return;
                 if (!device.getAddress().equals(selectedDeviceAddress)) return;
 
-                String broadcastAction = null;
                 if (BluetoothDevice.ACTION_ACL_CONNECTED.equals(action)) {
-                    broadcastAction = ACTION_DEVICE_CONNECTED;
+                    android.util.Log.d("BluetoothMonitorService", "Device connected: " + device.getAddress());
+                    onDeviceConnected(context, device);
                 } else if (BluetoothDevice.ACTION_ACL_DISCONNECTED.equals(action)) {
-                    broadcastAction = ACTION_DEVICE_DISCONNECTED;
-                }
-
-                if (broadcastAction != null) {
-                    Intent broadcast = new Intent(broadcastAction);
-                    broadcast.putExtra("address", device.getAddress());
-                    broadcast.putExtra("name", device.getName() != null ? device.getName() : "Unknown");
-                    sendBroadcast(broadcast);
+                    android.util.Log.d("BluetoothMonitorService", "Device disconnected: " + device.getAddress());
+                    onDeviceDisconnected(context);
                 }
             }
         };
@@ -169,6 +173,76 @@ public class BluetoothMonitorService extends Service {
         filter.addAction(BluetoothDevice.ACTION_ACL_CONNECTED);
         filter.addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED);
         registerReceiver(connectionReceiver, filter);
+    }
+
+    private void onDeviceConnected(Context context, BluetoothDevice device) {
+        SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        long startTime = System.currentTimeMillis();
+        
+        prefs.edit()
+            .putBoolean(KEY_TRACKING_ACTIVE, true)
+            .putString(KEY_TRIP_START_TIME, String.valueOf(startTime))
+            .putString("connected_device_address", device.getAddress())
+            .putString("connected_device_name", device.getName() != null ? device.getName() : "Unknown")
+            .apply();
+
+        android.util.Log.d("BluetoothMonitorService", "Saved tracking state: active=true, startTime=" + startTime);
+
+        Intent broadcast = new Intent(ACTION_DEVICE_CONNECTED);
+        broadcast.putExtra("address", device.getAddress());
+        broadcast.putExtra("name", device.getName() != null ? device.getName() : "Unknown");
+        broadcast.putExtra("startTime", startTime);
+        sendBroadcast(broadcast);
+
+        updateNotification("Tracking: " + selectedDeviceName + " (connected)");
+    }
+
+    private void onDeviceDisconnected(Context context) {
+        SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        
+        prefs.edit()
+            .putBoolean(KEY_TRACKING_ACTIVE, false)
+            .apply();
+
+        android.util.Log.d("BluetoothMonitorService", "Cleared tracking state");
+
+        Intent broadcast = new Intent(ACTION_DEVICE_DISCONNECTED);
+        sendBroadcast(broadcast);
+
+        updateNotification("Monitoring: " + selectedDeviceName + " (disconnected)");
+    }
+
+    private void updateNotification(String text) {
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        if (manager == null) return;
+
+        Intent stopIntent = new Intent(this, BluetoothMonitorService.class);
+        stopIntent.setAction(ACTION_STOP);
+        PendingIntent stopPendingIntent = PendingIntent.getService(
+            this, 0, stopIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+
+        Intent launchIntent = getPackageManager().getLaunchIntentForPackage(getPackageName());
+        PendingIntent launchPendingIntent = PendingIntent.getActivity(
+            this, 0, launchIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+
+        Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("Car Tracker")
+            .setContentText(text)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentIntent(launchPendingIntent)
+            .addAction(0, "Stop", stopPendingIntent)
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setBadgeIconType(NotificationCompat.BADGE_ICON_SMALL)
+            .build();
+
+        manager.notify(NOTIFICATION_ID, notification);
     }
 
     private void stopMonitoring() {

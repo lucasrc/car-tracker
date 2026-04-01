@@ -141,7 +141,7 @@ export function TripInfo({
           </svg>
           <div className="min-w-0">
             <p className="text-[0.65rem] font-medium leading-none text-slate-700">
-              Autonomia
+              Autonomia inst.
             </p>
             <p className="mt-1 truncate font-semibold leading-none tracking-[-0.02em] text-slate-950 [font-size:clamp(0.875rem,3vw,1.2rem)]">
               {Math.round(range)} km

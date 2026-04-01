@@ -278,6 +278,18 @@ export function useTripConsumptionTracker(): TripConsumptionTrackerReturn {
       fuelPrice: number,
       totalBonusPct: number = 0,
     ) => {
+      if (baseKmPerLiter <= 0) {
+        return {
+          baseFuelUsed: 0,
+          extraFuelUsed: 0,
+          savedFuel: 0,
+          extraCost: 0,
+          savedCost: 0,
+          totalFuelUsed: 0,
+          totalCost: 0,
+        };
+      }
+
       const effective = getEffectivePenalties();
 
       const baseFuelUsed = distanceKm / baseKmPerLiter;

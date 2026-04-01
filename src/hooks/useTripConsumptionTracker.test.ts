@@ -27,6 +27,8 @@ const createFactors = (
   activityType: "MA",
   copertKmPerLiter: 12,
   hybridKmPerLiter: 12,
+  displacementFactor: 1,
+  fuelEnergyFactor: 1,
   ...overrides,
 });
 

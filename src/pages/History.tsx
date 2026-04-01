@@ -8,7 +8,12 @@ import { TimeAnalysis } from "@/components/history/TimeAnalysis";
 import { SpeedAnalysis } from "@/components/history/SpeedAnalysis";
 import { UsagePatterns } from "@/components/history/UsagePatterns";
 import { DateRangePicker } from "@/components/ui/DateRangePicker";
-import { deleteTrip, getTripsInPeriod, getRefuelsInPeriod } from "@/lib/db";
+import {
+  deleteTrip,
+  getTripsInPeriod,
+  getRefuelsInPeriod,
+  deleteRefuel,
+} from "@/lib/db";
 import { normalizeDateRange } from "@/lib/utils";
 import type { Trip, Refuel } from "@/types";
 
@@ -68,6 +73,13 @@ export function History() {
   const handleDeleteTrip = async (tripId: string) => {
     if (window.confirm("Tem certeza que deseja excluir esta viagem?")) {
       await deleteTrip(tripId);
+      loadTrips();
+    }
+  };
+
+  const handleDeleteRefuel = async (refuelId: string) => {
+    if (window.confirm("Tem certeza que deseja excluir este abastecimento?")) {
+      await deleteRefuel(refuelId);
       loadTrips();
     }
   };
@@ -220,7 +232,11 @@ export function History() {
             ) : (
               <div className="mt-4 flex flex-col gap-3">
                 {refuels.map((refuel) => (
-                  <RefuelCard key={refuel.id} refuel={refuel} />
+                  <RefuelCard
+                    key={refuel.id}
+                    refuel={refuel}
+                    onDelete={() => handleDeleteRefuel(refuel.id)}
+                  />
                 ))}
               </div>
             )}

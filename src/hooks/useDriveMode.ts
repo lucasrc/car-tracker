@@ -59,6 +59,7 @@ const MAX_SPEED_HIGHWAY = 60 / 3.6;
 const STOP_SPEED_THRESHOLD = 1;
 const MIN_STOP_DURATION_MS = 180000;
 const STOPS_PER_km_THRESHOLD = 2;
+const WARM_UP_DURATION_MS = 90000;
 
 export function useDriveMode(
   distanceMeters: number,
@@ -77,6 +78,8 @@ export function useDriveMode(
   const lastModeChangeRef = useRef<number>(0);
   const lastSampleTimeRef = useRef<number>(0);
   const idleStartTimeRef = useRef<number>(0);
+  const tripStartTimeRef = useRef<number>(0);
+  const [warmUpElapsedMs, setWarmUpElapsedMs] = useState(0);
 
   const {
     addReading: addConsumptionReading,
@@ -98,6 +101,14 @@ export function useDriveMode(
       setCurrentKmPerLiter(s.manualCityKmPerLiter);
       setIsInitialized(true);
     });
+  }, []);
+
+  useEffect(() => {
+    if (tripStartTimeRef.current === 0) return;
+    const interval = setInterval(() => {
+      setWarmUpElapsedMs(Date.now() - tripStartTimeRef.current);
+    }, 1000);
+    return () => clearInterval(interval);
   }, []);
 
   const calculateMetrics = useCallback(() => {
@@ -231,6 +242,8 @@ export function useDriveMode(
         metrics.idlePercentage,
         newActivityType,
         idleDurationMs,
+        settings.engineDisplacement,
+        settings.fuelType,
       );
 
       const durationMs =
@@ -273,6 +286,7 @@ export function useDriveMode(
     lastModeChangeRef.current = 0;
     lastSampleTimeRef.current = 0;
     idleStartTimeRef.current = 0;
+    tripStartTimeRef.current = Date.now();
     setDriveMode("city");
     setAvgSpeed(0);
     setStopPercentage(0);
@@ -282,6 +296,7 @@ export function useDriveMode(
     }
     resetConsumptionModel();
     resetTripTracker();
+    setWarmUpElapsedMs(0);
   }, [settings, resetConsumptionModel, resetTripTracker]);
 
   const litersRemaining = Math.max(0, currentFuel);
@@ -310,6 +325,8 @@ export function useDriveMode(
         activityType: "MA",
         copertKmPerLiter: currentKmPerLiter,
         hybridKmPerLiter: currentKmPerLiter,
+        displacementFactor: 1,
+        fuelEnergyFactor: 1,
       };
     }
 
@@ -330,6 +347,8 @@ export function useDriveMode(
       metrics.idlePercentage,
       activityType,
       0,
+      settings.engineDisplacement,
+      settings.fuelType,
     );
   }, [
     settings,
@@ -340,10 +359,24 @@ export function useDriveMode(
     calculateAdjustedConsumption,
   ]);
 
-  const estimatedRange =
+  const rawEstimatedRange =
     consumptionFactors.adjustedKmPerLiter > 0
       ? litersRemaining * consumptionFactors.adjustedKmPerLiter
       : 0;
+
+  const conservativeFallbackRange = settings
+    ? litersRemaining * settings.manualCityKmPerLiter
+    : litersRemaining * currentKmPerLiter;
+
+  const warmUpProgress = Math.min(warmUpElapsedMs / WARM_UP_DURATION_MS, 1);
+  const warmUpFactor = warmUpProgress * warmUpProgress;
+
+  const estimatedRange =
+    warmUpProgress >= 1
+      ? rawEstimatedRange
+      : conservativeFallbackRange +
+        (rawEstimatedRange - conservativeFallbackRange) * warmUpFactor;
+
   const estimatedConsumption = consumptionFactors.adjustedKmPerLiter;
 
   return {

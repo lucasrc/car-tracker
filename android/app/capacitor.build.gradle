@@ -11,6 +11,7 @@ apply from: "../capacitor-cordova-android-plugins/cordova.variables.gradle"
 dependencies {
     implementation project(':capgo-background-geolocation')
     implementation project(':capgo-capacitor-bluetooth-low-energy')
+    implementation project(':capgo-capacitor-keep-awake')
     implementation project(':squareetlabs-capacitor-dont-kill-my-app')
 
 }

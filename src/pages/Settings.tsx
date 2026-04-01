@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { getSettings, saveSettings, refuel, addRefuel } from "@/lib/db";
 import type { Settings } from "@/types";
+import { isAndroid } from "@/lib/platform";
 import { useAppStore } from "@/stores/useAppStore";
 import { ClassicBluetooth } from "@/services/classicBluetooth";
 import type { ClassicBluetoothDevice } from "@/services/classicBluetooth";
@@ -39,7 +40,9 @@ export function Settings() {
 
   useEffect(() => {
     loadSettings();
-    checkBtAvailability();
+    if (isAndroid) {
+      checkBtAvailability();
+    }
   }, []);
 
   const loadSettings = async () => {
@@ -75,8 +78,37 @@ export function Settings() {
     }
   };
 
-  const selectDevice = (device: ClassicBluetoothDevice) => {
+  const selectDevice = async (device: ClassicBluetoothDevice) => {
     setSelectedCarBluetooth(device.name, device.address);
+
+    if (isAndroid && device.address) {
+      try {
+        await ClassicBluetooth.setAutoTracking({
+          enabled: autoTrackingEnabled,
+          deviceAddress: device.address,
+          deviceName: device.name,
+        });
+      } catch (err) {
+        console.warn("Failed to save device to native prefs:", err);
+      }
+    }
+  };
+
+  const handleAutoTrackingToggle = async () => {
+    const newValue = !autoTrackingEnabled;
+    setAutoTrackingEnabled(newValue);
+
+    if (isAndroid && selectedCarBluetoothAddress) {
+      try {
+        await ClassicBluetooth.setAutoTracking({
+          enabled: newValue,
+          deviceAddress: selectedCarBluetoothAddress,
+          deviceName: selectedCarBluetoothName,
+        });
+      } catch (err) {
+        console.warn("Failed to save auto tracking state:", err);
+      }
+    }
   };
 
   const handleSave = async () => {
@@ -93,21 +125,11 @@ export function Settings() {
     }
   };
 
-  const handleRefuel = async (
-    liters: number,
-    pricePerLiter: number,
-    newFuelLevel?: number,
-  ) => {
+  const handleRefuel = async (liters: number, pricePerLiter: number) => {
     setRefueling(true);
     setShowRefuelModal(false);
     try {
-      let updated: Settings;
-      if (newFuelLevel !== undefined) {
-        updated = { ...settings!, currentFuel: newFuelLevel };
-        await saveSettings(updated);
-      } else {
-        updated = await refuel(liters);
-      }
+      const updated = await refuel(liters);
       setSettings(updated);
       await addRefuel(liters, pricePerLiter);
     } catch (err) {
@@ -115,6 +137,26 @@ export function Settings() {
       alert("Erro ao abastecimento. Tente novamente.");
     } finally {
       setRefueling(false);
+    }
+  };
+
+  const handleFuelPriceChange = (value: string) => {
+    if (!settings) return;
+    const numValue = parseFloat(value) || 0;
+    setSettings({ ...settings, fuelPrice: numValue });
+  };
+
+  const handleFuelPriceBlur = async () => {
+    if (!settings) return;
+    setSaving(true);
+    try {
+      await saveSettings(settings);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      console.error("Error saving fuel price:", err);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -161,6 +203,69 @@ export function Settings() {
 
   const tabVeiculo = (
     <div className="space-y-6">
+      <div className="rounded-3xl bg-white p-6 shadow-lg">
+        <h3 className="mb-4 text-base font-semibold text-gray-900">
+          Motor e Combustível
+        </h3>
+        <p className="mb-6 text-sm text-gray-500">
+          Configure as características do motor para cálculos mais precisos de
+          consumo e autonomia.
+        </p>
+
+        <div className="space-y-4">
+          <div>
+            <label className="mb-2 block text-sm font-medium text-gray-700">
+              Cilindrada (cm³)
+            </label>
+            <div className="relative">
+              <input
+                type="number"
+                step="10"
+                min="500"
+                max="6000"
+                value={settings?.engineDisplacement || ""}
+                onChange={(e) =>
+                  handleChange("engineDisplacement", e.target.value)
+                }
+                className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 pr-16 text-lg font-medium text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                placeholder="1000"
+              />
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-gray-400">
+                cm³
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-gray-400">
+              Ex: 1000 para motor 1.0, 1600 para 1.6, etc.
+            </p>
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-gray-700">
+              Tipo de Combustível
+            </label>
+            <select
+              value={settings?.fuelType || "gasolina"}
+              onChange={(e) => {
+                if (!settings) return;
+                setSettings({
+                  ...settings,
+                  fuelType: e.target.value as "gasolina" | "etanol" | "flex",
+                });
+              }}
+              className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-lg font-medium text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            >
+              <option value="gasolina">Gasolina (E30)</option>
+              <option value="etanol">Etanol</option>
+              <option value="flex">Flex (adaptativo)</option>
+            </select>
+            <p className="mt-1 text-xs text-gray-400">
+              Gasolina brasileira contém 30% de etanol (E30) por lei. O modelo
+              Flex usa fator energético adaptativo.
+            </p>
+          </div>
+        </div>
+      </div>
+
       <div className="rounded-3xl bg-white p-6 shadow-lg">
         <h3 className="mb-4 text-base font-semibold text-gray-900">
           Consumo do Manual
@@ -263,6 +368,45 @@ export function Settings() {
         </div>
       </div>
 
+      <div className="rounded-3xl bg-white p-6 shadow-lg">
+        <h3 className="mb-4 text-base font-semibold text-gray-900">
+          Ajuste Manual do Nível do Tanque
+        </h3>
+        <p className="mb-4 text-sm text-gray-500">
+          Defina manualmente o nível atual do tanque. Use quando o sensor não
+          está disponível.
+        </p>
+        <div className="flex gap-3">
+          <div className="relative flex-1">
+            <input
+              type="number"
+              step="0.1"
+              min="0"
+              max={settings?.fuelCapacity}
+              value={manualFuelLevel}
+              onChange={(e) => setManualFuelLevel(e.target.value)}
+              className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 pr-12 text-lg font-medium text-gray-900 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+              placeholder={settings?.currentFuel?.toFixed(1) || "0"}
+            />
+            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-gray-400">
+              L
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={handleManualFuelLevel}
+            disabled={!manualFuelLevel}
+            className="rounded-xl bg-purple-500 px-6 py-3 font-semibold text-white shadow-lg transition-all hover:bg-purple-600 disabled:opacity-50"
+          >
+            Atualizar
+          </button>
+        </div>
+        <p className="mt-2 text-xs text-gray-500">
+          Tanque atual: {settings?.currentFuel?.toFixed(1) || 0}L /{" "}
+          {settings?.fuelCapacity || 50}L
+        </p>
+      </div>
+
       <button
         onClick={handleSave}
         disabled={saving}
@@ -359,7 +503,7 @@ export function Settings() {
                 </p>
               </div>
               <button
-                onClick={() => setAutoTrackingEnabled(!autoTrackingEnabled)}
+                onClick={handleAutoTrackingToggle}
                 className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${
                   autoTrackingEnabled ? "bg-blue-600" : "bg-gray-300"
                 }`}
@@ -413,50 +557,22 @@ export function Settings() {
       </div>
 
       <div className="rounded-3xl bg-white p-6 shadow-lg">
-        <h3 className="mb-4 text-base font-semibold text-gray-900">
-          Ajuste Manual do Nível
-        </h3>
-        <p className="mb-4 text-sm text-gray-500">
-          Defina manualmente o nível atual do tanque de combustível. Útil quando
-          o sensor não está disponível.
-        </p>
-        <div className="flex gap-3">
-          <div className="relative flex-1">
-            <input
-              type="number"
-              step="0.1"
-              min="0"
-              max={settings?.fuelCapacity}
-              value={manualFuelLevel}
-              onChange={(e) => setManualFuelLevel(e.target.value)}
-              className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 pr-12 text-lg font-medium text-gray-900 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
-              placeholder={settings?.currentFuel?.toFixed(1) || "0"}
-            />
-            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-gray-400">
-              L
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-base font-semibold text-gray-900">
+            Preço da Gasolina
+          </h3>
+          {saving && (
+            <span className="text-sm text-blue-600 font-medium">
+              Salvando...
             </span>
-          </div>
-          <button
-            type="button"
-            onClick={handleManualFuelLevel}
-            disabled={!manualFuelLevel}
-            className="rounded-xl bg-purple-500 px-6 py-3 font-semibold text-white shadow-lg transition-all hover:bg-purple-600 disabled:opacity-50"
-          >
-            Atualizar
-          </button>
+          )}
+          {!saving && saved && (
+            <span className="text-sm text-green-600 font-medium">Salvo!</span>
+          )}
         </div>
-        <p className="mt-2 text-xs text-gray-500">
-          Capacidade do tanque: {settings?.fuelCapacity || 50}L
-        </p>
-      </div>
-
-      <div className="rounded-3xl bg-white p-6 shadow-lg">
-        <h3 className="mb-6 text-base font-semibold text-gray-900">
-          Preço Padrão do Combustível
-        </h3>
         <p className="mb-4 text-sm text-gray-500">
-          Este preço será usado como padrão nos abastecimentos. Você pode
-          alterar o preço individualmente em cada abastecimento.
+          Este é o preço base usado para calcular o custo de combustível em cada
+          viagem.
         </p>
 
         <div className="relative">
@@ -468,7 +584,8 @@ export function Settings() {
             step="0.01"
             min="0"
             value={settings?.fuelPrice || ""}
-            onChange={(e) => handleChange("fuelPrice", e.target.value)}
+            onChange={(e) => handleFuelPriceChange(e.target.value)}
+            onBlur={handleFuelPriceBlur}
             className="w-full rounded-xl border border-gray-200 bg-gray-50 pl-10 py-3 pr-12 text-lg font-medium text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             placeholder="5.00"
           />
@@ -476,6 +593,9 @@ export function Settings() {
             /L
           </span>
         </div>
+        <p className="mt-2 text-xs text-gray-400">
+          O valor é salvo automaticamente ao sair do campo
+        </p>
       </div>
 
       <div className="rounded-3xl bg-white p-6 shadow-lg">
@@ -515,98 +635,93 @@ export function Settings() {
     <div className="space-y-6">
       <div className="rounded-3xl bg-white p-6 shadow-lg">
         <h3 className="mb-4 text-base font-semibold text-gray-900">
-          Sobre o Cálculo
+          Como o app detecta cidade ou estrada
         </h3>
         <div className="space-y-3 text-sm text-gray-600">
           <p>
-            O app detecta automaticamente se você está na cidade ou na estrada
-            baseado em:
-          </p>
-          <ul className="ml-4 list-disc space-y-1">
-            <li>Velocidade média nos últimos 30 segundos</li>
-            <li>Frequência de paradas (trânsito)</li>
-          </ul>
-          <p className="mt-3">
-            <strong>Cidade:</strong> velocidade média abaixo de 40 km/h
+            O app percebe sozinho se você está na cidade ou na rodovia olhando
+            sua velocidade média e quantas vezes você parou.
           </p>
           <p>
-            <strong>Estrada:</strong> velocidade média acima de 60 km/h
+            <strong>Cidade:</strong> quando a velocidade média fica abaixo de 40
+            km/h
           </p>
-          <p className="mt-3 text-xs text-gray-400">
-            A detecção usa histerese de 10 segundos para evitar trocas
-            frequentes entre modos.
+          <p>
+            <strong>Estrada:</strong> quando a velocidade média passa de 60 km/h
+          </p>
+          <p className="text-xs text-gray-400">
+            Essa mudança não é instantânea — o app espera alguns segundos para
+            ter certeza e não ficar trocando de modo sem necessidade.
           </p>
         </div>
       </div>
 
       <div className="rounded-3xl bg-white p-6 shadow-lg">
         <h3 className="mb-4 text-base font-semibold text-gray-900">
-          Autonomia em Tempo Real
+          Autonomia (quanto falta para acabar o combustível)
         </h3>
         <div className="space-y-3 text-sm text-gray-600">
-          <p>Durante o rastreamento, a autonomia mostra dois valores:</p>
+          <p>Durante uma viagem, o app mostra dois números lado a lado:</p>
           <div className="rounded-lg bg-blue-50 p-3 font-mono text-xs">
             Autonomia: 210 km / 12.5 km/l
           </div>
           <ul className="ml-4 list-disc space-y-1">
             <li>
-              <strong>210 km</strong> - quilômetros restantes com o tanque atual
+              <strong>210 km</strong> — quantos quilômetros você ainda consegue
+              andar com o combustível que tem no tanque
             </li>
             <li>
-              <strong>12.5 km/l</strong> - consumo instantâneo em tempo real
+              <strong>12.5 km/l</strong> — quantos quilômetros seu carro faz por
+              litro naquele momento
             </li>
           </ul>
           <p className="mt-3 text-xs text-gray-400">
-            O consumo em tempo real é calculado com base no modelo STPS +
-            COPERT.
+            No começo da viagem, o app usa uma estimativa mais conservadora.
+            Conforme ele coleta mais dados, o número fica mais preciso.
           </p>
         </div>
       </div>
 
       <div className="rounded-3xl bg-white p-6 shadow-lg">
         <h3 className="mb-4 text-base font-semibold text-gray-900">
-          Modelo Científico de Consumo
+          Como o consumo é calculado
         </h3>
         <div className="space-y-3 text-sm text-gray-600">
-          <p>O sistema usa uma combinação de dois modelos científicos:</p>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-lg bg-purple-50 p-3">
-              <p className="font-medium text-purple-700">COPERT (60%)</p>
-              <p className="mt-1 text-xs text-purple-600">
-                Modelo europeu para veículos em movimento baseado na velocidade
-                média.
-              </p>
-            </div>
-            <div className="rounded-lg bg-indigo-50 p-3">
-              <p className="font-medium text-indigo-700">4-Mode (40%)</p>
-              <p className="mt-1 text-xs text-indigo-600">
-                Modelo para marcha lenta (~1.3 L/h). Aplicado quando parado com
-                motor ligado.
-              </p>
-            </div>
-          </div>
+          <p>
+            O app não usa um número fixo — ele ajusta a estimativa em tempo real
+            baseado no que está acontecendo na viagem.
+          </p>
+          <p>
+            Quando o carro está andando, ele usa um modelo europeu chamado
+            COPERT, que estima o consumo pela velocidade. Quando está parado com
+            o motor ligado, calcula o gasto por tempo (litros por hora).
+          </p>
+          <p>
+            O resultado também leva em conta o tipo de combustível (gasolina
+            gasta diferente de etanol) e o tamanho do motor do seu carro.
+          </p>
         </div>
       </div>
 
       <div className="rounded-3xl bg-white p-6 shadow-lg">
         <h3 className="mb-4 text-base font-semibold text-gray-900">
-          Fatores que Afetam o Consumo
+          O que faz gastar mais ou menos
         </h3>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="rounded-lg bg-red-50 p-4">
-            <p className="font-medium text-red-700">Penalidades (-)</p>
+            <p className="font-medium text-red-700">Gasta mais</p>
             <ul className="mt-2 space-y-1 text-xs text-red-600">
-              <li>• Velocidade acima de 90 km/h</li>
-              <li>• Aceleração agressiva</li>
-              <li>• Marcha lenta prolongada</li>
+              <li>• Passar de 90 km/h</li>
+              <li>• Acelerar e frear bruscamente</li>
+              <li>• Ficar muito tempo parado com motor ligado</li>
             </ul>
           </div>
           <div className="rounded-lg bg-green-50 p-4">
-            <p className="font-medium text-green-700">Bônus (+)</p>
+            <p className="font-medium text-green-700">Economiza</p>
             <ul className="mt-2 space-y-1 text-xs text-green-600">
-              <li>• Velocidade ideal (60-80 km/h)</li>
-              <li>• Aceleração suave</li>
-              <li>• Coasting (desaceleração natural)</li>
+              <li>• Andar entre 60 e 80 km/h</li>
+              <li>• Acelerar devagar</li>
+              <li>• Tirar o pé do acelerador antes de parar</li>
             </ul>
           </div>
         </div>
@@ -621,12 +736,16 @@ export function Settings() {
       icon: <TruckIcon className="w-5 h-5" />,
       content: tabVeiculo,
     },
-    {
-      id: "bluetooth",
-      label: "Bluetooth",
-      icon: <CpuChipIcon className="w-5 h-5" />,
-      content: tabBluetooth,
-    },
+    ...(isAndroid
+      ? [
+          {
+            id: "bluetooth" as const,
+            label: "Bluetooth",
+            icon: <CpuChipIcon className="w-5 h-5" />,
+            content: tabBluetooth,
+          },
+        ]
+      : []),
     {
       id: "combustivel",
       label: "Combustível",

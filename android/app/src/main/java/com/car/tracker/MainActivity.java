@@ -11,6 +11,7 @@ public class MainActivity extends BridgeActivity {
         // Add custom plugins BEFORE calling super.onCreate()
         initialPlugins = new ArrayList<>();
         initialPlugins.add(ClassicBluetoothPlugin.class);
+        initialPlugins.add(BackgroundTracker.class);
         
         super.onCreate(savedInstanceState);
     }

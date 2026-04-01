@@ -5,6 +5,8 @@ interface DashboardProps {
   distance: number;
   elapsedTime: number;
   maxSpeed: number;
+  radarMaxSpeed?: number;
+  isSpeeding?: boolean;
 }
 
 export function Dashboard({
@@ -12,10 +14,18 @@ export function Dashboard({
   distance,
   elapsedTime,
   maxSpeed,
+  radarMaxSpeed,
+  isSpeeding = false,
 }: DashboardProps) {
   const speedPercent = Math.min(currentSpeed / 200, 1);
   const strokeDasharray = 2 * Math.PI * 45;
   const strokeDashoffset = strokeDasharray * (1 - speedPercent);
+
+  const speedColor = isSpeeding
+    ? "#DC2626"
+    : radarMaxSpeed && currentSpeed > radarMaxSpeed
+      ? "#F59E0B"
+      : "#3B82F6";
 
   return (
     <div className="flex flex-col gap-4 rounded-t-3xl bg-gray-900 p-6 text-white">
@@ -37,7 +47,7 @@ export function Dashboard({
                 cy="50"
                 r="45"
                 fill="none"
-                stroke="#3B82F6"
+                stroke={speedColor}
                 strokeWidth="8"
                 strokeLinecap="round"
                 strokeDasharray={strokeDasharray}
@@ -46,10 +56,17 @@ export function Dashboard({
               />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-3xl font-bold tabular-nums">
+              <span
+                className={`text-3xl font-bold tabular-nums ${isSpeeding ? "animate-pulse text-red-400" : ""}`}
+              >
                 {formatSpeed(currentSpeed)}
               </span>
               <span className="text-xs text-gray-400">km/h</span>
+              {radarMaxSpeed && (
+                <span className="mt-1 text-xs font-medium text-yellow-400">
+                  radar: {radarMaxSpeed}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -83,6 +100,14 @@ export function Dashboard({
             km/h
           </span>
         </div>
+        {isSpeeding && (
+          <div className="flex flex-col items-center">
+            <span className="text-xs text-red-400">INFRAÇÃO</span>
+            <span className="font-semibold text-red-400">
+              {Math.round(currentSpeed - (radarMaxSpeed ?? 0))} km/h
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );

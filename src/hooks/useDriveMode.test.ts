@@ -19,6 +19,8 @@ const mockSettings: Settings = {
   manualCityKmPerLiter: 10,
   manualHighwayKmPerLiter: 14,
   manualMixedKmPerLiter: 12,
+  engineDisplacement: 1600,
+  fuelType: "flex",
 };
 
 describe("useDriveMode", () => {
@@ -119,8 +121,10 @@ describe("useDriveMode", () => {
       expect(result.current.isInitialized).toBe(true);
     });
 
-    const expectedRange = 30 * result.current.estimatedConsumption;
-    expect(result.current.estimatedRange).toBeCloseTo(expectedRange, 0);
+    expect(result.current.estimatedRange).toBeGreaterThan(0);
+    expect(result.current.estimatedRange).toBeLessThanOrEqual(
+      30 * mockSettings.manualCityKmPerLiter,
+    );
   });
 
   it("returns consumption factors with all required fields", async () => {
@@ -217,5 +221,99 @@ describe("useDriveMode", () => {
     expect(result.current.isInitialized).toBe(false);
     expect(result.current.currentKmPerLiter).toBe(8);
     expect(result.current.consumptionFactors.baseKmPerLiter).toBe(8);
+  });
+
+  describe("warm-up behavior", () => {
+    it("starts with conservative range right after reset", async () => {
+      const { result } = renderHook(() => useDriveMode(0, 30));
+
+      await waitFor(() => {
+        expect(result.current.isInitialized).toBe(true);
+      });
+
+      act(() => {
+        result.current.reset();
+      });
+
+      const conservativeRange = 30 * mockSettings.manualCityKmPerLiter;
+      expect(result.current.estimatedRange).toBeCloseTo(conservativeRange, 0);
+    });
+
+    it("uses conservative fallback when warm-up just started", async () => {
+      const { result } = renderHook(() => useDriveMode(0, 30));
+
+      await waitFor(() => {
+        expect(result.current.isInitialized).toBe(true);
+      });
+
+      act(() => {
+        result.current.reset();
+        result.current.addPosition({
+          lat: -23.5505,
+          lng: -46.6333,
+          speed: 15,
+          timestamp: Date.now(),
+        });
+      });
+
+      const conservativeRange = 30 * mockSettings.manualCityKmPerLiter;
+      expect(result.current.estimatedRange).toBeGreaterThanOrEqual(
+        conservativeRange * 0.95,
+      );
+    });
+
+    it("returns zero range when fuel is zero", async () => {
+      const { result } = renderHook(() => useDriveMode(0, 0));
+
+      await waitFor(() => {
+        expect(result.current.isInitialized).toBe(true);
+      });
+
+      expect(result.current.estimatedRange).toBe(0);
+    });
+
+    it("returns zero range when fuel is negative", async () => {
+      const { result } = renderHook(() => useDriveMode(0, -5));
+
+      await waitFor(() => {
+        expect(result.current.isInitialized).toBe(true);
+      });
+
+      expect(result.current.estimatedRange).toBe(0);
+    });
+
+    it("estimatedConsumption is available after initialization", async () => {
+      const { result } = renderHook(() => useDriveMode(0, 30));
+
+      await waitFor(() => {
+        expect(result.current.isInitialized).toBe(true);
+      });
+
+      expect(result.current.estimatedConsumption).toBeGreaterThan(0);
+    });
+
+    it("estimatedRange is proportional to fuel amount", async () => {
+      const { result: result1 } = renderHook(() => useDriveMode(0, 10));
+      const { result: result2 } = renderHook(() => useDriveMode(0, 20));
+
+      await waitFor(() => {
+        expect(result1.current.isInitialized).toBe(true);
+      });
+      await waitFor(() => {
+        expect(result2.current.isInitialized).toBe(true);
+      });
+
+      act(() => {
+        result1.current.reset();
+      });
+      act(() => {
+        result2.current.reset();
+      });
+
+      const range1 = result1.current.estimatedRange;
+      const range2 = result2.current.estimatedRange;
+
+      expect(range2 / range1).toBeCloseTo(2, 0);
+    });
   });
 });

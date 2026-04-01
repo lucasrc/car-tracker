@@ -6,11 +6,7 @@ interface RefuelModalProps {
   defaultPrice: number;
   currentFuel: number;
   fuelCapacity: number;
-  onConfirm: (
-    liters: number,
-    pricePerLiter: number,
-    newFuelLevel?: number,
-  ) => void;
+  onConfirm: (liters: number, pricePerLiter: number) => void;
   onCancel: () => void;
 }
 
@@ -24,16 +20,12 @@ export function RefuelModal({
 }: RefuelModalProps) {
   const [liters, setLiters] = useState("");
   const [price, setPrice] = useState("");
-  const [adjustFuelLevel, setAdjustFuelLevel] = useState(false);
-  const [newFuelLevel, setNewFuelLevel] = useState("");
   const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (open) {
       setLiters("");
       setPrice(defaultPrice.toFixed(2));
-      setAdjustFuelLevel(false);
-      setNewFuelLevel("");
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = "";
@@ -57,7 +49,6 @@ export function RefuelModal({
   const litersNum = parseFloat(liters) || 0;
   const priceNum = parseFloat(price) || 0;
   const total = litersNum * priceNum;
-  const newFuelLevelNum = parseFloat(newFuelLevel) || 0;
 
   const handleConfirm = () => {
     if (litersNum <= 0) {
@@ -68,18 +59,7 @@ export function RefuelModal({
       alert("Digite um preço válido");
       return;
     }
-    if (
-      adjustFuelLevel &&
-      (newFuelLevelNum < 0 || newFuelLevelNum > fuelCapacity)
-    ) {
-      alert(`O nível deve estar entre 0 e ${fuelCapacity} litros`);
-      return;
-    }
-    onConfirm(
-      litersNum,
-      priceNum,
-      adjustFuelLevel ? newFuelLevelNum : undefined,
-    );
+    onConfirm(litersNum, priceNum);
   };
 
   if (!open) return null;
@@ -168,46 +148,14 @@ export function RefuelModal({
             </div>
           )}
 
-          <div className="border-t border-gray-200 pt-4">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={adjustFuelLevel}
-                onChange={(e) => setAdjustFuelLevel(e.target.checked)}
-                className="h-5 w-5 rounded border-gray-300 text-green-600 focus:ring-green-500"
-              />
-              <span className="text-sm font-medium text-gray-700">
-                Ajustar nível do tanque manualmente
-              </span>
-            </label>
-
-            {adjustFuelLevel && (
-              <div className="mt-3">
-                <label className="mb-2 block text-sm font-medium text-gray-700">
-                  Novo nível do tanque
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    max={fuelCapacity}
-                    value={newFuelLevel}
-                    onChange={(e) => setNewFuelLevel(e.target.value)}
-                    className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 pr-12 text-lg font-medium text-gray-900 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
-                    placeholder={currentFuel.toFixed(1)}
-                  />
-                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-gray-400">
-                    L
-                  </span>
-                </div>
-                <p className="mt-1 text-xs text-gray-500">
-                  Nível atual: {currentFuel.toFixed(1)}L (
-                  {((currentFuel / fuelCapacity) * 100).toFixed(0)}% do tanque)
-                </p>
-              </div>
-            )}
-          </div>
+          {litersNum > 0 && (
+            <div className="rounded-xl bg-blue-50 border border-blue-200 p-3">
+              <p className="text-xs text-blue-600">
+                Após o abastecimento, o nível do tanque será atualizado
+                automaticamente somando {litersNum}L ao nível atual.
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="flex gap-3 p-6 pt-0">

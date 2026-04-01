@@ -7,6 +7,8 @@ import { TripInfo } from "@/components/tracker/TripInfo";
 import { FuelBar } from "@/components/tracker/FuelBar";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useTripStore } from "@/stores/useTripStore";
+import { useRadarStore } from "@/stores/useRadarStore";
+import { BackgroundTracker } from "@/services/backgroundTracker";
 import { useGeolocation } from "@/hooks/useGeolocation";
 import { useWakeLock } from "@/hooks/useWakeLock";
 import { useSpeedFilter } from "@/hooks/useSpeedFilter";
@@ -14,6 +16,7 @@ import { useDriveMode } from "@/hooks/useDriveMode";
 import { useSimulation } from "@/hooks/useSimulation";
 import { useAutoTracker } from "@/hooks/useAutoTracker";
 import { useAppStore } from "@/stores/useAppStore";
+import { isAndroid } from "@/lib/platform";
 import { speedToKmh } from "@/lib/utils";
 import type { Settings } from "@/types";
 import {
@@ -22,6 +25,8 @@ import {
   calculateTotalDistance,
 } from "@/lib/distance";
 import { getSettings, consumeFuel } from "@/lib/db";
+import { calculateDistanceKm } from "@/lib/radar-api";
+import L from "leaflet";
 
 const GPS_CONFIG = {
   maxAccuracyMeters: 20,
@@ -29,8 +34,7 @@ const GPS_CONFIG = {
   minDistanceMeters: 10,
   minTimeDeltaMs: 1000,
   warmupMinAccuracyMeters: 15,
-  warmupMinTimeMs: 3000,
-  warmupMaxTimeMs: 10000,
+  warmupMaxTimeMs: 30000,
 } as const;
 
 export function Tracker() {
@@ -62,6 +66,7 @@ export function Tracker() {
     stopWatching,
     battery,
     getCurrentPosition,
+    deviceOrientation,
   } = useGeolocation();
   const { request: requestWakeLock, release: releaseWakeLock } = useWakeLock();
   const { addSpeedReading, reset: resetSpeedFilter } = useSpeedFilter();
@@ -75,12 +80,24 @@ export function Tracker() {
   const {
     isTracking: isAutoTracking,
     points: autoTrackerPoints,
-    error: autoTrackerError,
     initialize: initAutoTracker,
     startMonitoring: startAutoMonitoring,
     stop: stopAutoTracker,
     setOnTripComplete,
   } = useAutoTracker();
+  const { nearestRadar, currentSpeedingEvent } = useRadarStore();
+
+  const nearbyRadarMaxSpeed = (() => {
+    if (!nearestRadar || !position) return undefined;
+    const dist = calculateDistanceKm(
+      position.lat,
+      position.lng,
+      nearestRadar.lat,
+      nearestRadar.lng,
+    );
+    if (dist > 0.15) return undefined;
+    return nearestRadar.maxSpeed;
+  })();
   const selectedCarBluetoothAddress = useAppStore(
     (s) => s.selectedCarBluetoothAddress,
   );
@@ -106,10 +123,13 @@ export function Tracker() {
     fuelCapacity: 50,
     currentFuel: 50,
     fuelPrice: 5.0,
+    engineDisplacement: 1000,
+    fuelType: "gasolina",
   });
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [isGpsWarming, setIsGpsWarming] = useState(false);
   const [warmupStartTime, setWarmupStartTime] = useState<number | null>(null);
+  const [mapInstance, setMapInstance] = useState<L.Map | null>(null);
 
   useEffect(() => {
     if (autoTrackingEnabled && selectedCarBluetoothAddress) {
@@ -128,6 +148,7 @@ export function Tracker() {
   ]);
 
   useEffect(() => {
+    if (!isAndroid) return;
     if (autoTrackingEnabled && !isAutoTracking && selectedCarBluetoothAddress) {
       initAutoTracker(selectedCarBluetoothAddress)
         .then(() =>
@@ -153,6 +174,7 @@ export function Tracker() {
 
   const {
     estimatedRange,
+    estimatedConsumption,
     addPosition: addDriveModePosition,
     reset: resetDriveMode,
     isInitialized,
@@ -174,6 +196,8 @@ export function Tracker() {
         fuelCapacity: s.fuelCapacity,
         currentFuel: s.currentFuel,
         fuelPrice: s.fuelPrice,
+        engineDisplacement: s.engineDisplacement,
+        fuelType: s.fuelType,
       });
     });
   }, []);
@@ -259,6 +283,12 @@ export function Tracker() {
     );
     setTotalFuelUsed(0);
 
+    try {
+      await BackgroundTracker.clearTrackingState();
+    } catch (err) {
+      console.warn("Failed to clear background tracking state:", err);
+    }
+
     if (tripId) {
       navigate(`/history/${tripId}`);
     }
@@ -315,10 +345,9 @@ export function Tracker() {
       const hasGoodAccuracy =
         position.accuracy !== undefined &&
         position.accuracy < GPS_CONFIG.warmupMinAccuracyMeters;
-      const hasMinTime = elapsedTime >= GPS_CONFIG.warmupMinTimeMs;
       const hasMaxTime = elapsedTime >= GPS_CONFIG.warmupMaxTimeMs;
 
-      if ((hasGoodAccuracy && hasMinTime) || hasMaxTime) {
+      if (hasGoodAccuracy || hasMaxTime) {
         handleActualStart();
       }
     };
@@ -444,6 +473,8 @@ export function Tracker() {
   useEffect(() => {
     if (status === "recording" && !isWatching) {
       startWatching();
+    } else if (status === "idle" && !isWatching) {
+      startWatching();
     } else if (status === "paused" && isWatching) {
       stopWatching();
     }
@@ -487,7 +518,8 @@ export function Tracker() {
     storeTotalFuelUsed,
   ]);
 
-  const idleWorstCaseRange = settings.currentFuel * settings.cityKmPerLiter;
+  const idleWorstCaseRange =
+    settings.currentFuel * settings.manualCityKmPerLiter;
   const displayedRange =
     status === "idle"
       ? idleWorstCaseRange
@@ -503,18 +535,18 @@ export function Tracker() {
       />
 
       <div className="fixed inset-0 z-0">
-        <MapTracker position={effectivePosition} path={effectivePath} />
+        <MapTracker
+          position={effectivePosition}
+          path={effectivePath}
+          showRadars={!!effectivePosition}
+          currentSpeed={displaySpeed}
+          onMapReady={setMapInstance}
+          isSpeeding={!!currentSpeedingEvent}
+          deviceOrientation={deviceOrientation}
+        />
       </div>
 
       <div className="pointer-events-none fixed inset-0 z-[1] bg-[linear-gradient(180deg,rgba(214,228,233,0.5)_0%,rgba(214,228,233,0.14)_38%,rgba(18,38,58,0.22)_100%)]" />
-
-      {autoTrackerError && autoTrackingEnabled && (
-        <div className="fixed right-4 top-20 z-50">
-          <div className="rounded-lg bg-red-500 px-3 py-2 text-xs text-white shadow-lg">
-            {autoTrackerError}
-          </div>
-        </div>
-      )}
 
       <div className="pointer-events-none fixed inset-0 z-10">
         <div className="pointer-events-auto pt-2">
@@ -526,14 +558,18 @@ export function Tracker() {
             range={displayedRange}
             currentConsumption={
               isRecordingOrSimulating
-                ? currentKmPerLiter
-                : settings.cityKmPerLiter
+                ? estimatedConsumption
+                : settings.manualCityKmPerLiter
             }
           />
         </div>
 
         <div className="pointer-events-none fixed bottom-24 left-4">
-          <Speedometer currentSpeed={displaySpeed} />
+          <Speedometer
+            currentSpeed={displaySpeed}
+            maxSpeed={nearbyRadarMaxSpeed}
+            isSpeeding={!!currentSpeedingEvent}
+          />
         </div>
 
         <div className="pointer-events-none fixed bottom-24 right-4">
@@ -548,9 +584,42 @@ export function Tracker() {
               onCancel={handleCancelWarmup}
               isGpsWarming={isGpsWarming}
               gpsAccuracy={position?.accuracy}
+              warmupStartTime={warmupStartTime}
             />
           </div>
         </div>
+
+        <button
+          onClick={() => {
+            getCurrentPosition();
+            if (mapInstance && position) {
+              mapInstance.setView(
+                [position.lat, position.lng],
+                mapInstance.getZoom(),
+                {
+                  animate: true,
+                  duration: 0.5,
+                },
+              );
+            }
+          }}
+          className="pointer-events-auto fixed bottom-60 right-4 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-slate-800/70 shadow-md transition-all hover:scale-105 active:scale-95"
+        >
+          <svg
+            className="h-4 w-4 text-white/80"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+            strokeWidth="2"
+          >
+            <circle cx="12" cy="12" r="10" />
+            <circle cx="12" cy="12" r="3" />
+            <line x1="12" y1="2" x2="12" y2="6" />
+            <line x1="12" y1="18" x2="12" y2="22" />
+            <line x1="2" y1="12" x2="6" y2="12" />
+            <line x1="18" y1="12" x2="22" y2="12" />
+          </svg>
+        </button>
       </div>
 
       <ConfirmDialog

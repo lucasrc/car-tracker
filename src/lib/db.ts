@@ -13,6 +13,8 @@ const DEFAULT_SETTINGS: Settings = {
   fuelCapacity: 50,
   currentFuel: 50,
   fuelPrice: 5.0,
+  engineDisplacement: 1000,
+  fuelType: "gasolina",
 };
 
 const db = new Dexie("CarTelemetryDB") as Dexie & {
@@ -38,6 +40,27 @@ db.version(5).stores({
   settings: "id",
   refuels: "id, timestamp",
 });
+
+db.version(6)
+  .stores({
+    trips: "id, startTime, endTime, status",
+    currentTrip: "id",
+    settings: "id",
+    refuels: "id, timestamp",
+  })
+  .upgrade((tx) => {
+    return tx
+      .table("settings")
+      .toCollection()
+      .modify((s) => {
+        if (typeof s.engineDisplacement === "undefined") {
+          s.engineDisplacement = 1000;
+        }
+        if (typeof s.fuelType === "undefined") {
+          s.fuelType = "gasolina";
+        }
+      });
+  });
 
 export async function getSettings(): Promise<Settings> {
   try {
@@ -84,6 +107,23 @@ export async function getSettings(): Promise<Settings> {
         manualCityKmPerLiter: s.cityKmPerLiter || 10,
         manualHighwayKmPerLiter: s.highwayKmPerLiter || 14,
         manualMixedKmPerLiter: s.mixedKmPerLiter || 12,
+      } as Settings;
+      await db.settings.put(updated);
+      return updated;
+    }
+    if (typeof s.engineDisplacement === "undefined") {
+      const updated = {
+        ...settings,
+        engineDisplacement: 1000,
+        fuelType: "gasolina" as const,
+      } as Settings;
+      await db.settings.put(updated);
+      return updated;
+    }
+    if (typeof s.fuelType === "undefined") {
+      const updated = {
+        ...settings,
+        fuelType: "gasolina" as const,
       } as Settings;
       await db.settings.put(updated);
       return updated;

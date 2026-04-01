@@ -7,8 +7,11 @@ import {
   useMap,
 } from "react-leaflet";
 import L from "leaflet";
-import type { Coordinates } from "@/types";
+import type { Coordinates, SpeedingEvent } from "@/types";
 import { calculateHeading } from "@/lib/utils";
+import { useRadarStore } from "@/stores/useRadarStore";
+import { useTripStore } from "@/stores/useTripStore";
+import { RadarMarker } from "./RadarMarker";
 
 const ARROW_INTERVAL = 5;
 
@@ -16,6 +19,11 @@ interface MapTrackerProps {
   position: Coordinates | null;
   path: Coordinates[];
   center?: [number, number];
+  showRadars?: boolean;
+  currentSpeed?: number;
+  onMapReady?: (map: L.Map) => void;
+  isSpeeding?: boolean;
+  deviceOrientation?: number | null;
 }
 
 const defaultCenter: [number, number] = [-23.5505, -46.6333];
@@ -42,75 +50,48 @@ function createDirectionArrowIcon(heading: number) {
   });
 }
 
-function createPositionIcon(heading: number | null, isMoving: boolean) {
-  const hasHeading = heading !== null;
-  const rotation = hasHeading ? heading : 0;
-  const arrowOpacity = hasHeading && isMoving ? 1 : 0.4;
-  const arrowColor = isMoving ? "#1D4ED8" : "#6B7280";
-  const arrowSize = hasHeading ? 14 : 10;
+function createPositionIcon(rotation: number) {
+  const color = "#4285F4";
+  const size = 40;
 
-  return new L.DivIcon({
+  const html = `
+    <svg width="${size}" height="${size}" viewBox="0 0 40 40">
+      <defs>
+        <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.4"/>
+        </filter>
+      </defs>
+      <g transform="rotate(${rotation} 20 20)" filter="url(#shadow)">
+        <path d="M20 4 L8 32 L20 26 L32 32 Z" fill="${color}" stroke="white" stroke-width="2" stroke-linejoin="round"/>
+        <circle cx="20" cy="18" r="5" fill="white"/>
+        <circle cx="20" cy="18" r="3" fill="${color}"/>
+      </g>
+    </svg>
+  `;
+
+  return L.divIcon({
     className: "current-position-marker",
-    html: `
-      <div style="
-        position: relative;
-        width: 40px;
-        height: 40px;
-      ">
-        <div style="
-          position: absolute;
-          inset: 0;
-          background: rgba(59, 130, 246, 0.25);
-          border-radius: 50%;
-          animation: pulse 2s infinite;
-        "></div>
-        <div style="
-          position: absolute;
-          top: 50%;
-          left: 50%;
-          width: 24px;
-          height: 24px;
-          background: #3B82F6;
-          border: 3px solid white;
-          border-radius: 50%;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-          transform: translate(-50%, -50%);
-        "></div>
-        <svg 
-          style="
-            position: absolute;
-            top: 2px;
-            left: 50%;
-            transform: translateX(-50%) rotate(${rotation}deg);
-            width: ${arrowSize}px;
-            height: ${arrowSize + 4}px;
-            opacity: ${arrowOpacity};
-            transition: transform 0.3s ease, opacity 0.3s ease;
-          "
-          viewBox="0 0 24 24" 
-          fill="${arrowColor}"
-        >
-          <path d="M12 2L4 20h16L12 2z"/>
-        </svg>
-      </div>
-    `,
-    iconSize: [40, 40],
-    iconAnchor: [20, 20],
+    html,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
   });
 }
 
 function MapUpdater({
   position,
   center,
+  onMapReady,
 }: {
   position: Coordinates | null;
   center?: [number, number];
+  onMapReady?: (map: L.Map) => void;
 }) {
   const map = useMap();
 
   useEffect(() => {
     map.invalidateSize();
-  }, [map]);
+    onMapReady?.(map);
+  }, [map, onMapReady]);
 
   useEffect(() => {
     if (position) {
@@ -126,24 +107,35 @@ function MapUpdater({
   return null;
 }
 
-export function MapTracker({ position, path, center }: MapTrackerProps) {
+export function MapTracker({
+  position,
+  path,
+  center,
+  showRadars = true,
+  currentSpeed = 0,
+  onMapReady,
+  isSpeeding = false,
+  deviceOrientation,
+}: MapTrackerProps) {
   const mapRef = useRef<L.Map | null>(null);
+  const { radars, currentSpeedingEvent, fetchRadars, checkSpeeding } =
+    useRadarStore();
+  const { registerSpeedingEvent, trip } = useTripStore();
+
+  const previousSpeedingEventRef = useRef<SpeedingEvent | null>(null);
 
   const pathPositions: [number, number][] = path.map((p) => [p.lat, p.lng]);
   const currentPosition: [number, number] | null = position
     ? [position.lat, position.lng]
     : null;
 
-  const { heading, isMoving, directionArrows } = useMemo(() => {
-    if (path.length < 2 || !position) {
-      return { heading: null, isMoving: false, directionArrows: [] };
+  const { heading, directionArrows } = useMemo(() => {
+    if (!position) {
+      return {
+        heading: null,
+        directionArrows: [],
+      };
     }
-    const lastIdx = path.length - 1;
-    const prev = path[lastIdx - 1];
-    const curr = path[lastIdx];
-    const timeDelta = (curr.timestamp - prev.timestamp) / 1000;
-    const h = calculateHeading(prev.lat, prev.lng, curr.lat, curr.lng);
-    const moving = timeDelta > 0 && timeDelta < 10;
 
     const arrows: { position: [number, number]; heading: number }[] = [];
     for (let i = ARROW_INTERVAL; i < path.length - 1; i += ARROW_INTERVAL) {
@@ -156,19 +148,72 @@ export function MapTracker({ position, path, center }: MapTrackerProps) {
       });
     }
 
-    return { heading: h, isMoving: moving, directionArrows: arrows };
+    if (
+      position.heading !== undefined &&
+      position.heading >= 0 &&
+      position.heading < 360
+    ) {
+      return {
+        heading: position.heading,
+        directionArrows: arrows,
+      };
+    }
+
+    if (path.length < 2) {
+      return {
+        heading: null,
+        directionArrows: arrows,
+      };
+    }
+
+    const lastIdx = path.length - 1;
+    const prev = path[lastIdx - 1];
+    const curr = path[lastIdx];
+    const h = calculateHeading(prev.lat, prev.lng, curr.lat, curr.lng);
+
+    return {
+      heading: h,
+      directionArrows: arrows,
+    };
   }, [path, position]);
 
-  const positionIcon = useMemo(
-    () => createPositionIcon(heading, isMoving),
-    [heading, isMoving],
-  );
+  const rotation = deviceOrientation ?? heading ?? 0;
+  const positionIcon = useMemo(() => createPositionIcon(rotation), [rotation]);
+
+  useEffect(() => {
+    if (position && showRadars) {
+      fetchRadars(position.lat, position.lng);
+    }
+  }, [position, showRadars, fetchRadars]);
+
+  useEffect(() => {
+    if (position && showRadars) {
+      checkSpeeding(path, currentSpeed, heading ?? 0);
+    }
+  }, [position, currentSpeed, showRadars, checkSpeeding, heading, path]);
+
+  useEffect(() => {
+    if (
+      currentSpeedingEvent &&
+      currentSpeedingEvent.radarId !==
+        previousSpeedingEventRef.current?.radarId &&
+      trip?.status === "recording"
+    ) {
+      previousSpeedingEventRef.current = currentSpeedingEvent;
+      registerSpeedingEvent(currentSpeedingEvent);
+    }
+  }, [currentSpeedingEvent, trip?.status, registerSpeedingEvent]);
 
   const mapCenter: [number, number] =
     currentPosition || center || defaultCenter;
 
   return (
     <div className="relative h-full w-full">
+      <div
+        className={`absolute inset-0 z-20 pointer-events-none border-4 transition-colors duration-200 ${
+          isSpeeding ? "border-red-500 animate-pulse" : "border-transparent"
+        }`}
+      />
       <MapContainer
         ref={mapRef}
         center={mapCenter}
@@ -182,7 +227,7 @@ export function MapTracker({ position, path, center }: MapTrackerProps) {
         doubleClickZoom={true}
       >
         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-        <MapUpdater position={position} />
+        <MapUpdater position={position} onMapReady={onMapReady} />
         {pathPositions.length > 0 && (
           <>
             <Polyline
@@ -213,6 +258,15 @@ export function MapTracker({ position, path, center }: MapTrackerProps) {
         {currentPosition && (
           <Marker position={currentPosition} icon={positionIcon} />
         )}
+        {showRadars &&
+          radars.map((radar) => (
+            <RadarMarker
+              key={radar.id}
+              radar={radar}
+              vehicleHeading={heading ?? undefined}
+              isSpeeding={currentSpeedingEvent?.radarId === radar.id}
+            />
+          ))}
       </MapContainer>
     </div>
   );

@@ -1,5 +1,5 @@
 import { useCallback, useRef } from "react";
-import type { ActivityType } from "@/types";
+import type { ActivityType, FuelType } from "@/types";
 
 export interface ConsumptionFactors {
   baseKmPerLiter: number;
@@ -23,6 +23,8 @@ export interface ConsumptionFactors {
   activityType: ActivityType;
   copertKmPerLiter: number;
   hybridKmPerLiter: number;
+  displacementFactor: number;
+  fuelEnergyFactor: number;
 }
 
 export interface BonusBreakdown {
@@ -72,17 +74,48 @@ const MAX_TOTAL_BONUS = 0.1;
 const COPERT_WEIGHT = 0.6;
 const CURRENT_MODEL_WEIGHT = 0.4;
 
+const BASELINE_DISPLACEMENT_CC = 1600;
+
+const FUEL_ENERGY_FACTORS: Record<FuelType, number> = {
+  gasolina: 0.91,
+  etanol: 0.7,
+  flex: 0.87,
+};
+
+export function getFuelEnergyFactor(fuelType: FuelType): number {
+  return FUEL_ENERGY_FACTORS[fuelType];
+}
+
+export function getDisplacementFactor(engineDisplacement: number): number {
+  if (engineDisplacement <= 0) return 1.0;
+  const ratio = engineDisplacement / BASELINE_DISPLACEMENT_CC;
+  return Math.pow(ratio, -0.15);
+}
+
+export function getIdleConsumptionMlPerSecond(
+  engineDisplacement: number,
+): number {
+  if (engineDisplacement <= 0) return 0;
+  const baseMlPerSecond = 0.361;
+  const ratio = engineDisplacement / BASELINE_DISPLACEMENT_CC;
+  return baseMlPerSecond * Math.pow(ratio, 0.7);
+}
+
 export function copertFuelConsumption(speedKmh: number): number {
   if (speedKmh <= 0) return 0;
   const v = speedKmh;
-  const fcPerKm =
-    (217 + 0.253 * v + 0.00965 * v * v) / (1 + 0.096 * v - 0.000421 * v * v);
+  const denominator = 1 + 0.096 * v - 0.000421 * v * v;
+  if (denominator <= 0.01) return 0;
+  const fcPerKm = (217 + 0.253 * v + 0.00965 * v * v) / denominator;
   return 100 / fcPerKm;
 }
 
-export function calculateIdleConsumptionLiters(durationMs: number): number {
+export function calculateIdleConsumptionLiters(
+  durationMs: number,
+  engineDisplacement: number = 1600,
+): number {
   const durationSeconds = durationMs / 1000;
-  const mlPerSecond = 0.361;
+  const mlPerSecond = getIdleConsumptionMlPerSecond(engineDisplacement);
   return (mlPerSecond * durationSeconds) / 1000;
 }
 
@@ -209,7 +242,11 @@ export function useConsumptionModel() {
       idlePercentage: number,
       activityType: ActivityType = "MA",
       idleDurationMs: number = 0,
+      engineDisplacement: number = 1600,
+      fuelType: FuelType = "gasolina",
     ): ConsumptionFactors => {
+      const displacementFactor = getDisplacementFactor(engineDisplacement);
+      const fuelEnergyFactor = getFuelEnergyFactor(fuelType);
       const speedFactor = calculateSpeedFactor(currentSpeedKmh);
 
       const recentReadings = readingsRef.current.slice(-10);
@@ -249,8 +286,10 @@ export function useConsumptionModel() {
         copertKmPerLiter = 0;
         hybridKmPerLiter = 0;
       } else if (activityType === "SA_ENGINE_ON") {
-        const idleConsumptionLiters =
-          calculateIdleConsumptionLiters(idleDurationMs);
+        const idleConsumptionLiters = calculateIdleConsumptionLiters(
+          idleDurationMs,
+          engineDisplacement,
+        );
         const idleKmPerLiter =
           idleDurationMs > 0
             ? (((idleDurationMs / 1000 / 3600) * 60) / idleConsumptionLiters) *
@@ -271,7 +310,8 @@ export function useConsumptionModel() {
           currentModelKmPerLiter * CURRENT_MODEL_WEIGHT;
       }
 
-      const adjustedKmPerLiter = hybridKmPerLiter;
+      const adjustedKmPerLiter =
+        hybridKmPerLiter * displacementFactor * fuelEnergyFactor;
 
       return {
         baseKmPerLiter: baseConsumption,
@@ -295,6 +335,8 @@ export function useConsumptionModel() {
         activityType,
         copertKmPerLiter,
         hybridKmPerLiter,
+        displacementFactor,
+        fuelEnergyFactor,
       };
     },
     [

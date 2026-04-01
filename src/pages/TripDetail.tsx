@@ -12,6 +12,7 @@ import L from "leaflet";
 import { getTripById, deleteTrip } from "@/lib/db";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { formatDateTime, formatDistance, formatTime } from "@/lib/utils";
+import { SpeedingEventsCard } from "@/components/history/SpeedingEventsCard";
 import type { Trip } from "@/types";
 
 function createStopIcon(index: number): L.DivIcon {
@@ -20,6 +21,81 @@ function createStopIcon(index: number): L.DivIcon {
     html: `<div style="width:26px;height:26px;background:#f59e0b;border:3px solid white;border-radius:9999px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(245,158,11,0.45);color:white;font-size:11px;font-weight:700;">${index}</div>`,
     iconSize: [26, 26],
     iconAnchor: [13, 13],
+  });
+}
+
+function createSpeedingMarkerIcon(
+  maxSpeed: number,
+  excessKmh: number,
+): L.DivIcon {
+  let bgColor: string;
+  let borderColor: string;
+  let textColor: string;
+
+  if (excessKmh > 25) {
+    bgColor = "#DC2626";
+    borderColor = "#B91C1C";
+    textColor = "#FFFFFF";
+  } else if (excessKmh > 15) {
+    bgColor = "#EA580C";
+    borderColor = "#C2410C";
+    textColor = "#FFFFFF";
+  } else {
+    bgColor = "#F59E0B";
+    borderColor = "#D97706";
+    textColor = "#FFFFFF";
+  }
+
+  return L.divIcon({
+    className: "map-speeding-marker",
+    html: `
+      <div style="
+        position: relative;
+        width: 40px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      ">
+        <div style="
+          position: absolute;
+          width: 38px;
+          height: 38px;
+          background: ${bgColor};
+          border: 2px solid ${borderColor};
+          border-radius: 50%;
+          box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+        "></div>
+        <svg style="
+          position: absolute;
+          top: -3px;
+          right: -3px;
+          width: 16px;
+          height: 16px;
+        " viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="10" fill="${bgColor}" stroke="white" stroke-width="2"/>
+          <path d="M12 6v6l4 2" stroke="white" stroke-width="2" fill="none" stroke-linecap="round"/>
+        </svg>
+        <span style="
+          position: relative;
+          z-index: 1;
+          color: ${textColor};
+          font-size: 14px;
+          font-weight: 700;
+          font-family: system-ui, -apple-system, sans-serif;
+          line-height: 1;
+        ">${maxSpeed}</span>
+      </div>
+    `,
+    iconSize: [40, 40],
+    iconAnchor: [20, 20],
+  });
+}
+
+function formatEventTime(timestamp: number): string {
+  return new Date(timestamp).toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 
@@ -264,6 +340,38 @@ export function TripDetail() {
                       </Marker>
                     );
                   })}
+                  {trip.speedingEvents?.map((event, idx) => {
+                    const excess = event.currentSpeed - event.radarMaxSpeed;
+                    return (
+                      <Marker
+                        key={`speeding-${idx}`}
+                        position={[event.radarLat, event.radarLng]}
+                        icon={createSpeedingMarkerIcon(
+                          event.radarMaxSpeed,
+                          excess,
+                        )}
+                      >
+                        <Popup>
+                          <div className="text-sm p-1">
+                            <p className="font-bold mb-2">
+                              📸 Excesso de Velocidade
+                            </p>
+                            <p>
+                              Velocidade:{" "}
+                              <strong>
+                                {event.currentSpeed.toFixed(0)} km/h
+                              </strong>
+                            </p>
+                            <p>Limite: {event.radarMaxSpeed} km/h</p>
+                            <p>Excesso: +{excess.toFixed(0)} km/h</p>
+                            <p className="text-gray-500 mt-1">
+                              {formatEventTime(event.timestamp)}
+                            </p>
+                          </div>
+                        </Popup>
+                      </Marker>
+                    );
+                  })}
                 </>
               )}
             </MapContainer>
@@ -322,6 +430,12 @@ export function TripDetail() {
                 <span>100%</span>
               </div>
             </div>
+
+            {trip.speedingEvents && trip.speedingEvents.length > 0 && (
+              <div className="col-span-2 mt-2">
+                <SpeedingEventsCard events={trip.speedingEvents} />
+              </div>
+            )}
 
             <div className="col-span-2 grid grid-cols-2 gap-3">
               <div className="rounded-2xl bg-orange-50 p-3 shadow-sm">

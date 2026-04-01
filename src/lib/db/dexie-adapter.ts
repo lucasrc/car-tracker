@@ -14,6 +14,8 @@ const DEFAULT_SETTINGS: Settings = {
   fuelCapacity: 50,
   currentFuel: 50,
   fuelPrice: 5.0,
+  engineDisplacement: 1600,
+  fuelType: "flex",
 };
 
 class DexieAdapter implements DbAdapter {

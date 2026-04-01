@@ -69,7 +69,7 @@ export function vincentyDistance(
   } while (Math.abs(lambda - L) > EPSILON && iteration < 200);
 
   if (iteration >= 200) {
-    return haversineDistance(lat1, lon1, lat2, lon2);
+    return haversineDistanceKm(lat1, lon1, lat2, lon2) * 1000;
   }
 
   const u2 =
@@ -91,13 +91,13 @@ export function vincentyDistance(
   return WGS84_B * A * (sigma - deltaSigma);
 }
 
-function haversineDistance(
+export function haversineDistanceKm(
   lat1: number,
   lon1: number,
   lat2: number,
   lon2: number,
 ): number {
-  const R = 6371000;
+  const R = 6371;
   const phi1 = (lat1 * Math.PI) / 180;
   const phi2 = (lat2 * Math.PI) / 180;
   const deltaPhi = ((lat2 - lat1) * Math.PI) / 180;
@@ -120,20 +120,24 @@ export function calculateTotalDistance(
   if (coordinates.length < 2) return 0;
 
   let total = 0;
-  for (let i = 1; i < coordinates.length; i++) {
-    const prev = coordinates[i - 1];
-    const curr = coordinates[i];
+  let lastValidIndex = -1;
 
-    if (prev.accuracy !== undefined && prev.accuracy > 30) continue;
+  for (let i = 0; i < coordinates.length; i++) {
+    const curr = coordinates[i];
     if (curr.accuracy !== undefined && curr.accuracy > 30) continue;
 
-    total += vincentyDistance(prev.lat, prev.lng, curr.lat, curr.lng);
+    if (lastValidIndex >= 0) {
+      const prev = coordinates[lastValidIndex];
+      total += vincentyDistance(prev.lat, prev.lng, curr.lat, curr.lng);
+    }
+
+    lastValidIndex = i;
   }
 
   return total;
 }
 
-const MAX_SPEED_MS = 80 / 3.6;
+const MAX_SPEED_MS = 180 / 3.6;
 
 export function isValidSpeedForDistance(
   prevCoords: { lat: number; lng: number; timestamp: number },

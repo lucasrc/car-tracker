@@ -12,6 +12,7 @@ interface GeolocationState {
   error: GeolocationPositionError | null;
   isWatching: boolean;
   battery: BatteryState | null;
+  deviceOrientation: number | null;
 }
 
 interface UseGeolocationReturn extends GeolocationState {
@@ -28,6 +29,9 @@ export function useGeolocation(): UseGeolocationReturn {
   const [error, setError] = useState<GeolocationPositionError | null>(null);
   const [isWatching, setIsWatching] = useState(false);
   const [battery, setBattery] = useState<BatteryState | null>(null);
+  const [deviceOrientation, setDeviceOrientation] = useState<number | null>(
+    null,
+  );
 
   const startWatching = useCallback((options?: GeolocationOptions) => {
     if (!navigator.geolocation) {
@@ -53,6 +57,10 @@ export function useGeolocation(): UseGeolocationReturn {
           timestamp: pos.timestamp,
           accuracy: pos.coords.accuracy ?? undefined,
           speed: pos.coords.speed ?? undefined,
+          heading:
+            pos.coords.heading !== null && !Number.isNaN(pos.coords.heading)
+              ? pos.coords.heading
+              : undefined,
         };
         setPosition(coords);
         setError(null);
@@ -154,11 +162,49 @@ export function useGeolocation(): UseGeolocationReturn {
     };
   }, [stopWatching]);
 
+  useEffect(() => {
+    const handleOrientation = (event: DeviceOrientationEvent) => {
+      if (event.alpha !== null) {
+        setDeviceOrientation(event.alpha);
+      }
+    };
+
+    if (typeof DeviceOrientationEvent !== "undefined") {
+      if (
+        typeof (
+          DeviceOrientationEvent as unknown as {
+            requestPermission?: () => Promise<string>;
+          }
+        ).requestPermission === "function"
+      ) {
+        (
+          DeviceOrientationEvent as unknown as {
+            requestPermission: () => Promise<string>;
+          }
+        )
+          .requestPermission()
+          .then((permission) => {
+            if (permission === "granted") {
+              window.addEventListener("deviceorientation", handleOrientation);
+            }
+          })
+          .catch(console.error);
+      } else {
+        window.addEventListener("deviceorientation", handleOrientation);
+      }
+    }
+
+    return () => {
+      window.removeEventListener("deviceorientation", handleOrientation);
+    };
+  }, []);
+
   return {
     position,
     error,
     isWatching,
     battery,
+    deviceOrientation,
     startWatching,
     stopWatching,
     getCurrentPosition,

@@ -9,6 +9,7 @@
         "@capacitor/core": "^8.3.0",
         "@capgo/background-geolocation": "^8.0.26",
         "@capgo/capacitor-bluetooth-low-energy": "^1.1.11",
+        "@capgo/capacitor-keep-awake": "^8.1.9",
         "@heroicons/react": "^2.2.0",
         "@squareetlabs/capacitor-dont-kill-my-app": "^7.0.0",
         "@tanstack/react-query": "^5.95.2",
@@ -108,6 +109,8 @@
     "@capgo/background-geolocation": ["@capgo/background-geolocation@8.0.26", "", { "peerDependencies": { "@capacitor/core": ">=8.0.0" } }, "sha512-Uvuway+i66p10YX9ecbRWuWLo8g5tZouvv1oAAKfChCyNeuTCXEnDn6mxrIVBTwLcztRYxI+YvA/nga5wc7u9w=="],
 
     "@capgo/capacitor-bluetooth-low-energy": ["@capgo/capacitor-bluetooth-low-energy@1.1.11", "", { "peerDependencies": { "@capacitor/core": ">=8.0.0" } }, "sha512-dxYNAJGVt5DLDfC5PYwGMHaES2gslFEG8WQ+5zPtKWzSC6UeUKXodJHqeo4TgDK6090ZV0z2mnBDyUWHun1hEg=="],
+
+    "@capgo/capacitor-keep-awake": ["@capgo/capacitor-keep-awake@8.1.9", "", { "peerDependencies": { "@capacitor/core": ">=8.0.0" } }, "sha512-qNTqOnUPRwqmAKftz9/x0mA/AM/O49+OJ677yrzoXdboSdqfuo2LnJkfWaM66ugI6eg6xRdd0B0SHSqGU9rTAg=="],
 
     "@csstools/color-helpers": ["@csstools/color-helpers@6.0.2", "", {}, "sha512-LMGQLS9EuADloEFkcTBR3BwV/CGHV7zyDxVRtVDTwdI2Ca4it0CCVTT9wCkxSgokjE5Ho41hEPgb8OEUwoXr6Q=="],
 

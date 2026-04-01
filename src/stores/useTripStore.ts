@@ -5,6 +5,7 @@ import type {
   TripStatus,
   TripStop,
   TripConsumptionBreakdown,
+  SpeedingEvent,
 } from "@/types";
 import { generateId } from "@/lib/utils";
 import {
@@ -32,6 +33,7 @@ interface TripStore {
   stopSampleStart: Coordinates | null;
   lastStopSampleTimestamp: number | null;
   consumptionBreakdown: TripConsumptionBreakdown | null;
+  speedingEvents: SpeedingEvent[];
 
   startTrip: () => Promise<void>;
   pauseTrip: () => void;
@@ -48,8 +50,10 @@ interface TripStore {
   setConsumption: (consumption: number) => void;
   setTotalFuelUsed: (totalFuelUsed: number) => void;
   setConsumptionBreakdown: (breakdown: TripConsumptionBreakdown) => void;
+  registerSpeedingEvent: (event: SpeedingEvent) => void;
   tick: () => void;
   loadCurrentTrip: () => Promise<void>;
+  restoreTrip: (startTime: string, deviceName?: string) => Promise<void>;
 }
 
 const getEmptyStats = (): TripStats => ({
@@ -59,6 +63,8 @@ const getEmptyStats = (): TripStats => ({
 });
 
 const STOP_MIN_MILLISECONDS = 5000;
+const MIN_TRIP_DISTANCE_METERS = 30;
+const MIN_TRIP_DURATION_SECONDS = 30;
 
 function buildTripWithStop(
   trip: Trip,
@@ -97,6 +103,24 @@ export const useTripStore = create<TripStore>((set, get) => ({
   stopSampleStart: null,
   lastStopSampleTimestamp: null,
   consumptionBreakdown: null,
+  speedingEvents: [],
+
+  registerSpeedingEvent: (event: SpeedingEvent) => {
+    const { trip, status } = get();
+    if (!trip || status !== "recording") return;
+
+    const updatedTrip: Trip = {
+      ...trip,
+      speedingEvents: [...(trip.speedingEvents || []), event],
+    };
+
+    set({
+      trip: updatedTrip,
+      speedingEvents: [...get().speedingEvents, event],
+    });
+
+    saveCurrentTrip(updatedTrip);
+  },
 
   setConsumptionBreakdown: (breakdown: TripConsumptionBreakdown) => {
     set({ consumptionBreakdown: breakdown });
@@ -132,19 +156,29 @@ export const useTripStore = create<TripStore>((set, get) => ({
       stopSampleStart: null,
       lastStopSampleTimestamp: null,
       consumptionBreakdown: null,
+      speedingEvents: [],
     });
 
     saveCurrentTrip(trip);
   },
 
   pauseTrip: () => {
-    const { trip, elapsedTime } = get();
+    const { trip, elapsedTime, stopSampleStart, lastStopSampleTimestamp } =
+      get();
     if (!trip) return;
 
     const updatedTrip: Trip = {
       ...trip,
       status: "paused",
       elapsedTime,
+      pendingStopStart: stopSampleStart
+        ? {
+            lat: stopSampleStart.lat,
+            lng: stopSampleStart.lng,
+            timestamp: stopSampleStart.timestamp,
+          }
+        : null,
+      pendingStopLastTimestamp: lastStopSampleTimestamp,
     };
 
     set({ status: "paused", trip: updatedTrip });
@@ -152,8 +186,17 @@ export const useTripStore = create<TripStore>((set, get) => ({
   },
 
   resumeTrip: () => {
-    const { trip, stopSampleStart, lastStopSampleTimestamp } = get();
+    const { trip } = get();
     if (!trip) return;
+
+    // Recupera o estado de parada em andamento salvo ao pausar
+    const restoredStopStart = trip.pendingStopStart
+      ? {
+          ...trip.pendingStopStart,
+          accuracy: undefined,
+          speed: undefined,
+        }
+      : null;
 
     const updatedTrip: Trip = {
       ...trip,
@@ -163,8 +206,8 @@ export const useTripStore = create<TripStore>((set, get) => ({
     set({
       status: "recording",
       trip: updatedTrip,
-      stopSampleStart,
-      lastStopSampleTimestamp,
+      stopSampleStart: restoredStopStart,
+      lastStopSampleTimestamp: trip.pendingStopLastTimestamp ?? null,
     });
     saveCurrentTrip(updatedTrip);
   },
@@ -181,6 +224,7 @@ export const useTripStore = create<TripStore>((set, get) => ({
       stopSampleStart,
       lastStopSampleTimestamp,
       currentSpeed,
+      speedingEvents,
     } = get();
     if (!trip) return "";
 
@@ -203,6 +247,28 @@ export const useTripStore = create<TripStore>((set, get) => ({
     const fuelUsed = Math.max(totalFuelUsed, 0);
     const totalCost = fuelUsed * fuelPrice;
 
+    if (
+      stats.distanceMeters < MIN_TRIP_DISTANCE_METERS ||
+      elapsedTime < MIN_TRIP_DURATION_SECONDS
+    ) {
+      await clearCurrentTrip();
+
+      set({
+        trip: null,
+        status: "idle",
+        currentSpeed: 0,
+        stats: getEmptyStats(),
+        elapsedTime: 0,
+        totalFuelUsed: 0,
+        stopSampleStart: null,
+        lastStopSampleTimestamp: null,
+        consumptionBreakdown: null,
+        speedingEvents: [],
+      });
+
+      return "";
+    }
+
     const completedTrip: Trip = {
       ...tripWithStops,
       endTime: new Date().toISOString(),
@@ -217,6 +283,9 @@ export const useTripStore = create<TripStore>((set, get) => ({
       elapsedTime,
       totalFuelUsed,
       consumptionBreakdown: breakdown || undefined,
+      speedingEvents,
+      pendingStopStart: null,
+      pendingStopLastTimestamp: null,
     };
 
     await saveTrip(completedTrip);
@@ -232,6 +301,7 @@ export const useTripStore = create<TripStore>((set, get) => ({
       stopSampleStart: null,
       lastStopSampleTimestamp: null,
       consumptionBreakdown: null,
+      speedingEvents: [],
     });
 
     return completedTrip.id;
@@ -353,13 +423,11 @@ export const useTripStore = create<TripStore>((set, get) => ({
       return;
     }
 
-    const recoveredTrip: Trip =
-      savedTrip.status === "recording"
-        ? { ...savedTrip, status: "paused" }
-        : savedTrip;
+    // Mantém o status original (recording ou paused) - não transforma recording em paused
+    const recoveredTrip = savedTrip;
 
-    if (recoveredTrip !== savedTrip) {
-      await saveCurrentTrip(recoveredTrip);
+    if (recoveredTrip.status === "recording") {
+      await saveCurrentTrip({ ...recoveredTrip, status: "recording" });
     }
 
     const stats: TripStats = {
@@ -371,10 +439,8 @@ export const useTripStore = create<TripStore>((set, get) => ({
     const elapsedTime = recoveredTrip.elapsedTime || 0;
     const totalFuelUsed = recoveredTrip.totalFuelUsed || 0;
 
-    const lastStop =
-      recoveredTrip.stops && recoveredTrip.stops.length > 0
-        ? recoveredTrip.stops[recoveredTrip.stops.length - 1]
-        : null;
+    // Recupera apenas o estado de parada em andamento salvo, nunca de paradas finalizadas
+    const pendingStopStart = recoveredTrip.pendingStopStart;
 
     set({
       trip: recoveredTrip,
@@ -382,16 +448,51 @@ export const useTripStore = create<TripStore>((set, get) => ({
       stats,
       elapsedTime,
       totalFuelUsed,
-      stopSampleStart: lastStop
+      stopSampleStart: pendingStopStart
         ? {
-            lat: lastStop.lat,
-            lng: lastStop.lng,
-            timestamp: lastStop.timestamp,
+            ...pendingStopStart,
+            accuracy: undefined,
+            speed: undefined,
           }
         : null,
-      lastStopSampleTimestamp: lastStop
-        ? lastStop.timestamp + lastStop.durationSeconds * 1000
-        : null,
+      lastStopSampleTimestamp: recoveredTrip.pendingStopLastTimestamp ?? null,
+      speedingEvents: recoveredTrip.speedingEvents || [],
     });
+  },
+
+  restoreTrip: async (startTime: string) => {
+    const settings = await getSettings();
+    const trip: Trip = {
+      id: generateId(),
+      startTime,
+      distanceMeters: 0,
+      maxSpeed: 0,
+      avgSpeed: 0,
+      path: [],
+      status: "recording",
+      driveMode: "city",
+      consumption: settings.manualCityKmPerLiter,
+      fuelCapacity: settings.fuelCapacity,
+      fuelUsed: 0,
+      fuelPrice: settings.fuelPrice,
+      totalCost: 0,
+      elapsedTime: 0,
+      totalFuelUsed: 0,
+      stops: [],
+    };
+
+    set({
+      trip,
+      status: "recording",
+      currentSpeed: 0,
+      stats: getEmptyStats(),
+      elapsedTime: 0,
+      stopSampleStart: null,
+      lastStopSampleTimestamp: null,
+      consumptionBreakdown: null,
+      speedingEvents: [],
+    });
+
+    saveCurrentTrip(trip);
   },
 }));
