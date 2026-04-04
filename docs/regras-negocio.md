@@ -118,19 +118,72 @@ penalidadeEfetiva = (tempoComPenalidade / tempoTotal) * penalidadePercentual
 
 ## Calculo de Custo
 
-### Formula Principal
+### Modelo Anterior (Preco Unico)
 
-1. **Consumo Base**: `combustivelBase = distancia / kmPorLitro`
+O sistema original usava um preco global de combustivel para todas as viagens:
 
-2. **Penalidade Efetiva**: `penalidadeTotal = penalidadeVelocidade + penalidadeAceleracao + penalidadeIdle + penalidadeEstabilidade`
+```
+custoViagem = combustivelUsado * precoCombustivelGlobal
+```
 
-3. **Consumo Ajustado**: `kmPorLitroAjustado = kmPorLitro / (1 + penalidadeTotal / 100)`
+Este modelo temlimitacoes quando o usuario abastecimento em diferentes postos com precos diferentes.
 
-4. **Combustivel Total**: `combustivelTotal = distancia / kmPorLitroAjustado`
+### Modelo FIFO (First-In-First-Out)
 
-5. **Combustivel Extra**: `combustivelExtra = combustivelTotal - combustivelBase`
+O novo modelo rastreia cada abastecimento como um "lote" independente e consome do lote mais antigo primeiro:
 
-6. **Custo Extra**: `custoExtra = combustivelExtra * precoCombustivel`
+#### Conceitos Fundamentais
+
+1. **Lote de Combustivel**: Cada abastecimento cria um lote com:
+   - `id`: Identificador unico
+   - `timestamp`: Data/hora do abastecimento
+   - `amount`: Quantidade em litros
+   - `fuelPrice`: Preco por litro no momento do abastecimento
+   - `fuelType`: Tipo de combustivel (gasolina/etanol/flex)
+   - `consumedAmount`: Quantidade ja consumida deste lote
+
+2. **Inventario FIFO**: Lotes ordenados por timestamp (mais antigo primeiro)
+
+3. **Custo Ponderado Medio**: Preco medio calculado por:
+   ```
+   precoMedio = (sum(lote.amount * lote.fuelPrice)) / sum(lote.amount)
+   ```
+
+#### Formula de Custo Real (FIFO)
+
+```
+1. Para cada lote ordenado por timestamp:
+   disponivel = lote.amount - lote.consumedAmount
+
+2. Se combustivelUsado <= disponivel:
+   custoReal = combustivelUsado * lote.fuelPrice
+   lote.consumedAmount += combustivelUsado
+
+3. Se combustivelUsado > disponivel:
+   custoReal += disponivel * lote.fuelPrice
+   combustivelUsado -= disponivel
+   lote.consumedAmount = lote.amount
+   (repete para o proximo lote)
+
+4. Custo Estimado (tempo real):
+   custoEstimado = combustivelUsado * precoMedioPonderado
+```
+
+#### Diferenca Entre Custo Real e Estimado
+
+- **Custo Estimado** (`trip.totalCost`): Calculado em tempo real usando preco medio ponderado
+- **Custo Real** (`trip.actualCost`): Calculado ao finalizar viagem usando FIFO
+
+O sistema salva ambos os valores para comparacao retrospectiva.
+
+### Formula Principal (Preco Medio Ponderado)
+
+Para calculos em tempo real (sem acesso ao FIFO):
+
+```
+precoMedioPonderado = sum(refuel.amount * refuel.fuelPrice) / sum(refuel.amount)
+custoEstimado = combustivelUsado * precoMedioPonderado
+```
 
 ---
 

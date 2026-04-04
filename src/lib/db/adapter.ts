@@ -12,7 +12,7 @@ export interface DbAdapter {
   getTripsInPeriod(startDate: Date, endDate: Date): Promise<Trip[]>;
   deleteTrip(id: string): Promise<void>;
 
-  addRefuel(amount: number, fuelPrice: number): Promise<Refuel>;
+  addRefuel(vehicleId: string, amount: number, fuelPrice: number, fuelType?: FuelType): Promise<Refuel>;
   getRefuels(startDate?: Date, endDate?: Date): Promise<Refuel[]>;
   getRefuelsInPeriod(startDate: Date, endDate: Date): Promise<Refuel[]>;
   deleteRefuel(id: string): Promise<void>;

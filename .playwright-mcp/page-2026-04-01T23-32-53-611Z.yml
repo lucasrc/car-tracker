@@ -1,0 +1,26 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - generic [ref=e4]: DevTools
+    - button "Devices" [ref=e6] [cursor=pointer]
+    - button "Pages" [ref=e8] [cursor=pointer]
+    - button "Extensions" [ref=e10] [cursor=pointer]
+    - button "Apps" [ref=e12] [cursor=pointer]
+    - button "Shared workers" [ref=e14] [cursor=pointer]
+    - button "Service workers" [ref=e16] [cursor=pointer]
+    - button "Shared storage worklets" [ref=e18] [cursor=pointer]
+    - button "Remote debugging" [ref=e20] [cursor=pointer]
+    - button "Other" [ref=e22] [cursor=pointer]
+  - generic [ref=e24]:
+    - generic [ref=e25]: Devices
+    - generic [ref=e26]:
+      - generic [ref=e27]:
+        - generic "Enable Remote Debugging of Chrome for Android over raw USB interface (no need to install / run Android Debug Bridge)." [ref=e28]:
+          - checkbox "Discover USB devices" [checked] [ref=e29]
+          - text: Discover USB devices
+        - button "Port forwarding..." [ref=e30]
+      - generic [ref=e31]:
+        - generic "Enable Remote Debugging over network." [ref=e32]:
+          - checkbox "Discover network targets" [checked] [ref=e33]
+          - text: Discover network targets
+        - button "Configure..." [ref=e34]
+      - button "Open dedicated DevTools for Node" [ref=e35] [cursor=pointer]

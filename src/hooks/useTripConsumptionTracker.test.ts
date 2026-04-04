@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useTripConsumptionTracker } from "./useTripConsumptionTracker";
 import type { ConsumptionFactors } from "./useConsumptionModel";
@@ -7,389 +7,243 @@ const createFactors = (
   overrides: Partial<ConsumptionFactors> = {},
 ): ConsumptionFactors => ({
   baseKmPerLiter: 12,
-  speedFactor: 1,
-  aggressionFactor: 1,
-  idleFactor: 1,
-  stabilityFactor: 1,
   adjustedKmPerLiter: 12,
-  isAggressive: false,
-  totalBonus: 0,
-  speedBonus: 0,
-  accelerationBonus: 0,
-  coastingBonus: 0,
-  stabilityBonus: 0,
-  idleBonus: 0,
-  isEcoDriving: false,
-  currentSpeedKmh: 0,
-  currentAcceleration: 0,
-  idlePercentage: 0,
-  speedVariance: 0,
   activityType: "MA",
   copertKmPerLiter: 12,
-  hybridKmPerLiter: 12,
   displacementFactor: 1,
   fuelEnergyFactor: 1,
+  calibrated: false,
+  gradePercent: 0,
+  fuelCutActive: false,
   ...overrides,
 });
 
 describe("useTripConsumptionTracker", () => {
-  it("returns zero penalties when no samples added", () => {
+  it("returns zero consumption when no samples added", () => {
     const { result } = renderHook(() => useTripConsumptionTracker());
-    const factors = result.current.getAverageFactors();
+    const avgConsumption = result.current.getAverageConsumption();
 
-    expect(factors.speedPenaltyPct).toBe(0);
-    expect(factors.aggressionPenaltyPct).toBe(0);
-    expect(factors.idlePenaltyPct).toBe(0);
-    expect(factors.stabilityPenaltyPct).toBe(0);
+    expect(avgConsumption).toBe(0);
   });
 
-  it("calculates penalty correctly when all time has penalty", () => {
+  it("calculates average consumption correctly with single sample", () => {
     const { result } = renderHook(() => useTripConsumptionTracker());
-
-    const speedingFactors = createFactors({ speedFactor: 1.5 });
 
     act(() => {
-      for (let i = 0; i < 5; i++) {
-        result.current.addSample(speedingFactors, 2000);
-      }
+      result.current.addSample(createFactors({ adjustedKmPerLiter: 10 }), 5000);
     });
 
-    const factors = result.current.getAverageFactors();
-    expect(factors.speedPenaltyPct).toBeCloseTo(50, 1);
+    const avgConsumption = result.current.getAverageConsumption();
+    expect(avgConsumption).toBe(10);
   });
 
-  it("calculates penalty correctly when no time has penalty", () => {
+  it("calculates average consumption correctly with multiple samples", () => {
     const { result } = renderHook(() => useTripConsumptionTracker());
 
-    const normalFactors = createFactors({ speedFactor: 1 });
-
     act(() => {
-      for (let i = 0; i < 5; i++) {
-        result.current.addSample(normalFactors, 2000);
-      }
+      result.current.addSample(createFactors({ adjustedKmPerLiter: 10 }), 2000);
+      result.current.addSample(createFactors({ adjustedKmPerLiter: 12 }), 2000);
+      result.current.addSample(createFactors({ adjustedKmPerLiter: 14 }), 2000);
     });
 
-    const factors = result.current.getAverageFactors();
-    expect(factors.speedPenaltyPct).toBe(0);
+    const avgConsumption = result.current.getAverageConsumption();
+    // (10*2000 + 12*2000 + 14*2000) / 6000 = 72000 / 6000 = 12
+    expect(avgConsumption).toBe(12);
   });
 
-  it("handles multiple penalty types simultaneously", () => {
+  it("weights samples by duration correctly", () => {
     const { result } = renderHook(() => useTripConsumptionTracker());
 
-    const factors = createFactors({
-      speedFactor: 1.2,
-      aggressionFactor: 1.1,
-      idleFactor: 1.08,
-      stabilityFactor: 1.05,
-    });
-
     act(() => {
-      for (let i = 0; i < 5; i++) {
-        result.current.addSample(factors, 2000);
-      }
+      result.current.addSample(createFactors({ adjustedKmPerLiter: 10 }), 1000);
+      result.current.addSample(createFactors({ adjustedKmPerLiter: 15 }), 4000);
     });
 
-    const resultFactors = result.current.getAverageFactors();
-
-    expect(resultFactors.speedPenaltyPct).toBeCloseTo(20, 1);
-    expect(resultFactors.aggressionPenaltyPct).toBeCloseTo(10, 1);
-    expect(resultFactors.idlePenaltyPct).toBeCloseTo(8, 1);
-    expect(resultFactors.stabilityPenaltyPct).toBeCloseTo(5, 1);
+    const avgConsumption = result.current.getAverageConsumption();
+    // (10*1000 + 15*4000) / 5000 = 70000 / 5000 = 14
+    expect(avgConsumption).toBe(14);
   });
 
-  it("respects minimum time threshold", () => {
-    const { result } = renderHook(() => useTripConsumptionTracker());
-
-    const speedingFactors = createFactors({ speedFactor: 2.0 });
-
-    act(() => {
-      result.current.addSample(speedingFactors, 4000);
-    });
-
-    const factors = result.current.getAverageFactors();
-    expect(factors.speedPenaltyPct).toBe(0);
-  });
-
-  it("respects minimum samples threshold", () => {
-    const { result } = renderHook(() => useTripConsumptionTracker());
-
-    const speedingFactors = createFactors({ speedFactor: 2.0 });
-
-    act(() => {
-      for (let i = 0; i < 4; i++) {
-        result.current.addSample(speedingFactors, 2000);
-      }
-    });
-
-    const factors = result.current.getAverageFactors();
-    expect(factors.speedPenaltyPct).toBe(0);
-  });
-
-  it("applies penalty after meeting minimum thresholds", () => {
-    const { result } = renderHook(() => useTripConsumptionTracker());
-
-    const speedingFactors = createFactors({ speedFactor: 2.0 });
-
-    act(() => {
-      for (let i = 0; i < 5; i++) {
-        result.current.addSample(speedingFactors, 2000);
-      }
-    });
-
-    const factors = result.current.getAverageFactors();
-    expect(factors.speedPenaltyPct).toBeCloseTo(100, 1);
-  });
-
-  it("calculates weighted average for mixed time periods", () => {
-    const { result } = renderHook(() => useTripConsumptionTracker());
-
-    const moderateFactors = createFactors({ speedFactor: 1.1 });
-    const fastFactors = createFactors({ speedFactor: 1.3 });
-
-    act(() => {
-      result.current.addSample(moderateFactors, 3000);
-      result.current.addSample(fastFactors, 2000);
-      result.current.addSample(moderateFactors, 3000);
-      result.current.addSample(fastFactors, 2000);
-      result.current.addSample(fastFactors, 2000);
-    });
-
-    const factors = result.current.getAverageFactors();
-
-    expect(factors.speedPenaltyPct).toBeGreaterThan(0);
-    expect(factors.speedPenaltyPct).toBeLessThan(30);
-  });
-
-  it("calculates estimated costs correctly", () => {
-    const { result } = renderHook(() => useTripConsumptionTracker());
-
-    const factors = createFactors({ speedFactor: 1.091 });
-
-    act(() => {
-      for (let i = 0; i < 5; i++) {
-        result.current.addSample(factors, 2000);
-      }
-    });
-
-    const costs = result.current.getEstimatedCosts(100, 10, 5);
-
-    expect(costs.baseFuelUsed).toBe(10);
-    expect(costs.extraFuelUsed).toBeGreaterThan(0);
-    expect(costs.extraCost).toBe(costs.extraFuelUsed * 5);
-  });
-
-  it("reset clears all accumulated data", () => {
-    const { result } = renderHook(() => useTripConsumptionTracker());
-
-    const speedingFactors = createFactors({ speedFactor: 2.0 });
-
-    act(() => {
-      for (let i = 0; i < 5; i++) {
-        result.current.addSample(speedingFactors, 2000);
-      }
-      result.current.reset();
-    });
-
-    const factors = result.current.getAverageFactors();
-    expect(factors.speedPenaltyPct).toBe(0);
-    expect(factors.aggressionPenaltyPct).toBe(0);
-    expect(factors.idlePenaltyPct).toBe(0);
-    expect(factors.stabilityPenaltyPct).toBe(0);
-  });
-
-  it("handles very small duration values", () => {
-    const { result } = renderHook(() => useTripConsumptionTracker());
-
-    const speedingFactors = createFactors({ speedFactor: 2.0 });
-
-    act(() => {
-      for (let i = 0; i < 20; i++) {
-        result.current.addSample(speedingFactors, 500);
-      }
-    });
-
-    const factors = result.current.getAverageFactors();
-    expect(factors.speedPenaltyPct).toBeCloseTo(100, 1);
-  });
-
-  it("handles large duration values", () => {
-    const { result } = renderHook(() => useTripConsumptionTracker());
-
-    const speedingFactors = createFactors({ speedFactor: 1.5 });
-
-    act(() => {
-      for (let i = 0; i < 5; i++) {
-        result.current.addSample(speedingFactors, 720000);
-      }
-    });
-
-    const factors = result.current.getAverageFactors();
-    expect(factors.speedPenaltyPct).toBeCloseTo(50, 1);
-  });
-
-  it("calculates aggression penalty proportionally", () => {
-    const { result } = renderHook(() => useTripConsumptionTracker());
-
-    const aggressiveFactors = createFactors({ aggressionFactor: 1.1 });
-
-    act(() => {
-      for (let i = 0; i < 5; i++) {
-        result.current.addSample(aggressiveFactors, 2000);
-      }
-    });
-
-    const factors = result.current.getAverageFactors();
-    expect(factors.aggressionPenaltyPct).toBeCloseTo(10, 1);
-  });
-
-  it("calculates idle penalty proportionally", () => {
-    const { result } = renderHook(() => useTripConsumptionTracker());
-
-    const idleFactors = createFactors({ idleFactor: 1.08 });
-
-    act(() => {
-      result.current.addSample(idleFactors, 3000);
-      result.current.addSample(idleFactors, 3000);
-      result.current.addSample(idleFactors, 4000);
-      result.current.addSample(idleFactors, 2000);
-      result.current.addSample(idleFactors, 2000);
-    });
-
-    const factors = result.current.getAverageFactors();
-    expect(factors.idlePenaltyPct).toBeCloseTo(8, 1);
-  });
-
-  it("calculates stability penalty proportionally", () => {
-    const { result } = renderHook(() => useTripConsumptionTracker());
-
-    const unstableFactors = createFactors({ stabilityFactor: 1.05 });
-
-    act(() => {
-      for (let i = 0; i < 10; i++) {
-        result.current.addSample(unstableFactors, 1000);
-      }
-    });
-
-    const factors = result.current.getAverageFactors();
-    expect(factors.stabilityPenaltyPct).toBeCloseTo(5, 1);
-  });
-
-  it("integrates different penalties with different durations", () => {
-    const { result } = renderHook(() => useTripConsumptionTracker());
-
-    const speedPenalty = createFactors({ speedFactor: 1.4 });
-    const idlePenalty = createFactors({ idleFactor: 1.2 });
-    const normalFactors = createFactors();
-
-    act(() => {
-      result.current.addSample(speedPenalty, 2000);
-      result.current.addSample(speedPenalty, 2000);
-      result.current.addSample(speedPenalty, 2000);
-      result.current.addSample(speedPenalty, 2000);
-      result.current.addSample(speedPenalty, 2000);
-      result.current.addSample(idlePenalty, 2000);
-      result.current.addSample(idlePenalty, 2000);
-      result.current.addSample(idlePenalty, 2000);
-      result.current.addSample(idlePenalty, 2000);
-      result.current.addSample(idlePenalty, 2000);
-      result.current.addSample(normalFactors, 1000);
-    });
-
-    const factors = result.current.getAverageFactors();
-
-    expect(factors.speedPenaltyPct).toBeGreaterThan(0);
-    expect(factors.idlePenaltyPct).toBeGreaterThan(0);
-    expect(factors.speedPenaltyPct).toBeGreaterThan(factors.idlePenaltyPct);
-  });
-
-  describe("bonus calculations", () => {
-    it("caps total bonus at 10% in getAverageFactors", () => {
+  describe("getEstimatedCosts", () => {
+    it("returns zero costs for zero distance", () => {
       const { result } = renderHook(() => useTripConsumptionTracker());
 
-      const maxBonusFactors = createFactors({
-        speedBonus: 0.05,
-        accelerationBonus: 0.04,
-        coastingBonus: 0.03,
-        stabilityBonus: 0.03,
-        idleBonus: 0.03,
+      const costs = result.current.getEstimatedCosts(0, 10, 5);
+
+      expect(costs.totalFuelUsed).toBe(0);
+      expect(costs.totalCost).toBe(0);
+    });
+
+    it("calculates fuel correctly", () => {
+      const { result } = renderHook(() => useTripConsumptionTracker());
+
+      const costs = result.current.getEstimatedCosts(100, 10, 5);
+
+      expect(costs.totalFuelUsed).toBe(10); // 100km / 10km/l = 10L
+      expect(costs.totalCost).toBe(50); // 10L * R$5 = R$50
+    });
+
+    it("handles different consumption rates", () => {
+      const { result } = renderHook(() => useTripConsumptionTracker());
+
+      const costs1 = result.current.getEstimatedCosts(100, 8, 6);
+      const costs2 = result.current.getEstimatedCosts(100, 12, 6);
+
+      expect(costs1.totalFuelUsed).toBe(12.5); // 100/8
+      expect(costs2.totalFuelUsed).toBe(8.33); // 100/12
+      expect(costs1.totalFuelUsed).toBeGreaterThan(costs2.totalFuelUsed);
+    });
+
+    it("returns correct structure", () => {
+      const { result } = renderHook(() => useTripConsumptionTracker());
+
+      const costs = result.current.getEstimatedCosts(100, 10, 5);
+
+      expect(costs).toHaveProperty("baseFuelUsed");
+      expect(costs).toHaveProperty("totalFuelUsed");
+      expect(costs).toHaveProperty("totalCost");
+      expect(costs.extraFuelUsed).toBe(0);
+      expect(costs.savedFuel).toBe(0);
+    });
+  });
+
+  describe("getInstantConsumption", () => {
+    it("returns zero when no samples", () => {
+      const { result } = renderHook(() => useTripConsumptionTracker());
+      expect(result.current.getInstantConsumption()).toBe(0);
+    });
+
+    it("returns same as average when all samples are within 30s window", () => {
+      const { result } = renderHook(() => useTripConsumptionTracker());
+
+      act(() => {
+        result.current.addSample(
+          createFactors({ adjustedKmPerLiter: 10 }),
+          2000,
+        );
+        result.current.addSample(
+          createFactors({ adjustedKmPerLiter: 14 }),
+          3000,
+        );
+      });
+
+      const avg = result.current.getAverageConsumption();
+      const instant = result.current.getInstantConsumption();
+      expect(instant).toBeCloseTo(avg, 5);
+    });
+
+    it("returns weighted average of recent samples only", () => {
+      vi.useFakeTimers();
+      const { result } = renderHook(() => useTripConsumptionTracker());
+
+      act(() => {
+        vi.setSystemTime(new Date("2024-01-01T00:00:00.000Z"));
+        result.current.addSample(
+          createFactors({ adjustedKmPerLiter: 8 }),
+          2000,
+        );
       });
 
       act(() => {
-        for (let i = 0; i < 5; i++) {
-          result.current.addSample(maxBonusFactors, 2000);
-        }
+        vi.setSystemTime(new Date("2024-01-01T00:00:35.000Z"));
+        result.current.addSample(
+          createFactors({ adjustedKmPerLiter: 12 }),
+          2000,
+        );
       });
 
-      const factors = result.current.getAverageFactors();
-      expect(factors.totalBonusPct).toBe(10);
+      const instant = result.current.getInstantConsumption();
+      expect(instant).toBe(12);
+
+      vi.useRealTimers();
+    });
+  });
+
+  describe("getInstantConsumption", () => {
+    it("returns zero when no samples", () => {
+      const { result } = renderHook(() => useTripConsumptionTracker());
+      expect(result.current.getInstantConsumption()).toBe(0);
     });
 
-    it("isEcoDriving is true when bonuses exist, even if capped", () => {
+    it("returns same as average when all samples are within 30s window", () => {
       const { result } = renderHook(() => useTripConsumptionTracker());
 
-      const maxBonusFactors = createFactors({
-        speedBonus: 0.05,
-        accelerationBonus: 0.04,
-        coastingBonus: 0.03,
-        stabilityBonus: 0.03,
-        idleBonus: 0.03,
+      act(() => {
+        result.current.addSample(
+          createFactors({ adjustedKmPerLiter: 10 }),
+          2000,
+        );
+        result.current.addSample(
+          createFactors({ adjustedKmPerLiter: 14 }),
+          3000,
+        );
+      });
+
+      const avg = result.current.getAverageConsumption();
+      const instant = result.current.getInstantConsumption();
+      expect(instant).toBeCloseTo(avg, 5);
+    });
+
+    it("returns weighted average of recent samples only", () => {
+      vi.useFakeTimers();
+      const { result } = renderHook(() => useTripConsumptionTracker());
+
+      act(() => {
+        vi.setSystemTime(new Date("2024-01-01T00:00:00.000Z"));
+        result.current.addSample(
+          createFactors({ adjustedKmPerLiter: 8 }),
+          2000,
+        );
       });
 
       act(() => {
-        for (let i = 0; i < 5; i++) {
-          result.current.addSample(maxBonusFactors, 2000);
-        }
+        vi.setSystemTime(new Date("2024-01-01T00:00:35.000Z"));
+        result.current.addSample(
+          createFactors({ adjustedKmPerLiter: 12 }),
+          2000,
+        );
       });
 
-      const factors = result.current.getAverageFactors();
-      expect(factors.isEcoDriving).toBe(true);
-    });
+      const instant = result.current.getInstantConsumption();
+      expect(instant).toBe(12);
 
-    it("calculates individual bonus percentages correctly", () => {
+      vi.useRealTimers();
+    });
+  });
+
+  describe("reset", () => {
+    it("clears all accumulated data", () => {
       const { result } = renderHook(() => useTripConsumptionTracker());
 
-      const speedBonusFactors = createFactors({
-        speedBonus: 0.05,
-        accelerationBonus: 0,
-        coastingBonus: 0,
-        stabilityBonus: 0,
-        idleBonus: 0,
-      });
-
       act(() => {
-        for (let i = 0; i < 5; i++) {
-          result.current.addSample(speedBonusFactors, 2000);
-        }
+        result.current.addSample(
+          createFactors({ adjustedKmPerLiter: 10 }),
+          5000,
+        );
+        result.current.reset();
       });
 
-      const factors = result.current.getAverageFactors();
-      expect(factors.speedBonusPct).toBeCloseTo(5, 1);
-      expect(factors.accelerationBonusPct).toBe(0);
-      expect(factors.coastingBonusPct).toBe(0);
-      expect(factors.stabilityBonusPct).toBe(0);
-      expect(factors.idleBonusPct).toBe(0);
+      const avgConsumption = result.current.getAverageConsumption();
+      expect(avgConsumption).toBe(0);
     });
 
-    it("sums multiple bonuses correctly up to cap", () => {
+    it("allows adding samples after reset", () => {
       const { result } = renderHook(() => useTripConsumptionTracker());
 
-      const partialBonusFactors = createFactors({
-        speedBonus: 0.03,
-        accelerationBonus: 0.02,
-        coastingBonus: 0.01,
-        stabilityBonus: 0.01,
-        idleBonus: 0.01,
-      });
-
       act(() => {
-        for (let i = 0; i < 5; i++) {
-          result.current.addSample(partialBonusFactors, 2000);
-        }
+        result.current.addSample(
+          createFactors({ adjustedKmPerLiter: 10 }),
+          5000,
+        );
+        result.current.reset();
+        result.current.addSample(
+          createFactors({ adjustedKmPerLiter: 15 }),
+          3000,
+        );
       });
 
-      const factors = result.current.getAverageFactors();
-      expect(factors.totalBonusPct).toBe(8);
-      expect(factors.isEcoDriving).toBe(true);
+      const avgConsumption = result.current.getAverageConsumption();
+      expect(avgConsumption).toBe(15);
     });
   });
 });

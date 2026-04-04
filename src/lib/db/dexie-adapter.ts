@@ -1,6 +1,6 @@
 import Dexie, { type EntityTable } from "dexie";
 import type { DbAdapter } from "./adapter";
-import type { Trip, Settings, Refuel } from "@/types";
+import type { Trip, Settings, Refuel, FuelType } from "@/types";
 import { generateId } from "@/lib/utils";
 
 const DEFAULT_SETTINGS: Settings = {
@@ -171,13 +171,19 @@ class DexieAdapter implements DbAdapter {
     await this.db.trips.delete(id);
   }
 
-  async addRefuel(amount: number, fuelPrice: number): Promise<Refuel> {
+  async addRefuel(
+    amount: number,
+    fuelPrice: number,
+    fuelType: FuelType = "gasolina",
+  ): Promise<Refuel> {
     const refuel: Refuel = {
       id: generateId(),
       timestamp: new Date().toISOString(),
       amount,
       fuelPrice,
+      fuelType,
       totalCost: amount * fuelPrice,
+      consumedAmount: 0,
     };
     await this.db.refuels.put(refuel);
     return refuel;

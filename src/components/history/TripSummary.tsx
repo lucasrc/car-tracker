@@ -13,9 +13,8 @@ interface SummaryData {
   totalFuelUsed: number;
   totalRefuels: number;
   totalLitersRefueled: number;
-  tripCost: number;
+  tripActualCost: number;
   refuelCost: number;
-  totalCost: number;
   avgKmPerLiter: number;
   costPerKm: number;
   avgCostPerTrip: number;
@@ -47,14 +46,14 @@ export function TripSummary({ startDate, endDate }: TripSummaryProps) {
           (acc, r) => acc + r.amount,
           0,
         );
-        const tripCost = trips.reduce((acc, t) => acc + (t.totalCost || 0), 0);
+        const tripActualCost = trips.reduce((acc, t) => acc + t.actualCost, 0);
         const refuelCost = refuels.reduce((acc, r) => acc + r.totalCost, 0);
-        const totalCost = tripCost + refuelCost;
         const avgKmPerLiter =
           totalFuelUsed > 0 ? totalDistance / 1000 / totalFuelUsed : 0;
         const costPerKm =
-          totalDistance > 0 ? totalCost / (totalDistance / 1000) : 0;
-        const avgCostPerTrip = trips.length > 0 ? totalCost / trips.length : 0;
+          totalDistance > 0 ? tripActualCost / (totalDistance / 1000) : 0;
+        const avgCostPerTrip =
+          trips.length > 0 ? tripActualCost / trips.length : 0;
 
         const tripsWithPenalty = trips.filter(
           (t) => t.consumptionBreakdown && t.consumptionBreakdown.extraCost > 0,
@@ -74,9 +73,8 @@ export function TripSummary({ startDate, endDate }: TripSummaryProps) {
           totalFuelUsed,
           totalRefuels: refuels.length,
           totalLitersRefueled,
-          tripCost,
+          tripActualCost,
           refuelCost,
-          totalCost,
           avgKmPerLiter,
           costPerKm,
           avgCostPerTrip,
@@ -101,7 +99,10 @@ export function TripSummary({ startDate, endDate }: TripSummaryProps) {
     );
   }
 
-  if (!summary || summary.totalTrips === 0) {
+  const hasData =
+    (summary?.totalTrips ?? 0) > 0 || (summary?.totalRefuels ?? 0) > 0;
+
+  if (!summary || !hasData) {
     return (
       <div className="flex h-64 flex-col items-center justify-center rounded-3xl bg-white p-8 shadow-lg">
         <div className="mb-4 rounded-full bg-blue-50 p-4">
@@ -129,6 +130,8 @@ export function TripSummary({ startDate, endDate }: TripSummaryProps) {
     );
   }
 
+  const hasTrips = summary.totalTrips > 0;
+
   return (
     <div className="rounded-2xl bg-gradient-to-r from-blue-600 to-blue-500 p-4 shadow-lg">
       <h3 className="mb-3 text-sm font-medium text-white/80">
@@ -136,70 +139,87 @@ export function TripSummary({ startDate, endDate }: TripSummaryProps) {
       </h3>
 
       <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-xl bg-white/20 p-3">
-          <p className="text-xs text-white/70">Gasto com Viagens</p>
-          <p className="text-xl font-bold text-white">
-            R$ {summary.tripCost.toFixed(2)}
-          </p>
-        </div>
+        {hasTrips && (
+          <>
+            <div className="rounded-xl bg-white/20 p-3">
+              <p className="text-xs text-white/70">Custo Real Viagens</p>
+              <p className="text-xl font-bold text-white">
+                R$ {summary.tripActualCost.toFixed(2)}
+              </p>
+            </div>
 
-        <div className="rounded-xl bg-white/20 p-3">
-          <p className="text-xs text-white/70">Gasto com Abastecimento</p>
+            <div className="rounded-xl bg-white/20 p-3">
+              <p className="text-xs text-white/70">Custo/km</p>
+              <p className="text-xl font-bold text-white">
+                R$ {summary.costPerKm.toFixed(2)}
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-white/20 p-3">
+              <p className="text-xs text-white/70">Litros Consumidos</p>
+              <p className="text-xl font-bold text-white">
+                {summary.totalFuelUsed.toFixed(1)} L
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-white/20 p-3">
+              <p className="text-xs text-white/70">Média km/L</p>
+              <p className="text-xl font-bold text-white">
+                {summary.avgKmPerLiter.toFixed(1)}
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-white/20 p-3">
+              <p className="text-xs text-white/70">Km Rodado</p>
+              <p className="text-xl font-bold text-white">
+                {(summary.totalDistance / 1000).toFixed(1)} km
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-white/20 p-3">
+              <p className="text-xs text-white/70">Media por Viagem</p>
+              <p className="text-xl font-bold text-white">
+                R$ {summary.avgCostPerTrip.toFixed(2)}
+              </p>
+            </div>
+          </>
+        )}
+
+        <div
+          className={`rounded-xl bg-white/20 p-3 ${hasTrips ? "" : "col-span-2"}`}
+        >
+          <p className="text-xs text-white/70">Total Abastecido</p>
           <p className="text-xl font-bold text-white">
             R$ {summary.refuelCost.toFixed(2)}
           </p>
         </div>
 
-        <div className="col-span-2 rounded-xl bg-white p-3">
-          <p className="text-xs text-blue-600">Total Geral</p>
-          <p className="text-2xl font-bold text-blue-600">
-            R$ {summary.totalCost.toFixed(2)}
-          </p>
-        </div>
-
-        <div className="rounded-xl bg-white/20 p-3">
+        <div
+          className={`rounded-xl bg-white/20 p-3 ${hasTrips ? "" : "col-span-2"}`}
+        >
           <p className="text-xs text-white/70">Abastecimentos</p>
           <p className="text-xl font-bold text-white">
-            {summary.totalRefuels}x
+            {summary.totalRefuels}x ({summary.totalLitersRefueled.toFixed(1)} L)
           </p>
         </div>
 
-        <div className="rounded-xl bg-white/20 p-3">
-          <p className="text-xs text-white/70">Litros Consumidos</p>
-          <p className="text-xl font-bold text-white">
-            {summary.totalFuelUsed.toFixed(1)} L
-          </p>
-        </div>
+        {hasTrips ? (
+          <div className="col-span-2 rounded-xl bg-white p-3">
+            <p className="text-xs text-blue-600">Total Geral</p>
+            <p className="text-2xl font-bold text-blue-600">
+              R$ {(summary.tripActualCost + summary.refuelCost).toFixed(2)}
+            </p>
+          </div>
+        ) : (
+          <div className="col-span-2 rounded-xl bg-white p-3">
+            <p className="text-xs text-blue-600">Total Gasto</p>
+            <p className="text-2xl font-bold text-blue-600">
+              R$ {summary.refuelCost.toFixed(2)}
+            </p>
+          </div>
+        )}
 
-        <div className="rounded-xl bg-white/20 p-3">
-          <p className="text-xs text-white/70">Média km/L</p>
-          <p className="text-xl font-bold text-white">
-            {summary.avgKmPerLiter.toFixed(1)}
-          </p>
-        </div>
-
-        <div className="rounded-xl bg-white/20 p-3">
-          <p className="text-xs text-white/70">Km Rodado</p>
-          <p className="text-xl font-bold text-white">
-            {(summary.totalDistance / 1000).toFixed(1)} km
-          </p>
-        </div>
-
-        <div className="rounded-xl bg-white/20 p-3">
-          <p className="text-xs text-white/70">Custo/km</p>
-          <p className="text-xl font-bold text-white">
-            R$ {summary.costPerKm.toFixed(2)}
-          </p>
-        </div>
-
-        <div className="rounded-xl bg-white/20 p-3">
-          <p className="text-xs text-white/70">Media por Viagem</p>
-          <p className="text-xl font-bold text-white">
-            R$ {summary.avgCostPerTrip.toFixed(2)}
-          </p>
-        </div>
-
-        {summary.totalPenalty > 0 && (
+        {summary.totalPenalty > 0 && hasTrips && (
           <div className="col-span-2 rounded-xl bg-red-500/20 p-3">
             <p className="text-xs text-red-200">Penalidades de Consumo</p>
             <p className="text-lg font-bold text-white">

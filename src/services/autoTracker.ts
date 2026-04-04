@@ -89,54 +89,71 @@ class AutoTracker {
     this.isTracking = true;
 
     try {
-      const { startTrip, addPosition } = useTripStore.getState();
+      const { startTrip } = useTripStore.getState();
       await startTrip();
-
-      await BackgroundGeolocation.start(
-        {
-          backgroundMessage:
-            "Rastreamento ativo - cancele para economizar bateria.",
-          backgroundTitle: "Car Tracker",
-          requestPermissions: true,
-          stale: false,
-          distanceFilter: this.config?.distanceFilter ?? 10,
-        },
-        (location: Location | undefined, error: CallbackError | undefined) => {
-          if (error) {
-            if (error.code === "NOT_AUTHORIZED") {
-              BackgroundGeolocation.openSettings();
-            }
-            this.callbacks.onError?.(new Error(error.message));
-            return;
-          }
-
-          if (location) {
-            const point: AutoTrackerPoint = {
-              lat: location.latitude,
-              lng: location.longitude,
-              speed: location.speed ?? 0,
-              timestamp: location.time ?? Date.now(),
-            };
-
-            const coords = {
-              lat: location.latitude,
-              lng: location.longitude,
-              timestamp: location.time ?? Date.now(),
-              accuracy: location.accuracy,
-              speed: location.speed ?? undefined,
-            };
-
-            addPosition(coords);
-            this.callbacks.onLocationUpdate?.(point);
-          }
-        },
-      );
-
-      this.isGpsRunning = true;
-      await DontKillMyApp.requestKeepAppActive();
-    } catch (error) {
-      this.callbacks.onError?.(error as Error);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Erro desconhecido";
+      if (
+        message.includes("COPERT") ||
+        message.includes("calibration") ||
+        message.includes("calibrar")
+      ) {
+        this.callbacks.onError?.(
+          new Error(
+            "Calibração COPERT necessária. O rastreamento automático foi bloqueado. Calibre o veículo em Configurações.",
+          ),
+        );
+        this.isTracking = false;
+        return;
+      }
+      this.callbacks.onError?.(err as Error);
+      this.isTracking = false;
+      return;
     }
+
+    const { addPosition } = useTripStore.getState();
+    await BackgroundGeolocation.start(
+      {
+        backgroundMessage:
+          "Rastreamento ativo - cancele para economizar bateria.",
+        backgroundTitle: "Car Tracker",
+        requestPermissions: true,
+        stale: false,
+        distanceFilter: this.config?.distanceFilter ?? 10,
+      },
+      (location: Location | undefined, error: CallbackError | undefined) => {
+        if (error) {
+          if (error.code === "NOT_AUTHORIZED") {
+            BackgroundGeolocation.openSettings();
+          }
+          this.callbacks.onError?.(new Error(error.message));
+          return;
+        }
+
+        if (location) {
+          const point: AutoTrackerPoint = {
+            lat: location.latitude,
+            lng: location.longitude,
+            speed: location.speed ?? 0,
+            timestamp: location.time ?? Date.now(),
+          };
+
+          const coords = {
+            lat: location.latitude,
+            lng: location.longitude,
+            timestamp: location.time ?? Date.now(),
+            accuracy: location.accuracy,
+            speed: location.speed ?? undefined,
+          };
+
+          addPosition(coords);
+          this.callbacks.onLocationUpdate?.(point);
+        }
+      },
+    );
+
+    this.isGpsRunning = true;
+    await DontKillMyApp.requestKeepAppActive();
   }
 
   private async onCarDisconnected(): Promise<void> {
@@ -148,9 +165,19 @@ class AutoTracker {
         this.isGpsRunning = false;
       }
 
-      const { stopTrip, totalFuelUsed } = useTripStore.getState();
+      const { stopTrip, totalFuelUsed, trip } = useTripStore.getState();
       const settings = await getSettings();
-      const tripId = await stopTrip(settings.fuelPrice, totalFuelUsed);
+      const distanceKm = trip ? trip.distanceMeters / 1000 : 0;
+      const avgConsumption =
+        trip && trip.fuelUsed > 0
+          ? distanceKm / trip.fuelUsed
+          : settings.manualCityKmPerLiter;
+      const tripId = await stopTrip(
+        totalFuelUsed,
+        totalFuelUsed * settings.fuelPrice,
+        undefined,
+        avgConsumption,
+      );
       if (tripId) {
         this.callbacks.onTripComplete?.(tripId);
       }

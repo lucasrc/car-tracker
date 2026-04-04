@@ -47,7 +47,12 @@ export async function migrateFromDexie(
     }
 
     for (const refuel of dexieData.refuels) {
-      await sqliteAdapter.addRefuel(refuel.amount, refuel.fuelPrice);
+      await sqliteAdapter.addRefuel(
+        refuel.vehicleId || "",
+        refuel.amount,
+        refuel.fuelPrice,
+        refuel.fuelType,
+      );
     }
 
     if (dexieData.currentTrip) {

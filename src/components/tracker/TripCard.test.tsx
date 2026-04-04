@@ -6,6 +6,7 @@ import type { Trip } from "@/types";
 describe("TripCard", () => {
   const baseTrip: Trip = {
     id: "trip_1",
+    vehicleId: "vehicle_1",
     startTime: new Date("2024-01-15T14:30:00").toISOString(),
     endTime: new Date("2024-01-15T15:30:00").toISOString(),
     distanceMeters: 25000,
@@ -17,6 +18,7 @@ describe("TripCard", () => {
     consumption: 12,
     fuelCapacity: 50,
     fuelUsed: 2.5,
+    actualCost: 13.75,
     fuelPrice: 5.5,
     totalCost: 13.75,
     elapsedTime: 3600,

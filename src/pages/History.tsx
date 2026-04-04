@@ -13,9 +13,10 @@ import {
   getTripsInPeriod,
   getRefuelsInPeriod,
   deleteRefuel,
+  getVehicles,
 } from "@/lib/db";
 import { normalizeDateRange } from "@/lib/utils";
-import type { Trip, Refuel } from "@/types";
+import type { Trip, Refuel, Vehicle } from "@/types";
 
 const ITEMS_PER_PAGE = 20;
 
@@ -25,6 +26,7 @@ export function History() {
   const activeTab = searchParams.get("tab") === "report" ? "report" : "trips";
   const [trips, setTrips] = useState<Trip[]>([]);
   const [refuels, setRefuels] = useState<Refuel[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loading, setLoading] = useState(true);
   const [listTab, setListTab] = useState<"trips" | "refuels">("trips");
   const [startDate, setStartDate] = useState(
@@ -32,23 +34,21 @@ export function History() {
   );
   const [endDate, setEndDate] = useState(() => new Date());
   const [currentPage, setCurrentPage] = useState(1);
-
-  const paginatedTrips = useMemo(() => {
-    const start = (currentPage - 1) * ITEMS_PER_PAGE;
-    return trips.slice(start, start + ITEMS_PER_PAGE);
-  }, [trips, currentPage]);
-
-  const totalPages = Math.ceil(trips.length / ITEMS_PER_PAGE);
+  const [selectedVehicleId, setSelectedVehicleId] = useState<string | "all">(
+    "all",
+  );
 
   const loadTrips = useCallback(async () => {
     try {
       const { start, end } = normalizeDateRange(startDate, endDate);
-      const [filteredTrips, filteredRefuels] = await Promise.all([
+      const [filteredTrips, filteredRefuels, allVehicles] = await Promise.all([
         getTripsInPeriod(start, end),
         getRefuelsInPeriod(start, end),
+        getVehicles(),
       ]);
       setTrips(filteredTrips);
       setRefuels(filteredRefuels);
+      setVehicles(allVehicles);
     } catch (err) {
       console.error("Error loading data:", err);
     } finally {
@@ -84,6 +84,37 @@ export function History() {
     }
   };
 
+  // Filtrar dados por veículo
+  const filteredTrips = useMemo(() => {
+    if (selectedVehicleId === "all") return trips;
+    return trips.filter(
+      (t) =>
+        t.vehicleId === selectedVehicleId ||
+        (selectedVehicleId === "" && t.vehicleId === ""),
+    );
+  }, [trips, selectedVehicleId]);
+
+  const filteredRefuels = useMemo(() => {
+    if (selectedVehicleId === "all") return refuels;
+    return refuels.filter(
+      (r) =>
+        r.vehicleId === selectedVehicleId ||
+        (selectedVehicleId === "" && r.vehicleId === ""),
+    );
+  }, [refuels, selectedVehicleId]);
+
+  const paginatedTrips = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    return filteredTrips.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredTrips, currentPage]);
+
+  const totalPages = Math.ceil(filteredTrips.length / ITEMS_PER_PAGE);
+
+  const getVehicleName = (vehicleId: string): string | undefined => {
+    if (vehicleId === "") return undefined;
+    return vehicles.find((v) => v.id === vehicleId)?.name;
+  };
+
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-gradient-to-br from-blue-500 to-blue-700">
@@ -101,8 +132,10 @@ export function History() {
         <p className="mt-1 text-sm text-white/80">
           {activeTab === "report"
             ? "Resumo e estatísticas"
-            : `${listTab === "trips" ? trips.length : refuels.length} ${
-                (listTab === "trips" ? trips.length : refuels.length) === 1
+            : `${listTab === "trips" ? filteredTrips.length : filteredRefuels.length} ${
+                (listTab === "trips"
+                  ? filteredTrips.length
+                  : filteredRefuels.length) === 1
                   ? "registrado"
                   : "registrados"
               }`}
@@ -112,6 +145,26 @@ export function History() {
       <main className="-mt-4 flex-1 overflow-auto p-4 pt-6">
         {activeTab === "trips" ? (
           <>
+            {/* Filtro de veículo */}
+            <div className="mb-4">
+              <select
+                value={selectedVehicleId}
+                onChange={(e) => {
+                  setSelectedVehicleId(e.target.value as string | "all");
+                  setCurrentPage(1);
+                }}
+                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              >
+                <option value="all">Todos os veículos</option>
+                {vehicles.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.name}
+                  </option>
+                ))}
+                <option value="">Veículos excluídos</option>
+              </select>
+            </div>
+
             <div className="mb-4 flex gap-2 rounded-xl bg-white p-1 shadow-sm">
               <button
                 onClick={() => {
@@ -142,7 +195,7 @@ export function History() {
             </div>
 
             {listTab === "trips" ? (
-              trips.length === 0 ? (
+              filteredTrips.length === 0 ? (
                 <div className="mt-4 flex h-64 flex-col items-center justify-center rounded-3xl bg-white p-8 shadow-lg">
                   <div className="mb-4 rounded-full bg-blue-50 p-4">
                     <svg
@@ -205,7 +258,7 @@ export function History() {
                   )}
                 </>
               )
-            ) : refuels.length === 0 ? (
+            ) : filteredRefuels.length === 0 ? (
               <div className="mt-4 flex h-64 flex-col items-center justify-center rounded-3xl bg-white p-8 shadow-lg">
                 <div className="mb-4 rounded-full bg-green-50 p-4">
                   <svg
@@ -231,10 +284,11 @@ export function History() {
               </div>
             ) : (
               <div className="mt-4 flex flex-col gap-3">
-                {refuels.map((refuel) => (
+                {filteredRefuels.map((refuel) => (
                   <RefuelCard
                     key={refuel.id}
                     refuel={refuel}
+                    vehicleName={getVehicleName(refuel.vehicleId)}
                     onDelete={() => handleDeleteRefuel(refuel.id)}
                   />
                 ))}
@@ -272,6 +326,35 @@ export function History() {
                 />
                 <UsagePatterns trips={trips} />
               </>
+            )}
+            {trips.length === 0 && refuels.length > 0 && (
+              <div className="mt-4 rounded-2xl bg-white p-4 shadow-lg">
+                <h4 className="mb-3 font-semibold text-gray-900">
+                  Abastecimentos no Período
+                </h4>
+                <div className="flex flex-col gap-2">
+                  {refuels.map((refuel) => (
+                    <div
+                      key={refuel.id}
+                      className="flex items-center justify-between rounded-lg bg-gray-50 p-3"
+                    >
+                      <div>
+                        <p className="font-medium text-gray-900">
+                          {new Date(refuel.timestamp).toLocaleDateString(
+                            "pt-BR",
+                          )}
+                        </p>
+                        <p className="text-sm text-gray-500">
+                          {refuel.amount.toFixed(2)} L · {refuel.fuelType}
+                        </p>
+                      </div>
+                      <p className="font-semibold text-green-600">
+                        R$ {refuel.totalCost.toFixed(2)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
           </>
         )}

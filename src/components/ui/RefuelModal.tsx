@@ -1,18 +1,23 @@
 import { useState, useEffect, useRef } from "react";
 import { Button } from "./Button";
+import type { FuelType } from "@/types";
 
 interface RefuelModalProps {
   open: boolean;
-  defaultPrice: number;
+  defaultFuelType: FuelType;
   currentFuel: number;
   fuelCapacity: number;
-  onConfirm: (liters: number, pricePerLiter: number) => void;
+  onConfirm: (
+    liters: number,
+    pricePerLiter: number,
+    fuelType: FuelType,
+  ) => void;
   onCancel: () => void;
 }
 
 export function RefuelModal({
   open,
-  defaultPrice,
+  defaultFuelType,
   currentFuel,
   fuelCapacity,
   onConfirm,
@@ -20,12 +25,14 @@ export function RefuelModal({
 }: RefuelModalProps) {
   const [liters, setLiters] = useState("");
   const [price, setPrice] = useState("");
+  const [fuelType, setFuelType] = useState<FuelType>(defaultFuelType);
   const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (open) {
       setLiters("");
-      setPrice(defaultPrice.toFixed(2));
+      setPrice("");
+      setFuelType(defaultFuelType);
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = "";
@@ -33,7 +40,7 @@ export function RefuelModal({
     return () => {
       document.body.style.overflow = "";
     };
-  }, [open, defaultPrice]);
+  }, [open, defaultFuelType]);
 
   useEffect(() => {
     if (!open) return;
@@ -59,7 +66,7 @@ export function RefuelModal({
       alert("Digite um preço válido");
       return;
     }
-    onConfirm(litersNum, priceNum);
+    onConfirm(litersNum, priceNum, fuelType);
   };
 
   if (!open) return null;
@@ -87,6 +94,21 @@ export function RefuelModal({
         <div className="p-6 space-y-4">
           <div>
             <label className="mb-2 block text-sm font-medium text-gray-700">
+              Tipo de Combustível
+            </label>
+            <select
+              value={fuelType}
+              onChange={(e) => setFuelType(e.target.value as FuelType)}
+              className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-lg font-medium text-gray-900 focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-500/20"
+            >
+              <option value="gasolina">Gasolina</option>
+              <option value="etanol">Etanol</option>
+              <option value="flex">Flex</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-gray-700">
               Preço por litro
             </label>
             <div className="relative">
@@ -106,9 +128,6 @@ export function RefuelModal({
                 /L
               </span>
             </div>
-            <p className="mt-1 text-xs text-gray-500">
-              Preço padrão: R$ {defaultPrice.toFixed(2).replace(".", ",")}/L
-            </p>
           </div>
 
           <div>
@@ -132,28 +151,11 @@ export function RefuelModal({
             </div>
           </div>
 
-          {litersNum > 0 && (
-            <div className="rounded-xl bg-green-50 border border-green-200 p-4">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-green-700">
-                  Total a pagar
-                </span>
-                <span className="text-2xl font-bold text-green-800">
-                  R$ {total.toFixed(2).replace(".", ",")}
-                </span>
-              </div>
-              <p className="mt-1 text-xs text-green-600">
-                {litersNum}L a R$ {priceNum.toFixed(2).replace(".", ",")}/L
-              </p>
-            </div>
-          )}
-
-          {litersNum > 0 && (
-            <div className="rounded-xl bg-blue-50 border border-blue-200 p-3">
-              <p className="text-xs text-blue-600">
-                Após o abastecimento, o nível do tanque será atualizado
-                automaticamente somando {litersNum}L ao nível atual.
-              </p>
+          {litersNum > 0 && priceNum > 0 && (
+            <div className="text-center py-2">
+              <span className="text-lg font-semibold text-gray-700">
+                Total: R$ {total.toFixed(2).replace(".", ",")}
+              </span>
             </div>
           )}
         </div>

@@ -32,6 +32,7 @@
     "@squareetlabs/capacitor-dont-kill-my-app": "^7.0.0",
     "@tanstack/react-query": "^5.95.2",
     "@types/sql.js": "^1.4.11",
+    "ahrs": "^1.3.3",
     "class-variance-authority": "^0.7.1",
     "dexie": "^4.4.1",
     "leaflet": "^1.9.4",

@@ -16,7 +16,7 @@ export function FuelBar({ currentFuel, fuelCapacity }: FuelBarProps) {
   };
 
   return (
-    <div className="fixed left-0 right-0 top-0 z-50 h-[4px] w-full bg-slate-300/50">
+    <div className="fixed left-0 right-0 top-0 z-50 h-[5px] w-full bg-slate-300/50">
       <div
         className="h-full transition-all duration-300"
         style={{

@@ -8,6 +8,37 @@ import type { Settings, Trip } from "@/types";
 const mockSaveCurrentTrip = vi.fn((_trip: Trip) => Promise.resolve());
 const mockClearCurrentTrip = vi.fn(() => Promise.resolve());
 const mockSaveTrip = vi.fn((trip: Trip) => Promise.resolve(trip.id));
+const mockVehicle = {
+  id: "test-vehicle-id",
+  name: "Test Vehicle",
+  make: "Toyota",
+  model: "Corolla",
+  year: 2020,
+  displacement: 2.0,
+  fuelType: "flex" as const,
+  euroNorm: "Euro 6" as const,
+  segment: "medium" as const,
+  urbanKmpl: 8.5,
+  highwayKmpl: 12.0,
+  combinedKmpl: 10.5,
+  mass: 1350,
+  grossWeight: 1800,
+  frontalArea: 2.3,
+  dragCoefficient: 0.28,
+  f0: 0.17,
+  f1: 0,
+  f2: 0.0004,
+  fuelConversionFactor: 0.85,
+  peakPowerKw: 125,
+  peakTorqueNm: 200,
+  confidence: "high" as const,
+  calibrationInput: "Corolla 2.0 2020",
+  calibratedAt: new Date().toISOString(),
+  createdAt: new Date().toISOString(),
+  fuelCapacity: 50,
+  currentFuel: 25,
+};
+
 const mockGetSettings = vi.fn(() =>
   Promise.resolve({
     id: "default",
@@ -20,8 +51,11 @@ const mockGetSettings = vi.fn(() =>
     cityKmPerLiter: 8,
     highwayKmPerLiter: 12,
     mixedKmPerLiter: 10,
+    activeVehicleId: "test-vehicle-id",
   } as Settings),
 );
+
+const mockGetVehicle = vi.fn(() => Promise.resolve(mockVehicle));
 
 vi.mock("@/lib/db", () => ({
   getSettings: () => mockGetSettings(),
@@ -29,6 +63,34 @@ vi.mock("@/lib/db", () => ({
   getCurrentTrip: vi.fn(() => Promise.resolve(undefined)),
   clearCurrentTrip: () => mockClearCurrentTrip(),
   saveTrip: (trip: Trip) => mockSaveTrip(trip),
+  getVehicle: () => mockGetVehicle(),
+}));
+
+vi.mock("@/lib/copert-calibration-service", () => ({
+  getSavedCalibration: vi.fn(() => ({
+    make: "Toyota",
+    model: "Corolla",
+    year: 2020,
+    displacement: 2.0,
+    fuelType: "flex",
+    euroNorm: "Euro 6",
+    segment: "medium",
+    urbanKmpl: 8.5,
+    highwayKmpl: 12.0,
+    combinedKmpl: 10.5,
+    mass: 1350,
+    grossWeight: 1800,
+    frontalArea: 2.3,
+    dragCoefficient: 0.28,
+    f0: 0.17,
+    f1: 0.003,
+    f2: 0.00045,
+    fuelConversionFactor: 275,
+    peakPowerKw: 115,
+    peakTorqueNm: 197,
+    co2_gkm: 145,
+    confidence: "high",
+  })),
 }));
 
 describe("useTripStore - Stops", () => {

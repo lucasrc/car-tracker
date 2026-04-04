@@ -3,18 +3,20 @@ import { useNavigate } from "react-router-dom";
 import { MapTracker } from "@/components/tracker/MapTracker";
 import { Speedometer } from "@/components/tracker/Speedometer";
 import { TripControls } from "@/components/tracker/TripControls";
-import { TripInfo } from "@/components/tracker/TripInfo";
+import { DrivingPanel } from "@/components/tracker/DrivingPanel";
 import { FuelBar } from "@/components/tracker/FuelBar";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useTripStore } from "@/stores/useTripStore";
 import { useRadarStore } from "@/stores/useRadarStore";
-import { BackgroundTracker } from "@/services/backgroundTracker";
 import { useGeolocation } from "@/hooks/useGeolocation";
 import { useWakeLock } from "@/hooks/useWakeLock";
 import { useSpeedFilter } from "@/hooks/useSpeedFilter";
 import { useDriveMode } from "@/hooks/useDriveMode";
+import { useInclination } from "@/hooks/useInclination";
 import { useSimulation } from "@/hooks/useSimulation";
 import { useAutoTracker } from "@/hooks/useAutoTracker";
+import { useFuelInventory } from "@/hooks/useFuelInventory";
+import { useVehicleStore } from "@/stores/useVehicleStore";
 import { useAppStore } from "@/stores/useAppStore";
 import { isAndroid } from "@/lib/platform";
 import { speedToKmh } from "@/lib/utils";
@@ -24,7 +26,7 @@ import {
   vincentyDistance,
   calculateTotalDistance,
 } from "@/lib/distance";
-import { getSettings, consumeFuel } from "@/lib/db";
+import { getSettings } from "@/lib/db";
 import { calculateDistanceKm } from "@/lib/radar-api";
 import L from "leaflet";
 
@@ -67,6 +69,8 @@ export function Tracker() {
     battery,
     getCurrentPosition,
     deviceOrientation,
+    filteredHeading,
+    filteredPitch,
   } = useGeolocation();
   const { request: requestWakeLock, release: releaseWakeLock } = useWakeLock();
   const { addSpeedReading, reset: resetSpeedFilter } = useSpeedFilter();
@@ -85,7 +89,10 @@ export function Tracker() {
     stop: stopAutoTracker,
     setOnTripComplete,
   } = useAutoTracker();
+  const { activeVehicle } = useVehicleStore();
+  const fuelInventory = useFuelInventory(activeVehicle?.id || "");
   const { nearestRadar, currentSpeedingEvent } = useRadarStore();
+  const inclination = useInclination({ enabled: status === "recording" });
 
   const nearbyRadarMaxSpeed = (() => {
     if (!nearestRadar || !position) return undefined;
@@ -121,8 +128,8 @@ export function Tracker() {
     manualHighwayKmPerLiter: 14,
     manualMixedKmPerLiter: 12,
     fuelCapacity: 50,
-    currentFuel: 50,
-    fuelPrice: 5.0,
+    currentFuel: 0,
+    fuelPrice: 0,
     engineDisplacement: 1000,
     fuelType: "gasolina",
   });
@@ -130,6 +137,50 @@ export function Tracker() {
   const [isGpsWarming, setIsGpsWarming] = useState(false);
   const [warmupStartTime, setWarmupStartTime] = useState<number | null>(null);
   const [mapInstance, setMapInstance] = useState<L.Map | null>(null);
+  const [realtimeCost, setRealtimeCost] = useState(0);
+
+  useEffect(() => {
+    fuelInventory.loadInventory();
+  }, [fuelInventory]);
+
+  useEffect(() => {
+    if (filteredPitch !== null) {
+      inclination.addPitchReading(filteredPitch, Date.now());
+    }
+  }, [filteredPitch, inclination]);
+
+  const lastGpsDistanceRef = useRef(0);
+  useEffect(() => {
+    if (position?.altitude !== undefined) {
+      const lastPos = lastValidPositionRef.current;
+      let distance = 0;
+      if (lastPos) {
+        distance = vincentyDistance(
+          lastPos.lat,
+          lastPos.lng,
+          position.lat,
+          position.lng,
+        );
+      }
+      inclination.addGpsReading(position.altitude, distance);
+      lastGpsDistanceRef.current = distance;
+    }
+  }, [position?.altitude, position?.lat, position?.lng, inclination]);
+
+  useEffect(() => {
+    const vehicleFuelType = activeVehicle
+      ? activeVehicle.fuelType === "diesel"
+        ? "gasolina"
+        : activeVehicle.fuelType === "ethanol"
+          ? "etanol"
+          : activeVehicle.fuelType === "flex"
+            ? "flex"
+            : "gasolina"
+      : settings.fuelType;
+    const weightedPrice =
+      fuelInventory.getWeightedAveragePrice(vehicleFuelType);
+    setRealtimeCost(storeTotalFuelUsed * weightedPrice);
+  }, [storeTotalFuelUsed, fuelInventory, activeVehicle, settings.fuelType]);
 
   useEffect(() => {
     if (autoTrackingEnabled && selectedCarBluetoothAddress) {
@@ -173,15 +224,18 @@ export function Tracker() {
   ]);
 
   const {
-    estimatedRange,
     estimatedConsumption,
+    consumptionFactors,
     addPosition: addDriveModePosition,
     reset: resetDriveMode,
     isInitialized,
-    currentKmPerLiter,
-    getAverageFactors,
-    getEstimatedCosts,
-  } = useDriveMode(stats.distanceMeters, settings.currentFuel);
+    getInstantConsumption,
+  } = useDriveMode(
+    stats.distanceMeters,
+    activeVehicle?.currentFuel ?? 0,
+    inclination.gradePercent,
+    activeVehicle,
+  );
 
   useEffect(() => {
     getSettings().then((s) => {
@@ -203,26 +257,49 @@ export function Tracker() {
   }, []);
 
   const handleStart = useCallback(async () => {
-    resetSpeedFilter();
-    resetDriveMode();
-    lastValidPositionRef.current = null;
-    setIsGpsWarming(true);
-    setWarmupStartTime(Date.now());
-    startWatching();
-    await requestWakeLock();
-  }, [startWatching, requestWakeLock, resetSpeedFilter, resetDriveMode]);
+    try {
+      await fuelInventory.loadInventory();
+      const totalLiters = fuelInventory.getTotalLiters();
+      if (totalLiters === 0) {
+        alert(
+          "Sem combustível no tanque. O custo da viagem não será calculado. Faça um abastecimento antes de iniciar.",
+        );
+      }
+      resetSpeedFilter();
+      resetDriveMode();
+      lastValidPositionRef.current = null;
+      setIsGpsWarming(true);
+      setWarmupStartTime(Date.now());
+      startWatching();
+      await requestWakeLock();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Erro desconhecido";
+      if (
+        message.includes("COPERT") ||
+        message.includes("calibration") ||
+        message.includes("calibrar")
+      ) {
+        alert(
+          "⚠️ Calibração COPERT necessária\n\n" +
+            "Antes de iniciar o rastreamento, você deve calibrar os dados do veículo para obter cálculos precisos de consumo.\n\n" +
+            "Vá em Configurações → Calibração COPERT e adicione as informações do seu veículo.",
+        );
+      } else {
+        alert(message);
+      }
+    }
+  }, [
+    startWatching,
+    requestWakeLock,
+    resetSpeedFilter,
+    resetDriveMode,
+    fuelInventory,
+  ]);
 
   const handleActualStart = useCallback(() => {
+    setIsGpsWarming(false);
     startTrip();
-    setIsGpsWarming(false);
-    setWarmupStartTime(null);
   }, [startTrip]);
-
-  const handleCancelWarmup = useCallback(() => {
-    setIsGpsWarming(false);
-    setWarmupStartTime(null);
-    stopWatching();
-  }, [stopWatching]);
 
   const handlePause = useCallback(() => {
     pauseTrip();
@@ -232,63 +309,24 @@ export function Tracker() {
   const handleResume = useCallback(() => {
     resumeTrip();
     startWatching();
-  }, [resumeTrip, startWatching]);
+    requestWakeLock();
+  }, [resumeTrip, startWatching, requestWakeLock]);
 
   const handleStopRequest = useCallback(() => {
     setShowConfirmDialog(true);
   }, []);
 
+  const handleCancelWarmup = useCallback(() => {
+    setIsGpsWarming(false);
+    stopWatching();
+    releaseWakeLock();
+  }, [stopWatching, releaseWakeLock]);
+
   const handleConfirmStop = useCallback(async () => {
     setShowConfirmDialog(false);
     stopWatching();
-    await releaseWakeLock();
-
-    const distanceKm = stats.distanceMeters / 1000;
-    const avgFactors = getAverageFactors();
-    const costs = getEstimatedCosts(
-      distanceKm,
-      currentKmPerLiter,
-      settings.fuelPrice,
-      avgFactors.totalBonusPct,
-    );
-
-    const breakdown = {
-      speedPenaltyPct: avgFactors.speedPenaltyPct,
-      aggressionPenaltyPct: avgFactors.aggressionPenaltyPct,
-      idlePenaltyPct: avgFactors.idlePenaltyPct,
-      stabilityPenaltyPct: avgFactors.stabilityPenaltyPct,
-      totalPenaltyPct:
-        avgFactors.speedPenaltyPct +
-        avgFactors.aggressionPenaltyPct +
-        avgFactors.idlePenaltyPct +
-        avgFactors.stabilityPenaltyPct,
-      speedBonusPct: avgFactors.speedBonusPct,
-      accelerationBonusPct: avgFactors.accelerationBonusPct,
-      coastingBonusPct: avgFactors.coastingBonusPct,
-      stabilityBonusPct: avgFactors.stabilityBonusPct,
-      idleBonusPct: avgFactors.idleBonusPct,
-      totalBonusPct: avgFactors.totalBonusPct,
-      isEcoDriving: avgFactors.isEcoDriving,
-      baseFuelUsed: costs.baseFuelUsed,
-      extraFuelUsed: costs.extraFuelUsed,
-      savedFuel: costs.savedFuel,
-      extraCost: costs.extraCost,
-      savedCost: costs.savedCost,
-    };
-
-    const tripId = await stopTrip(
-      settings.fuelPrice,
-      storeTotalFuelUsed,
-      breakdown,
-    );
-    setTotalFuelUsed(0);
-
-    try {
-      await BackgroundTracker.clearTrackingState();
-    } catch (err) {
-      console.warn("Failed to clear background tracking state:", err);
-    }
-
+    releaseWakeLock();
+    const tripId = await stopTrip(storeTotalFuelUsed, realtimeCost);
     if (tripId) {
       navigate(`/history/${tripId}`);
     }
@@ -296,14 +334,9 @@ export function Tracker() {
     stopWatching,
     releaseWakeLock,
     stopTrip,
-    setTotalFuelUsed,
-    settings.fuelPrice,
     storeTotalFuelUsed,
+    realtimeCost,
     navigate,
-    stats.distanceMeters,
-    getAverageFactors,
-    getEstimatedCosts,
-    currentKmPerLiter,
   ]);
 
   const handleCancelStop = useCallback(() => {
@@ -432,19 +465,17 @@ export function Tracker() {
         }
 
         const distanceKm = distance / 1000;
-        const fuelUsed = distanceKm / currentKmPerLiter;
+        if (estimatedConsumption <= 0) {
+          console.warn(
+            "Tracker: estimatedConsumption <= 0, skipping fuel calculation",
+          );
+          return;
+        }
+        const fuelUsed = distanceKm / estimatedConsumption;
 
         if (fuelUsed > 0 && status === "recording") {
           const newTotalFuel = storeTotalFuelUsed + fuelUsed;
           setTotalFuelUsed(newTotalFuel);
-
-          consumeFuel(fuelUsed).then((updated) => {
-            setSettings((prev) => ({
-              ...prev,
-              fuelCapacity: updated.fuelCapacity,
-              currentFuel: updated.currentFuel,
-            }));
-          });
         }
       }
 
@@ -466,7 +497,7 @@ export function Tracker() {
     addSpeedReading,
     addDriveModePosition,
     storeTotalFuelUsed,
-    currentKmPerLiter,
+    estimatedConsumption,
     stats.distanceMeters,
   ]);
 
@@ -505,33 +536,38 @@ export function Tracker() {
       const dist = vincentyDistance(prev.lat, prev.lng, curr.lat, curr.lng);
       const distKm = dist / 1000;
 
-      if (distKm > 0.001 && currentKmPerLiter > 0) {
-        const fuelUsed = distKm / currentKmPerLiter;
+      if (distKm > 0.001 && estimatedConsumption > 0) {
+        const fuelUsed = distKm / estimatedConsumption;
         setTotalFuelUsed(storeTotalFuelUsed + fuelUsed);
       }
     }
   }, [
     simulatedPath,
     isSimulating,
-    currentKmPerLiter,
+    estimatedConsumption,
     setTotalFuelUsed,
     storeTotalFuelUsed,
   ]);
 
   const idleWorstCaseRange =
-    settings.currentFuel * settings.manualCityKmPerLiter;
+    (activeVehicle?.currentFuel ?? 0) * (activeVehicle?.urbanKmpl ?? 10);
+
+  const currentConsumption = isRecordingOrSimulating
+    ? estimatedConsumption
+    : (activeVehicle?.urbanKmpl ?? 10);
+
   const displayedRange =
     status === "idle"
       ? idleWorstCaseRange
-      : isInitialized
-        ? estimatedRange
+      : isInitialized && currentConsumption > 0
+        ? (activeVehicle?.currentFuel ?? 0) * currentConsumption
         : idleWorstCaseRange;
 
   return (
     <>
       <FuelBar
-        currentFuel={settings.currentFuel}
-        fuelCapacity={settings.fuelCapacity}
+        currentFuel={activeVehicle?.currentFuel ?? 0}
+        fuelCapacity={activeVehicle?.fuelCapacity ?? 50}
       />
 
       <div className="fixed inset-0 z-0">
@@ -543,24 +579,43 @@ export function Tracker() {
           onMapReady={setMapInstance}
           isSpeeding={!!currentSpeedingEvent}
           deviceOrientation={deviceOrientation}
+          filteredHeading={filteredHeading}
         />
       </div>
 
       <div className="pointer-events-none fixed inset-0 z-[1] bg-[linear-gradient(180deg,rgba(214,228,233,0.5)_0%,rgba(214,228,233,0.14)_38%,rgba(18,38,58,0.22)_100%)]" />
 
       <div className="pointer-events-none fixed inset-0 z-10">
-        <div className="pointer-events-auto pt-2">
-          <TripInfo
+        <div className="pointer-events-auto pt-0">
+          <DrivingPanel
+            currentSpeed={displaySpeed}
             distance={isSimulating ? simulatedDistance : stats.distanceMeters}
             elapsedTime={isSimulating ? simulatedElapsedTime : elapsedTime}
             fuelUsed={isRecordingOrSimulating ? storeTotalFuelUsed : 0}
-            fuelPrice={settings.fuelPrice}
+            cost={realtimeCost}
+            currentFuelLiters={activeVehicle?.currentFuel ?? 0}
             range={displayedRange}
             currentConsumption={
               isRecordingOrSimulating
                 ? estimatedConsumption
-                : settings.manualCityKmPerLiter
+                : (activeVehicle?.urbanKmpl ?? 10)
             }
+            avgConsumption={
+              isRecordingOrSimulating
+                ? getInstantConsumption() || estimatedConsumption
+                : (activeVehicle?.urbanKmpl ?? 10)
+            }
+            vehicleName={activeVehicle?.name}
+            vehicleDetails={
+              activeVehicle
+                ? `${(activeVehicle.displacement / 1000).toFixed(1)}L ${activeVehicle.fuelType === "flex" ? "Flex" : activeVehicle.fuelType === "diesel" ? "Diesel" : activeVehicle.fuelType === "ethanol" ? "Etanol" : "Gasolina"} · ${Math.round(activeVehicle.mass)}kg`
+                : undefined
+            }
+            calibrated={consumptionFactors.calibrated}
+            radarMaxSpeed={nearbyRadarMaxSpeed}
+            isSpeeding={!!currentSpeedingEvent}
+            gradePercent={inclination.gradePercent}
+            inclinationConfidence={inclination.confidence}
           />
         </div>
 

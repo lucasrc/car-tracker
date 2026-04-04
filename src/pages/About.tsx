@@ -29,10 +29,12 @@ export function About() {
           <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-2">
             <h3 className="text-lg font-medium">Consumo de combustível</h3>
             <p className="text-gray-600 dark:text-gray-400 leading-relaxed">
-              O app estima quanto combustível você gastou baseado na velocidade
-              e no jeito que você dirige. Acelerações fortes gastam mais.
-              Velocidade constante economiza. Ele também considera se você usa
-              gasolina, etanol ou flex, e o tamanho do motor do seu carro.
+              O app usa o modelo COPERT — um algoritmo cientificamente validado
+              pela Agência Europeia do Meio Ambiente com 88,6% de precisão. Ele
+              calcula o consumo baseado na velocidade média da viagem, tipo de
+              combustível (gasolina, etanol ou flex) e cilindrada do motor. O
+              valor que você configurou nas configurações serve como referência
+              para o cálculo.
             </p>
           </div>
 

@@ -1,0 +1,173 @@
+import { formatDistance } from "@/lib/utils";
+
+interface DrivingPanelProps {
+  currentSpeed: number;
+  distance: number;
+  elapsedTime: number;
+  fuelUsed: number;
+  cost: number;
+  currentFuelLiters: number;
+  range: number;
+  currentConsumption: number;
+  avgConsumption: number;
+  calibrated?: boolean;
+  radarMaxSpeed?: number;
+  isSpeeding?: boolean;
+  gradePercent?: number;
+  inclinationConfidence?: number;
+  vehicleName?: string;
+  vehicleDetails?: string;
+}
+
+function formatTimeHms(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  return [
+    h.toString().padStart(2, "0"),
+    m.toString().padStart(2, "0"),
+    s.toString().padStart(2, "0"),
+  ].join(":");
+}
+
+export function DrivingPanel({
+  currentSpeed,
+  distance,
+  elapsedTime,
+  fuelUsed,
+  cost,
+  currentFuelLiters,
+  range,
+  currentConsumption,
+  avgConsumption,
+  calibrated = false,
+  radarMaxSpeed,
+  isSpeeding = false,
+  gradePercent = 0,
+  inclinationConfidence = 0,
+  vehicleName,
+  vehicleDetails,
+}: DrivingPanelProps) {
+  return (
+    <div className="mx-1 rounded-2xl border border-white/50 bg-[#d8e8ec]/80 px-1 py-2 shadow-[0_10px_26px_rgba(15,23,42,0.1)] backdrop-blur-xl">
+      <div className="flex items-center justify-between gap-1">
+        <div className="flex flex-1 flex-col items-center">
+          <span className="text-xs font-medium uppercase text-slate-600">
+            Tempo
+          </span>
+          <span className="text-2xl font-bold font-mono tabular-nums text-slate-800">
+            {formatTimeHms(elapsedTime)}
+          </span>
+        </div>
+
+        <div className="h-10 w-px bg-slate-400/20" />
+
+        <div className="flex flex-1 flex-col items-center">
+          <span className="text-xs font-medium uppercase text-slate-600">
+            Distância
+          </span>
+          <span className="text-2xl font-bold tabular-nums text-slate-800">
+            {formatDistance(distance)}
+          </span>
+        </div>
+
+        <div className="h-10 w-px bg-slate-400/20" />
+
+        <div className="flex flex-1 flex-col items-center">
+          <span className="text-xs font-medium uppercase text-slate-600">
+            Autonomia
+          </span>
+          <span className="text-xl font-bold tabular-nums text-slate-800">
+            {Math.round(range)} km
+          </span>
+          <span className="text-xs text-slate-500">
+            {currentFuelLiters.toFixed(1)} L
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-2 h-px w-full bg-slate-400/15" />
+
+      <div className="mt-2 flex items-center justify-between gap-1">
+        <div className="flex flex-1 flex-col items-center">
+          <span className="text-xs font-medium uppercase text-slate-600">
+            Veículo
+          </span>
+          <span className="text-base font-bold text-slate-800 truncate max-w-[120px]">
+            {vehicleName || "—"}
+          </span>
+          <span className="text-xs text-slate-500">{vehicleDetails || ""}</span>
+        </div>
+
+        <div className="h-8 w-px bg-slate-400/15" />
+
+        <div className="flex flex-1 flex-col items-center">
+          <span className="text-xs font-medium uppercase text-slate-500">
+            Consumo inst.
+          </span>
+          <div className="flex items-center gap-1">
+            <span className="text-lg font-bold tabular-nums text-green-700">
+              {currentConsumption.toFixed(1)}
+            </span>
+            {calibrated && (
+              <span className="rounded bg-green-600 px-1 py-0.5 text-[0.55rem] font-bold text-white">
+                CALIBRADO
+              </span>
+            )}
+          </div>
+          <span className="text-xs text-slate-500">
+            km/l · Méd: {avgConsumption.toFixed(1)}
+          </span>
+        </div>
+
+        {inclinationConfidence > 0.1 && (
+          <>
+            <div className="h-8 w-px bg-slate-400/15" />
+            <div className="flex flex-1 flex-col items-center">
+              <span className="text-xs font-medium uppercase text-slate-500">
+                Inclinação
+              </span>
+              <span
+                className={`text-lg font-bold tabular-nums ${
+                  gradePercent > 0.5
+                    ? "text-green-600"
+                    : gradePercent < -0.5
+                      ? "text-red-600"
+                      : "text-slate-700"
+                }`}
+              >
+                {gradePercent >= 0 ? "↗" : "↘"}{" "}
+                {Math.abs(gradePercent).toFixed(1)}%
+              </span>
+              <span className="text-xs text-slate-500">
+                {Math.round(inclinationConfidence * 100)}%
+              </span>
+            </div>
+          </>
+        )}
+
+        <div className="h-8 w-px bg-slate-400/15" />
+
+        <div className="flex flex-1 flex-col items-center rounded-lg bg-slate-800/10 px-1 py-0.5">
+          <span className="text-xs font-bold uppercase text-slate-600">
+            Gasto
+          </span>
+          <span className="text-xl font-extrabold tabular-nums text-slate-900">
+            R$ {cost.toFixed(2)}
+          </span>
+          <span className="text-xs font-medium text-slate-500">
+            {fuelUsed.toFixed(1)} L
+          </span>
+        </div>
+      </div>
+
+      {isSpeeding && radarMaxSpeed && (
+        <div className="mt-2 flex items-center justify-center rounded-lg border-2 border-red-500 bg-red-50/90 px-2 py-1">
+          <span className="text-base font-bold text-red-600">
+            Excesso: +{Math.round(currentSpeed - radarMaxSpeed)} km/h
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}

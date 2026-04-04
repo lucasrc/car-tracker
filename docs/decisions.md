@@ -228,3 +228,52 @@ Decisões de arquitetura documentadas com o contexto da época. Evita que o agen
 
 - Se precisar de tipos de gráfico que Recharts não suporta
 - Se performance com muitos dados for problema
+
+---
+
+## ADR-009: FIFO Fuel Cost Tracking vs Preco Unico vs Preco Medio
+
+**Decisão:** FIFO (First-In-First-Out)
+
+**Data:** 2026
+
+**Contexto:** O usuario abastece em diferentes postos com precos diferentes. Precisamos calcular o custo real de cada viagem de forma precisa.
+
+**Alternativas consideradas:**
+
+1. **Preco Unico (Modelo Original):**
+   - Usa um preco global configurado pelo usuario
+   - Prós: Simples de implementar
+   - Contras: Impreciso quando precos variam entre abastecimento
+
+2. **Preco Medio Ponderado:**
+   - Calcula preco medio de todos os abastecimentos
+   - Prós: Simples, da visão geral
+   - Contras: Não reflete custo real de combustivel consumido
+
+3. **FIFO (First-In-First-Out):**
+   - Rastreia cada abastecimento como lote independente
+   - Consome do lote mais antigo primeiro
+   - Prós: Custo real e preciso
+   - Contras: Mais complexo de implementar
+
+**Por quê FIFO:**
+
+- Espelha realidade fisica do tanque de combustivel
+- Permite calculo preciso de custo por viagem
+- Suporta multiplos tipos de combustivel (gasolina/etanol)
+- Possibilita validacao retrospectiva (custo real vs estimado)
+- Preco medio ainda disponível para comparacao
+
+**Implementação:**
+
+- Cada refuel vira um `FuelBatch` com timestamp, amount, price, fuelType
+- `consumeFuel(liters)` itera batches ordenados por timestamp
+- Custo = soma(amount \* price) de cada batch parcialmente consumido
+- Armazena `actualCost` (FIFO) além de `totalCost` (estimado)
+
+**Quando reconsiderar:**
+
+- Se odômetro estiver disponível: usar método fill-up para validação real
+- Se usuario abastece sempre no mesmo posto: overhead não compensa
+- Se performance com milhares de lotes for problema ( batches > 1000)

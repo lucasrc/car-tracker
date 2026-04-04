@@ -470,11 +470,20 @@ export function TripDetail() {
               </div>
               <div className="rounded-2xl bg-emerald-50 p-3 shadow-sm">
                 <p className="text-xs font-medium text-emerald-600">
-                  Gasto Total
+                  {trip.actualCost !== undefined &&
+                  trip.actualCost !== trip.totalCost
+                    ? "Custo Real (FIFO)"
+                    : "Gasto Total"}
                 </p>
                 <p className="mt-1 text-xl font-semibold text-emerald-900">
-                  R$ {(trip.totalCost || 0).toFixed(2)}
+                  R$ {(trip.actualCost ?? trip.totalCost ?? 0).toFixed(2)}
                 </p>
+                {trip.actualCost !== undefined &&
+                  trip.actualCost !== trip.totalCost && (
+                    <p className="mt-1 text-xs text-emerald-600">
+                      Estimado: R$ {(trip.totalCost ?? 0).toFixed(2)}
+                    </p>
+                  )}
               </div>
               <div className="col-span-2 rounded-2xl bg-sky-50 p-3 shadow-sm">
                 <p className="text-xs font-medium text-sky-600">Km Rodado</p>

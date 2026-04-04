@@ -24,6 +24,7 @@ interface MapTrackerProps {
   onMapReady?: (map: L.Map) => void;
   isSpeeding?: boolean;
   deviceOrientation?: number | null;
+  filteredHeading?: number | null;
 }
 
 const defaultCenter: [number, number] = [-23.5505, -46.6333];
@@ -77,16 +78,28 @@ function createPositionIcon(rotation: number) {
   });
 }
 
+const getZoomForSpeed = (speed: number): number => {
+  if (speed <= 40 / 3.6) return 16;
+  if (speed <= 60 / 3.6) return 15;
+  if (speed <= 80 / 3.6) return 14;
+  return 14;
+};
+
+const DEFAULT_ZOOM = 17;
+
 function MapUpdater({
   position,
   center,
   onMapReady,
+  currentSpeed = 0,
 }: {
   position: Coordinates | null;
   center?: [number, number];
   onMapReady?: (map: L.Map) => void;
+  currentSpeed?: number;
 }) {
   const map = useMap();
+  const lastZoomRef = useRef(DEFAULT_ZOOM);
 
   useEffect(() => {
     map.invalidateSize();
@@ -95,14 +108,18 @@ function MapUpdater({
 
   useEffect(() => {
     if (position) {
-      map.setView([position.lat, position.lng], map.getZoom(), {
-        animate: true,
-        duration: 0.5,
-      });
+      const targetZoom = getZoomForSpeed(currentSpeed * 3.6);
+      if (targetZoom !== lastZoomRef.current) {
+        lastZoomRef.current = targetZoom;
+        map.setView([position.lat, position.lng], targetZoom, {
+          animate: true,
+          duration: 0.5,
+        });
+      }
     } else if (center) {
       map.setView(center, map.getZoom());
     }
-  }, [position, center, map]);
+  }, [position, center, map, currentSpeed]);
 
   return null;
 }
@@ -116,6 +133,7 @@ export function MapTracker({
   onMapReady,
   isSpeeding = false,
   deviceOrientation,
+  filteredHeading,
 }: MapTrackerProps) {
   const mapRef = useRef<L.Map | null>(null);
   const { radars, currentSpeedingEvent, fetchRadars, checkSpeeding } =
@@ -177,7 +195,7 @@ export function MapTracker({
     };
   }, [path, position]);
 
-  const rotation = deviceOrientation ?? heading ?? 0;
+  const rotation = filteredHeading ?? heading ?? deviceOrientation ?? 0;
   const positionIcon = useMemo(() => createPositionIcon(rotation), [rotation]);
 
   useEffect(() => {
@@ -217,7 +235,7 @@ export function MapTracker({
       <MapContainer
         ref={mapRef}
         center={mapCenter}
-        zoom={16}
+        zoom={DEFAULT_ZOOM}
         className="h-full w-full"
         zoomControl={false}
         attributionControl={false}
@@ -227,7 +245,12 @@ export function MapTracker({
         doubleClickZoom={true}
       >
         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-        <MapUpdater position={position} onMapReady={onMapReady} />
+        <MapUpdater
+          position={position}
+          center={center}
+          onMapReady={onMapReady}
+          currentSpeed={currentSpeed}
+        />
         {pathPositions.length > 0 && (
           <>
             <Polyline

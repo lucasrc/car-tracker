@@ -1,6 +1,16 @@
 import Dexie, { type EntityTable } from "dexie";
-import type { Trip, Settings, Refuel } from "@/types";
+import type {
+  Trip,
+  Settings,
+  Refuel,
+  FuelType,
+  Vehicle,
+  InclinationCalibration,
+} from "@/types";
 import { generateId } from "@/lib/utils";
+
+const LEGACY_CALIBRATION_KEY = "copert-calibration";
+const LEGACY_INCLINATION_KEY = "inclination-calibration";
 
 const DEFAULT_SETTINGS: Settings = {
   id: "default",
@@ -11,8 +21,8 @@ const DEFAULT_SETTINGS: Settings = {
   manualHighwayKmPerLiter: 14,
   manualMixedKmPerLiter: 12,
   fuelCapacity: 50,
-  currentFuel: 50,
-  fuelPrice: 5.0,
+  currentFuel: 0,
+  fuelPrice: 0,
   engineDisplacement: 1000,
   fuelType: "gasolina",
 };
@@ -22,6 +32,8 @@ const db = new Dexie("CarTelemetryDB") as Dexie & {
   currentTrip: EntityTable<Trip, "id">;
   settings: EntityTable<Settings, "id">;
   refuels: EntityTable<Refuel, "id">;
+  vehicles: EntityTable<Vehicle, "id">;
+  inclinationCalibrations: EntityTable<InclinationCalibration, "vehicleId">;
 };
 
 db.version(4)
@@ -62,6 +74,108 @@ db.version(6)
       });
   });
 
+db.version(7)
+  .stores({
+    trips: "id, startTime, endTime, status",
+    currentTrip: "id",
+    settings: "id",
+    refuels: "id, timestamp",
+  })
+  .upgrade((tx) => {
+    return tx
+      .table("refuels")
+      .toCollection()
+      .modify((r) => {
+        if (typeof r.fuelType === "undefined") {
+          r.fuelType = "gasolina";
+        }
+      });
+  });
+
+db.version(8)
+  .stores({
+    trips: "id, startTime, endTime, status",
+    currentTrip: "id",
+    settings: "id",
+    refuels: "id, timestamp",
+  })
+  .upgrade((tx) => {
+    return tx
+      .table("refuels")
+      .toCollection()
+      .modify((r) => {
+        if (typeof r.consumedAmount === "undefined") {
+          r.consumedAmount = 0;
+        }
+      });
+  });
+
+db.version(9).stores({
+  trips: "id, startTime, endTime, status",
+  currentTrip: "id",
+  settings: "id",
+  refuels: "id, timestamp",
+  vehicles: "id, createdAt",
+  inclinationCalibrations: "vehicleId",
+});
+
+db.version(10)
+  .stores({
+    trips: "id, startTime, endTime, status, vehicleId",
+    currentTrip: "id, vehicleId",
+    settings: "id",
+    refuels: "id, timestamp",
+    vehicles: "id, createdAt",
+    inclinationCalibrations: "vehicleId",
+  })
+  .upgrade((tx) => {
+    return tx
+      .table("trips")
+      .toCollection()
+      .modify((t) => {
+        if (typeof t.vehicleId === "undefined") {
+          t.vehicleId = "";
+        }
+      });
+  });
+
+db.version(11)
+  .stores({
+    trips: "id, startTime, endTime, status, vehicleId",
+    currentTrip: "id, vehicleId",
+    settings: "id",
+    refuels: "id, timestamp, vehicleId",
+    vehicles: "id, createdAt",
+    inclinationCalibrations: "vehicleId",
+  })
+  .upgrade(async (tx) => {
+    // Adicionar vehicleId aos refuels existentes (associa ao veículo ativo ou "")
+    const settings = await tx.table("settings").get("default");
+    const activeVehicleId = settings?.activeVehicleId || "";
+
+    await tx
+      .table("refuels")
+      .toCollection()
+      .modify((r) => {
+        if (typeof r.vehicleId === "undefined") {
+          r.vehicleId = activeVehicleId;
+        }
+      });
+
+    // Adicionar fuelCapacity/currentFuel aos vehicles existentes
+    await tx
+      .table("vehicles")
+      .toCollection()
+      .modify((v) => {
+        if (typeof v.fuelCapacity === "undefined") {
+          v.fuelCapacity = settings?.fuelCapacity || 50;
+        }
+        if (typeof v.currentFuel === "undefined") {
+          v.currentFuel = 0;
+        }
+      });
+  });
+
 export async function getSettings(): Promise<Settings> {
   try {
     const settings = await db.settings.get("default");
@@ -77,16 +191,8 @@ export async function getSettings(): Promise<Settings> {
       const updated = {
         ...DEFAULT_SETTINGS,
         ...s,
-        currentFuel: fuelCapacity,
+        currentFuel: 0,
         fuelCapacity,
-      } as Settings;
-      await db.settings.put(updated);
-      return updated;
-    }
-    if (typeof s.fuelPrice === "undefined") {
-      const updated = {
-        ...settings,
-        fuelPrice: DEFAULT_SETTINGS.fuelPrice,
       } as Settings;
       await db.settings.put(updated);
       return updated;
@@ -140,6 +246,9 @@ export async function saveSettings(settings: Settings): Promise<void> {
 }
 
 export async function refuel(amount: number): Promise<Settings> {
+  if (amount < 0) {
+    throw new Error("refuel: amount cannot be negative");
+  }
   const settings = await getSettings();
 
   const newFuel = Math.min(
@@ -153,9 +262,13 @@ export async function refuel(amount: number): Promise<Settings> {
 }
 
 export async function consumeFuel(liters: number): Promise<Settings> {
+  if (liters < 0) {
+    throw new Error("consumeFuel: liters cannot be negative");
+  }
   const settings = await getSettings();
   const newFuel = Math.max(settings.currentFuel - liters, 0);
-  const updated = { ...settings, currentFuel: newFuel };
+  const cappedFuel = Math.min(newFuel, settings.fuelCapacity);
+  const updated = { ...settings, currentFuel: cappedFuel };
   await saveSettings(updated);
   return updated;
 }
@@ -191,16 +304,28 @@ export async function deleteTrip(id: string): Promise<void> {
 export async function addRefuel(
   amount: number,
   fuelPrice: number,
+  fuelType: FuelType,
+  vehicleId: string,
 ): Promise<Refuel> {
   const refuel: Refuel = {
     id: generateId(),
+    vehicleId,
     timestamp: new Date().toISOString(),
     amount,
     fuelPrice,
+    fuelType,
     totalCost: amount * fuelPrice,
+    consumedAmount: 0,
   };
   await db.refuels.put(refuel);
   return refuel;
+}
+
+export async function updateRefuelConsumed(
+  id: string,
+  consumedAmount: number,
+): Promise<void> {
+  await db.refuels.update(id, { consumedAmount });
 }
 
 export async function getRefuels(
@@ -229,8 +354,47 @@ export async function getRefuelsInPeriod(
   return await db.refuels.where("timestamp").between(start, end).toArray();
 }
 
+export async function getRefuelsByVehicle(
+  vehicleId?: string,
+  startDate?: Date,
+  endDate?: Date,
+): Promise<Refuel[]> {
+  let query = db.refuels.orderBy("timestamp").reverse();
+
+  if (vehicleId !== undefined) {
+    query = query.filter((r) => r.vehicleId === vehicleId);
+  }
+
+  if (startDate && endDate) {
+    const start = startDate.toISOString();
+    const end = endDate.toISOString();
+    return await query
+      .filter((r) => r.timestamp >= start && r.timestamp <= end)
+      .toArray();
+  }
+
+  return await query.toArray();
+}
+
 export async function deleteRefuel(id: string): Promise<void> {
   await db.refuels.delete(id);
+}
+
+export async function updateVehicleFuel(
+  vehicleId: string,
+  currentFuel: number,
+): Promise<void> {
+  await db.vehicles.update(vehicleId, { currentFuel });
+}
+
+export async function unlinkVehicleRefuels(vehicleId: string): Promise<void> {
+  const refuels = await db.refuels
+    .filter((r) => r.vehicleId === vehicleId)
+    .toArray();
+
+  for (const refuel of refuels) {
+    await db.refuels.update(refuel.id, { vehicleId: "" });
+  }
 }
 
 export async function getTripsInPeriod(
@@ -245,6 +409,112 @@ export async function getTripsInPeriod(
     .filter((t) => t.status === "completed")
     .reverse()
     .toArray();
+}
+
+export async function getVehicles(): Promise<Vehicle[]> {
+  return await db.vehicles.orderBy("createdAt").toArray();
+}
+
+export async function getVehicle(id: string): Promise<Vehicle | undefined> {
+  return await db.vehicles.get(id);
+}
+
+export async function saveVehicle(vehicle: Vehicle): Promise<void> {
+  await db.vehicles.put(vehicle);
+}
+
+export async function deleteVehicle(id: string): Promise<void> {
+  await db.vehicles.delete(id);
+}
+
+export async function getInclinationCalibration(
+  vehicleId: string,
+): Promise<InclinationCalibration | undefined> {
+  return await db.inclinationCalibrations.get(vehicleId);
+}
+
+export async function saveInclinationCalibration(
+  calibration: InclinationCalibration,
+): Promise<void> {
+  await db.inclinationCalibrations.put(calibration);
+}
+
+export async function clearInclinationCalibration(
+  vehicleId: string,
+): Promise<void> {
+  await db.inclinationCalibrations.delete(vehicleId);
+}
+
+export async function migrateLegacyCalibration(): Promise<void> {
+  const rawCalibration = localStorage.getItem(LEGACY_CALIBRATION_KEY);
+  if (!rawCalibration) return;
+
+  const existingVehicles = await db.vehicles.count();
+  if (existingVehicles > 0) return;
+
+  try {
+    const legacyData = JSON.parse(rawCalibration);
+
+    const vehicle: Vehicle = {
+      id: generateId(),
+      name: `${legacyData.make} ${legacyData.model}`,
+      make: legacyData.make,
+      model: legacyData.model,
+      year: legacyData.year,
+      displacement: legacyData.displacement,
+      fuelType: legacyData.fuelType,
+      euroNorm: legacyData.euroNorm,
+      segment: legacyData.segment,
+      urbanKmpl: legacyData.urbanKmpl,
+      highwayKmpl: legacyData.highwayKmpl,
+      combinedKmpl: legacyData.combinedKmpl,
+      mass: legacyData.mass,
+      grossWeight: legacyData.grossWeight,
+      frontalArea: legacyData.frontalArea,
+      dragCoefficient: legacyData.dragCoefficient,
+      f0: legacyData.f0,
+      f1: legacyData.f1,
+      f2: legacyData.f2,
+      fuelConversionFactor: legacyData.fuelConversionFactor,
+      peakPowerKw: legacyData.peakPowerKw,
+      peakTorqueNm: legacyData.peakTorqueNm,
+      co2_gkm: legacyData.co2_gkm,
+      nox_mgkm: legacyData.nox_mgkm,
+      confidence: legacyData.confidence,
+      calibrationInput: legacyData.vehicleInput,
+      calibratedAt: legacyData.savedAt,
+      createdAt: new Date().toISOString(),
+      fuelCapacity: 50,
+      currentFuel: 0,
+    };
+
+    await db.vehicles.put(vehicle);
+
+    const settings = await getSettings();
+    if (!settings.activeVehicleId) {
+      await saveSettings({ ...settings, activeVehicleId: vehicle.id });
+    }
+
+    localStorage.removeItem(LEGACY_CALIBRATION_KEY);
+
+    const rawInclination = localStorage.getItem(LEGACY_INCLINATION_KEY);
+    if (rawInclination) {
+      try {
+        const inclinationData = JSON.parse(rawInclination);
+        const inclinationCalibration: InclinationCalibration = {
+          vehicleId: vehicle.id,
+          offsetDegrees: inclinationData.offsetDegrees,
+          calibratedAt: inclinationData.calibratedAt,
+        };
+        await saveInclinationCalibration(inclinationCalibration);
+        localStorage.removeItem(LEGACY_INCLINATION_KEY);
+      } catch {
+        // Ignore invalid inclination data
+      }
+    }
+  } catch {
+    // Ignore invalid calibration data
+  }
 }
 
 export { db };

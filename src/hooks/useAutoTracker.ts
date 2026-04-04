@@ -8,6 +8,7 @@ import {
 } from "react";
 import { autoTracker } from "@/services/autoTracker";
 import { useTripStore } from "@/stores/useTripStore";
+import { useWakeLock } from "@/hooks/useWakeLock";
 import type { Coordinates } from "@/types";
 
 interface UseAutoTrackerReturn {
@@ -38,6 +39,7 @@ export function useAutoTracker(): UseAutoTrackerReturn {
   >(null);
   const onTripCompleteRef = useRef<((tripId: string) => void) | null>(null);
   const deviceAddressRef = useRef<string | null>(null);
+  const { request: requestWakeLock, release: releaseWakeLock } = useWakeLock();
 
   const trip = useTripStore((state) => state.trip);
   const points = trip?.path ?? [];
@@ -46,30 +48,35 @@ export function useAutoTracker(): UseAutoTrackerReturn {
     onTripCompleteRef.current = onTripComplete;
   }, [onTripComplete]);
 
-  const initialize = useCallback(async (_deviceAddress: string) => {
-    deviceAddressRef.current = _deviceAddress;
-    try {
-      await autoTracker.initialize(
-        { carBluetoothName: "", distanceFilter: 10 },
-        {
-          onDeviceConnected: () => {
-            setIsCarConnected(true);
-            setIsTracking(true);
+  const initialize = useCallback(
+    async (_deviceAddress: string) => {
+      deviceAddressRef.current = _deviceAddress;
+      try {
+        await autoTracker.initialize(
+          { carBluetoothName: "", distanceFilter: 10 },
+          {
+            onDeviceConnected: async () => {
+              await requestWakeLock();
+              setIsCarConnected(true);
+              setIsTracking(true);
+            },
+            onDeviceDisconnected: async () => {
+              await releaseWakeLock();
+              setIsCarConnected(false);
+              setIsTracking(false);
+            },
+            onLocationUpdate: () => {},
+            onError: (err) => setError(err.message),
+            onTripComplete: (tripId) => onTripCompleteRef.current?.(tripId),
           },
-          onDeviceDisconnected: () => {
-            setIsCarConnected(false);
-            setIsTracking(false);
-          },
-          onLocationUpdate: () => {},
-          onError: (err) => setError(err.message),
-          onTripComplete: (tripId) => onTripCompleteRef.current?.(tripId),
-        },
-      );
-      setIsInitialized(true);
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  }, []);
+        );
+        setIsInitialized(true);
+      } catch (err) {
+        setError((err as Error).message);
+      }
+    },
+    [requestWakeLock, releaseWakeLock],
+  );
 
   const startMonitoring = useCallback(
     async (deviceAddress: string, deviceName?: string) => {
@@ -85,6 +92,7 @@ export function useAutoTracker(): UseAutoTrackerReturn {
   const stop = useCallback(async () => {
     try {
       await autoTracker.stop();
+      await releaseWakeLock();
       setIsTracking(false);
       setIsCarConnected(false);
       setIsInitialized(false);
@@ -92,13 +100,14 @@ export function useAutoTracker(): UseAutoTrackerReturn {
     } catch (err) {
       setError((err as Error).message);
     }
-  }, []);
+  }, [releaseWakeLock]);
 
   useEffect(() => {
     return () => {
       autoTracker.stop().catch(() => {});
+      releaseWakeLock();
     };
-  }, []);
+  }, [releaseWakeLock]);
 
   return {
     isTracking,

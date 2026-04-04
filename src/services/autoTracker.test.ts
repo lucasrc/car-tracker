@@ -68,6 +68,7 @@ vi.mock("@/lib/db", () => ({
     fuelPrice: 5.5,
     fuelCapacity: 50,
     currentFuel: 50,
+    manualCityKmPerLiter: 10,
   }),
 }));
 
@@ -231,10 +232,15 @@ describe("AutoTracker", () => {
     it("should call stopTrip with totalFuelUsed from store when disconnecting", async () => {
       const mockStopTrip = vi.fn().mockResolvedValue("trip-123");
       const mockTotalFuelUsed = 2.5;
+      const mockTrip = {
+        distanceMeters: 25000,
+        fuelUsed: 2.0,
+      };
 
       vi.mocked(useTripStore.getState).mockReturnValue({
         stopTrip: mockStopTrip,
         totalFuelUsed: mockTotalFuelUsed,
+        trip: mockTrip,
       } as unknown as ReturnType<typeof useTripStore.getState>);
 
       const calls = vi.mocked(ClassicBluetooth.addListener).mock.calls;
@@ -247,15 +253,25 @@ describe("AutoTracker", () => {
 
       await new Promise((resolve) => setTimeout(resolve, 10));
 
-      expect(mockStopTrip).toHaveBeenCalledWith(5.5, mockTotalFuelUsed);
+      expect(mockStopTrip).toHaveBeenCalledWith(
+        mockTotalFuelUsed,
+        mockTotalFuelUsed * 5.5,
+        undefined,
+        12.5,
+      );
     });
 
     it("should call stopTrip with zero totalFuelUsed when no fuel was used", async () => {
       const mockStopTrip = vi.fn().mockResolvedValue("trip-456");
+      const mockTrip = {
+        distanceMeters: 0,
+        fuelUsed: 0,
+      };
 
       vi.mocked(useTripStore.getState).mockReturnValue({
         stopTrip: mockStopTrip,
         totalFuelUsed: 0,
+        trip: mockTrip,
       } as unknown as ReturnType<typeof useTripStore.getState>);
 
       const calls = vi.mocked(ClassicBluetooth.addListener).mock.calls;
@@ -268,7 +284,43 @@ describe("AutoTracker", () => {
 
       await new Promise((resolve) => setTimeout(resolve, 10));
 
-      expect(mockStopTrip).toHaveBeenCalledWith(5.5, 0);
+      expect(mockStopTrip).toHaveBeenCalledWith(
+        0,
+        0,
+        undefined,
+        expect.any(Number),
+      );
+    });
+
+    it("should call stopTrip with zero totalFuelUsed when no fuel was used", async () => {
+      const mockStopTrip = vi.fn().mockResolvedValue("trip-456");
+      const mockTrip = {
+        distanceMeters: 0,
+        fuelUsed: 0,
+      };
+
+      vi.mocked(useTripStore.getState).mockReturnValue({
+        stopTrip: mockStopTrip,
+        totalFuelUsed: 0,
+        trip: mockTrip,
+      } as unknown as ReturnType<typeof useTripStore.getState>);
+
+      const calls = vi.mocked(ClassicBluetooth.addListener).mock.calls;
+      const disconnectCall = calls.find(
+        (call) => call[0] === "deviceDisconnected",
+      );
+      const disconnectListener = disconnectCall![1] as () => void;
+
+      disconnectListener();
+
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(mockStopTrip).toHaveBeenCalledWith(
+        0,
+        0,
+        undefined,
+        expect.any(Number),
+      );
     });
 
     it("should trigger onTripComplete callback with trip ID when trip is saved", async () => {

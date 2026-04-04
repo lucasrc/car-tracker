@@ -1,6 +1,6 @@
 import initSqlJs, { type Database } from "sql.js";
 import type { DbAdapter } from "./adapter";
-import type { Trip, Settings, Refuel } from "@/types";
+import type { Trip, Settings, Refuel, FuelType } from "@/types";
 import { generateId } from "@/lib/utils";
 
 const DB_NAME = "CarTelemetrySQLite";
@@ -14,7 +14,7 @@ let sqlPromise: ReturnType<typeof initSqlJs> | null = null;
 async function getSql(): Promise<ReturnType<typeof initSqlJs>> {
   if (!sqlPromise) {
     sqlPromise = initSqlJs({
-      locateFile: (file: string) => `https://sql.js.org/dist/${file}`,
+      locateFile: (file: string) => `/${file}`,
     });
   }
   return sqlPromise;
@@ -80,6 +80,7 @@ class SqliteAdapter implements DbAdapter {
     this.db.run(`
       CREATE TABLE IF NOT EXISTS trips (
         id TEXT PRIMARY KEY,
+        vehicleId TEXT,
         startTime TEXT,
         endTime TEXT,
         distanceMeters REAL,
@@ -93,6 +94,7 @@ class SqliteAdapter implements DbAdapter {
         fuelUsed REAL,
         fuelPrice REAL,
         totalCost REAL,
+        actualCost REAL,
         elapsedTime REAL,
         totalFuelUsed REAL,
         stops TEXT,
@@ -106,13 +108,16 @@ class SqliteAdapter implements DbAdapter {
         timestamp TEXT,
         amount REAL,
         fuelPrice REAL,
-        totalCost REAL
+        fuelType TEXT,
+        totalCost REAL,
+        consumedAmount REAL
       )
     `);
 
     this.db.run(`
       CREATE TABLE IF NOT EXISTS current_trip (
         id TEXT PRIMARY KEY,
+        vehicleId TEXT,
         startTime TEXT,
         endTime TEXT,
         distanceMeters REAL,
@@ -229,23 +234,25 @@ class SqliteAdapter implements DbAdapter {
   private tripFromRow(row: any[]): Trip {
     return {
       id: row[0],
-      startTime: row[1],
-      endTime: row[2] || undefined,
-      distanceMeters: row[3],
-      maxSpeed: row[4],
-      avgSpeed: row[5],
-      path: JSON.parse(row[6] || "[]"),
-      status: row[7],
-      driveMode: row[8],
-      consumption: row[9],
-      fuelCapacity: row[10],
-      fuelUsed: row[11],
-      fuelPrice: row[12],
-      totalCost: row[13],
-      elapsedTime: row[14],
-      totalFuelUsed: row[15],
-      stops: row[16] ? JSON.parse(row[16]) : undefined,
-      consumptionBreakdown: row[17] ? JSON.parse(row[17]) : undefined,
+      vehicleId: row[1] || "",
+      startTime: row[2],
+      endTime: row[3] || undefined,
+      distanceMeters: row[4],
+      maxSpeed: row[5],
+      avgSpeed: row[6],
+      path: JSON.parse(row[7] || "[]"),
+      status: row[8],
+      driveMode: row[9],
+      consumption: row[10],
+      fuelCapacity: row[11],
+      fuelUsed: row[12],
+      fuelPrice: row[13],
+      totalCost: row[14],
+      actualCost: row[15] ?? 0,
+      elapsedTime: row[16],
+      totalFuelUsed: row[17],
+      stops: row[18] ? JSON.parse(row[18]) : undefined,
+      consumptionBreakdown: row[19] ? JSON.parse(row[19]) : undefined,
     };
   }
 
@@ -253,6 +260,7 @@ class SqliteAdapter implements DbAdapter {
   private tripToRow(trip: Trip): any[] {
     return [
       trip.id,
+      trip.vehicleId,
       trip.startTime,
       trip.endTime || null,
       trip.distanceMeters,
@@ -266,6 +274,7 @@ class SqliteAdapter implements DbAdapter {
       trip.fuelUsed,
       trip.fuelPrice,
       trip.totalCost,
+      trip.actualCost,
       trip.elapsedTime,
       trip.totalFuelUsed,
       trip.stops ? JSON.stringify(trip.stops) : null,
@@ -282,7 +291,9 @@ class SqliteAdapter implements DbAdapter {
       timestamp: String(row[1]),
       amount: Number(row[2]),
       fuelPrice: Number(row[3]),
-      totalCost: Number(row[4]),
+      fuelType: (row[4] || "gasolina") as FuelType,
+      totalCost: Number(row[5]),
+      consumedAmount: Number(row[6] || 0),
     };
   }
 
@@ -293,7 +304,9 @@ class SqliteAdapter implements DbAdapter {
       refuel.timestamp,
       refuel.amount,
       refuel.fuelPrice,
+      refuel.fuelType,
       refuel.totalCost,
+      refuel.consumedAmount,
     ];
   }
 
@@ -416,6 +429,7 @@ class SqliteAdapter implements DbAdapter {
       "fuelUsed",
       "fuelPrice",
       "totalCost",
+      "actualCost",
       "elapsedTime",
       "totalFuelUsed",
       "stops",
@@ -457,18 +471,32 @@ class SqliteAdapter implements DbAdapter {
     await this.save();
   }
 
-  async addRefuel(amount: number, fuelPrice: number): Promise<Refuel> {
+  async addRefuel(
+    amount: number,
+    fuelPrice: number,
+    fuelType: FuelType = "gasolina",
+  ): Promise<Refuel> {
     await this.init();
     const refuel: Refuel = {
       id: generateId(),
       timestamp: new Date().toISOString(),
       amount,
       fuelPrice,
+      fuelType,
       totalCost: amount * fuelPrice,
+      consumedAmount: 0,
     };
 
     const row = this.refuelToRow(refuel);
-    const cols = ["id", "timestamp", "amount", "fuelPrice", "totalCost"];
+    const cols = [
+      "id",
+      "timestamp",
+      "amount",
+      "fuelPrice",
+      "fuelType",
+      "totalCost",
+      "consumedAmount",
+    ];
 
     this.db!.run(
       `INSERT INTO refuels (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`,

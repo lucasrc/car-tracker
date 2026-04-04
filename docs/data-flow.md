@@ -69,28 +69,14 @@ Como um dado entra no app e vira informação na tela.
    └── idlePercentage: % do tempo com speed < 1 m/s
 
 3. calculateAdjustedConsumption(baseConsumption, currentSpeedKmh, ...)
-   ├── COPERT (60%):
-   │   fcPerKm = (217 + 0.253v + 0.00965v²) / (1 + 0.096v - 0.000421v²)
-   │   copertKmPerLiter = 100 / fcPerKm
-   │
-   ├── Modelo custom (40%):
-   │   ├── speedFactor: 1.0 + (speed - 90) * 0.009  [se speed > 90]
-   │   ├── aggressionFactor: 1.06 (moderna) ou 1.10 (agressiva)
-   │   ├── idleFactor: 1 + (idlePct / 100) * 0.08
-   │   └── stabilityFactor: 1 + (variance / 100) * 0.05
-   │
-   ├── Bônus (até 10% total):
-   │   ├── speedBonus: até 5% para 60-80 km/h
-   │   ├── accelerationBonus: 4% para aceleração < 0.5 m/s²
-   │   ├── coastingBonus: 3% para desaceleração natural
-   │   ├── stabilityBonus: 3% para variance < 15
-   │   └── idleBonus: 3% se idlePct === 0
-   │
-   └── Resultado: adjustedKmPerLiter
+   └── COPERT Puro (100%):
+       fcPerKm = (217 + 0.253v + 0.00965v²) / (1 + 0.096v - 0.000421v²)
+       km/l = (1000 × densidade) / fcPerKm
+       └── Ajustes técnicos:
+           ├── displacementFactor: (cc / 1600) ^ -0.15
+           └── fuelEnergyFactor: gasolina=0.91, etanol=0.7, flex=0.85
 
-4. Aplica fatores do motor e combustível:
-   ├── displacementFactor: (cc / 1600) ^ -0.15
-   └── fuelEnergyFactor: gasolina=1.0, etanol=0.7, flex=0.85
+ 4. Resultado: adjustedKmPerLiter (sem penalidades/bônus arbitrários)
 ```
 
 ### Saída
@@ -202,14 +188,15 @@ fuelRemaining: 25; // litros
 ### Pipeline
 
 ```
-1. useTripStore.stopTrip(fuelPrice, fuelUsed, breakdown)
+1. useTripStore.stopTrip(fuelPrice, fuelUsed, breakdown, actualCost?)
    ├── Verifica mínimos: distance > 30m, duration > 30s
    ├── Se não passa → limpa trip, não salva
    └── Se passa → continua
 
 2. Calcula campos finais
    ├── avgSpeed = distanceKm / durationHours
-   ├── totalCost = fuelUsed * fuelPrice
+   ├── totalCost = fuelUsed * fuelPrice (estimado)
+   ├── actualCost = custo calculado via FIFO
    └── endTime = new Date().toISOString()
 
 3. saveTrip(completedTrip)
@@ -225,3 +212,80 @@ fuelRemaining: 25; // litros
 // Salvo em IndexedDB
 // Disponível em History page para consulta
 ```
+
+---
+
+## Abastecimento (Refuel Flow)
+
+### Pipeline
+
+```
+1. RefuelModal.onConfirm(liters, price, fuelType)
+   ├── Valida inputs (liters > 0, price > 0)
+   └── Chama handleRefuel no Settings page
+
+2. Settings.handleRefuel(liters, price, fuelType)
+   ├── refuel(liters): atualiza currentFuel no Settings
+   ├── addRefuel(liters, price, fuelType): cria registro no banco
+   │   └── Dexie.table('refuels').put(refuel)
+   │       └── Inclui: id, timestamp, amount, fuelPrice, fuelType, totalCost
+
+3. useFuelInventory.addBatch(liters, price, fuelType)
+   ├── Adiciona lote ao inventario local (FIFO)
+   └──保持 persistencia em memoria
+```
+
+### Resultado
+
+```typescript
+// Registro salvo em IndexedDB
+interface Refuel {
+  id: string; // UUID
+  timestamp: string; // ISO date
+  amount: number; // litros
+  fuelPrice: number; // R$/litro
+  fuelType: FuelType; // gasolina | etanol | flex
+  totalCost: number; // amount * fuelPrice
+}
+```
+
+### FIFO Consumption
+
+```
+1. useFuelInventory.consumeFuel(liters, fuelType?)
+   ├── Ordena lotes por timestamp (mais antigo primeiro)
+   ├── Para cada lote:
+   │   ├── available = lote.amount - lote.consumedAmount
+   │   ├── toConsume = min(available, remaining)
+   │   ├── cost += toConsume * lote.fuelPrice
+   │   ├── lote.consumedAmount += toConsume
+   │   └── remaining -= toConsume
+   └── Retorna: { cost, batches: [{ amount, price, fuelType }] }
+```
+
+---
+
+## Custo de Viagem: Estimado vs Real
+
+### Estimado (totalCost)
+
+- Calculado em **tempo real** durante a viagem
+- Usa **preco medio ponderado** de todos os lotes
+- Formula: `fuelUsed * weightedAveragePrice`
+
+### Real (actualCost)
+
+- Calculado ao **finalizar** a viagem
+- Usa **FIFO** (consome do lote mais antigo)
+- Formula: soma de `(amount * price)` de cada lote consumido
+- Armazenado em `trip.actualCost`
+
+### Comparacao
+
+| Campo             | Quando           | Metodo                |
+| ----------------- | ---------------- | --------------------- |
+| `trip.totalCost`  | Tempo real       | Preco medio ponderado |
+| `trip.actualCost` | Fim da viagem    | FIFO (custo real)     |
+| `trip.fuelPrice`  | Inicio da viagem | Preco doSettings      |
+
+O sistema exibe ambos os valores para que o usuario possa comparar e validar o consumo.

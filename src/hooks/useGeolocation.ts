@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { Coordinates, BatteryState } from "@/types";
+import { useDeviceMotion } from "./useDeviceMotion";
+import { useMadgwickFilter } from "./useMadgwickFilter";
 
 interface GeolocationOptions {
   enableHighAccuracy?: boolean;
@@ -13,6 +15,10 @@ interface GeolocationState {
   isWatching: boolean;
   battery: BatteryState | null;
   deviceOrientation: number | null;
+  filteredHeading: number | null;
+  filteredPitch: number | null;
+  filteredRoll: number | null;
+  orientationReady: boolean;
 }
 
 interface UseGeolocationReturn extends GeolocationState {
@@ -32,6 +38,52 @@ export function useGeolocation(): UseGeolocationReturn {
   const [deviceOrientation, setDeviceOrientation] = useState<number | null>(
     null,
   );
+
+  const deviceOrientationRef = useRef<number | null>(null);
+
+  const {
+    motion,
+    isAvailable: motionAvailable,
+    requestPermission: requestMotionPermission,
+  } = useDeviceMotion();
+  const {
+    heading: filteredHeading,
+    pitch: filteredPitch,
+    roll: filteredRoll,
+    isReady: orientationReady,
+    update: updateMadgwick,
+  } = useMadgwickFilter({ sampleInterval: 50, beta: 0.1 });
+
+  useEffect(() => {
+    if (!motion) {
+      return;
+    }
+
+    const { rotationRate, accelerationIncludingGravity } = motion;
+
+    const currentDeviceOrientation = deviceOrientationRef.current;
+
+    updateMadgwick({
+      gyro: {
+        x: rotationRate.alpha,
+        y: rotationRate.beta,
+        z: rotationRate.gamma,
+      },
+      accel: {
+        x: accelerationIncludingGravity.x,
+        y: accelerationIncludingGravity.y,
+        z: accelerationIncludingGravity.z,
+      },
+      mag:
+        currentDeviceOrientation !== null
+          ? {
+              x: currentDeviceOrientation,
+              y: 0,
+              z: 0,
+            }
+          : undefined,
+    });
+  }, [motion, updateMadgwick]);
 
   const startWatching = useCallback((options?: GeolocationOptions) => {
     if (!navigator.geolocation) {
@@ -61,6 +113,8 @@ export function useGeolocation(): UseGeolocationReturn {
             pos.coords.heading !== null && !Number.isNaN(pos.coords.heading)
               ? pos.coords.heading
               : undefined,
+          altitude: pos.coords.altitude ?? undefined,
+          altitudeAccuracy: pos.coords.altitudeAccuracy ?? undefined,
         };
         setPosition(coords);
         setError(null);
@@ -166,6 +220,7 @@ export function useGeolocation(): UseGeolocationReturn {
     const handleOrientation = (event: DeviceOrientationEvent) => {
       if (event.alpha !== null) {
         setDeviceOrientation(event.alpha);
+        deviceOrientationRef.current = event.alpha;
       }
     };
 
@@ -199,12 +254,22 @@ export function useGeolocation(): UseGeolocationReturn {
     };
   }, []);
 
+  useEffect(() => {
+    if (!motionAvailable) return;
+
+    requestMotionPermission();
+  }, [motionAvailable, requestMotionPermission]);
+
   return {
     position,
     error,
     isWatching,
     battery,
     deviceOrientation,
+    filteredHeading,
+    filteredPitch,
+    filteredRoll,
+    orientationReady,
     startWatching,
     stopWatching,
     getCurrentPosition,

@@ -229,19 +229,20 @@ src/
 
 ### Key Hooks
 
-| Hook                        | Purpose          |
-| --------------------------- | ---------------- |
-| `useGeolocation`            | GPS tracking     |
-| `useTripConsumptionTracker` | Fuel calculation |
-| `useConsumptionModel`       | Consumption math |
-| `useSimulation`             | Demo mode        |
+| Hook                        | Purpose                     |
+| --------------------------- | --------------------------- |
+| `useGeolocation`            | GPS tracking                |
+| `useTripConsumptionTracker` | Fuel calculation (estimado) |
+| `useConsumptionModel`       | Consumption math (COPERT)   |
+| `useFuelInventory`          | FIFO fuel batch management  |
+| `useSimulation`             | Demo mode                   |
 
 ### DB Operations (`lib/db.ts`)
 
 - `getSettings()`, `saveSettings()` - User preferences
 - `saveTrip()`, `getAllTrips()`, `getTripById()`, `deleteTrip()` - Trip CRUD
-- `addRefuel()`, `getRefuels()`, `deleteRefuel()` - Fuel log
-- `refuel()`, `consumeFuel()` - Tank management
+- `addRefuel()`, `getRefuels()`, `getRefuelsInPeriod()`, `deleteRefuel()` - Fuel log (com fuelType)
+- `refuel()`, `consumeFuel()` - Tank level management
 
 ### Routing (App.tsx)
 

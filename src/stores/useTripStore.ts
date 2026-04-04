@@ -14,6 +14,7 @@ import {
   clearCurrentTrip,
   saveTrip,
   getSettings,
+  getVehicle,
 } from "@/lib/db";
 import { calculateTotalDistance } from "@/lib/distance";
 
@@ -39,9 +40,10 @@ interface TripStore {
   pauseTrip: () => void;
   resumeTrip: () => void;
   stopTrip: (
-    fuelPrice: number,
     totalFuelUsed: number,
+    actualCost: number,
     breakdown?: TripConsumptionBreakdown,
+    avgConsumption?: number,
   ) => Promise<string>;
   addPosition: (coords: Coordinates) => void;
   registerStopSample: (coords: Coordinates, speedKmh: number) => void;
@@ -128,8 +130,22 @@ export const useTripStore = create<TripStore>((set, get) => ({
 
   startTrip: async () => {
     const settings = await getSettings();
+    if (!settings.activeVehicleId) {
+      throw new Error(
+        "No vehicle selected. Please add and select a vehicle in Settings before starting a trip.",
+      );
+    }
+
+    const vehicle = await getVehicle(settings.activeVehicleId);
+    if (!vehicle) {
+      throw new Error(
+        "Vehicle not found. Please add a vehicle in Settings before starting a trip.",
+      );
+    }
+
     const trip: Trip = {
       id: generateId(),
+      vehicleId: vehicle.id,
       startTime: new Date().toISOString(),
       distanceMeters: 0,
       maxSpeed: 0,
@@ -140,8 +156,7 @@ export const useTripStore = create<TripStore>((set, get) => ({
       consumption: settings.manualCityKmPerLiter,
       fuelCapacity: settings.fuelCapacity,
       fuelUsed: 0,
-      fuelPrice: settings.fuelPrice,
-      totalCost: 0,
+      actualCost: 0,
       elapsedTime: 0,
       totalFuelUsed: 0,
       stops: [],
@@ -213,9 +228,10 @@ export const useTripStore = create<TripStore>((set, get) => ({
   },
 
   stopTrip: async (
-    fuelPrice: number,
     totalFuelUsed: number,
+    actualCost: number,
     breakdown?: TripConsumptionBreakdown,
+    avgConsumption?: number,
   ) => {
     const {
       trip,
@@ -243,9 +259,8 @@ export const useTripStore = create<TripStore>((set, get) => ({
     const distanceKm = stats.distanceMeters / 1000;
     const durationHours = elapsedTime / 3600;
     const avgSpeed = durationHours > 0 ? distanceKm / durationHours : 0;
-    const consumption = trip.consumption || 0;
+    const consumption = avgConsumption ?? trip.consumption ?? 0;
     const fuelUsed = Math.max(totalFuelUsed, 0);
-    const totalCost = fuelUsed * fuelPrice;
 
     if (
       stats.distanceMeters < MIN_TRIP_DISTANCE_METERS ||
@@ -278,8 +293,7 @@ export const useTripStore = create<TripStore>((set, get) => ({
       avgSpeed,
       consumption,
       fuelUsed,
-      fuelPrice,
-      totalCost,
+      actualCost,
       elapsedTime,
       totalFuelUsed,
       consumptionBreakdown: breakdown || undefined,
@@ -462,8 +476,22 @@ export const useTripStore = create<TripStore>((set, get) => ({
 
   restoreTrip: async (startTime: string) => {
     const settings = await getSettings();
+    if (!settings.activeVehicleId) {
+      throw new Error(
+        "No vehicle selected. Please add and select a vehicle in Settings before starting a trip.",
+      );
+    }
+
+    const vehicle = await getVehicle(settings.activeVehicleId);
+    if (!vehicle) {
+      throw new Error(
+        "Vehicle not found. Please add a vehicle in Settings before starting a trip.",
+      );
+    }
+
     const trip: Trip = {
       id: generateId(),
+      vehicleId: vehicle.id,
       startTime,
       distanceMeters: 0,
       maxSpeed: 0,
@@ -474,8 +502,7 @@ export const useTripStore = create<TripStore>((set, get) => ({
       consumption: settings.manualCityKmPerLiter,
       fuelCapacity: settings.fuelCapacity,
       fuelUsed: 0,
-      fuelPrice: settings.fuelPrice,
-      totalCost: 0,
+      actualCost: 0,
       elapsedTime: 0,
       totalFuelUsed: 0,
       stops: [],

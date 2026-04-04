@@ -56,7 +56,20 @@ Termos técnicos usados no código e documentação, com explicações curtas.
 
 ---
 
-## siglas
+## Termos de Custo e Combustivel
+
+| Termo                          | Significado                                                                         |
+| ------------------------------ | ----------------------------------------------------------------------------------- |
+| **FIFO**                       | First-In-First-Out: modelo onde o combustivel mais antigo é consumido primeiro      |
+| **Fuel Batch**                 | Lote de combustivel: registro de um abastecimento individual com preco e quantidade |
+| **Custo Real (actualCost)**    | Custo calculado via FIFO ao final da viagem                                         |
+| **Custo Estimado (totalCost)** | Custo calculado em tempo real usando preco medio ponderado                          |
+| **Preco Medio Ponderado**      | Media de precos pesada pela quantidade de cada lote                                 |
+| **Consumo por Lote**           | Quantidade consumida de cada batch no calculo FIFO                                  |
+
+---
+
+## Siglas
 
 | Sigla     | Significado                                          |
 | --------- | ---------------------------------------------------- |

@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { getSettings, saveSettings, refuel, addRefuel } from "@/lib/db";
-import type { Settings } from "@/types";
+import { getSettings, saveSettings, addRefuel } from "@/lib/db";
+import type { Settings as SettingsData, FuelType } from "@/types";
 import { isAndroid } from "@/lib/platform";
 import { useAppStore } from "@/stores/useAppStore";
+import { useVehicleStore } from "@/stores/useVehicleStore";
 import { ClassicBluetooth } from "@/services/classicBluetooth";
 import type { ClassicBluetoothDevice } from "@/services/classicBluetooth";
 import { Tabs } from "@/components/ui/Tabs";
@@ -15,7 +16,7 @@ import {
 } from "@heroicons/react/24/outline";
 
 export function Settings() {
-  const [settings, setSettings] = useState<Settings | null>(null);
+  const [settings, setSettings] = useState<SettingsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -37,6 +38,8 @@ export function Settings() {
   const setSelectedCarBluetooth = useAppStore((s) => s.setSelectedCarBluetooth);
   const autoTrackingEnabled = useAppStore((s) => s.autoTrackingEnabled);
   const setAutoTrackingEnabled = useAppStore((s) => s.setAutoTrackingEnabled);
+
+  const { activeVehicle, updateVehicleFuelLevel } = useVehicleStore();
 
   useEffect(() => {
     loadSettings();
@@ -125,13 +128,24 @@ export function Settings() {
     }
   };
 
-  const handleRefuel = async (liters: number, pricePerLiter: number) => {
+  const handleRefuel = async (
+    liters: number,
+    pricePerLiter: number,
+    fuelType: FuelType,
+  ) => {
+    if (!activeVehicle) {
+      alert("Selecione um veículo para abastecimento.");
+      return;
+    }
     setRefueling(true);
     setShowRefuelModal(false);
     try {
-      const updated = await refuel(liters);
-      setSettings(updated);
-      await addRefuel(liters, pricePerLiter);
+      const newFuel = Math.min(
+        activeVehicle.currentFuel + liters,
+        activeVehicle.fuelCapacity,
+      );
+      await updateVehicleFuelLevel(activeVehicle.id, newFuel);
+      await addRefuel(liters, pricePerLiter, fuelType, activeVehicle.id);
     } catch (err) {
       console.error("Error refueling:", err);
       alert("Erro ao abastecimento. Tente novamente.");
@@ -183,7 +197,7 @@ export function Settings() {
     }
   };
 
-  const handleChange = (field: keyof Settings, value: string) => {
+  const handleChange = (field: keyof SettingsData, value: string) => {
     if (!settings) return;
     const numValue = parseFloat(value) || 0;
     setSettings({ ...settings, [field]: numValue });
@@ -775,9 +789,15 @@ export function Settings() {
 
       <RefuelModal
         open={showRefuelModal}
-        defaultPrice={settings?.fuelPrice || 5.0}
-        currentFuel={settings?.currentFuel || 0}
-        fuelCapacity={settings?.fuelCapacity || 50}
+        defaultFuelType={
+          (activeVehicle?.fuelType === "gasoline"
+            ? "gasolina"
+            : activeVehicle?.fuelType === "ethanol"
+              ? "etanol"
+              : "flex") as FuelType
+        }
+        currentFuel={activeVehicle?.currentFuel || 0}
+        fuelCapacity={activeVehicle?.fuelCapacity || 50}
         onConfirm={handleRefuel}
         onCancel={() => setShowRefuelModal(false)}
       />

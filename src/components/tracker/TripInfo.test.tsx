@@ -23,21 +23,21 @@ describe("TripInfo", () => {
     expect(distanceSection?.textContent).toContain("km");
   });
 
-  it("renders autonomy with 'Autonomia inst.' label", () => {
+  it("renders autonomy with 'Autonomia' label", () => {
     render(<TripInfo {...defaultProps} />);
-    expect(screen.getByText("Autonomia inst.")).toBeInTheDocument();
+    expect(screen.getByText("Autonomia")).toBeInTheDocument();
   });
 
   it("renders autonomy value rounded in km", () => {
     render(<TripInfo {...defaultProps} />);
-    const autonomySection = screen.getByText("Autonomia inst.").closest("div");
+    const autonomySection = screen.getByText("Autonomia").closest("div");
     expect(autonomySection?.textContent).toContain("210");
     expect(autonomySection?.textContent).toContain("km");
   });
 
   it("renders current consumption as km/l next to autonomy", () => {
     render(<TripInfo {...defaultProps} />);
-    const autonomySection = screen.getByText("Autonomia inst.").closest("div");
+    const autonomySection = screen.getByText("Autonomia").closest("div");
     expect(autonomySection?.textContent).toContain("km/l");
   });
 
@@ -55,21 +55,21 @@ describe("TripInfo", () => {
 
   it("handles zero range gracefully", () => {
     render(<TripInfo {...defaultProps} range={0} />);
-    const autonomySection = screen.getByText("Autonomia inst.").closest("div");
+    const autonomySection = screen.getByText("Autonomia").closest("div");
     expect(autonomySection?.textContent).toContain("0");
     expect(autonomySection?.textContent).toContain("km");
   });
 
   it("handles zero consumption gracefully", () => {
     render(<TripInfo {...defaultProps} currentConsumption={0} />);
-    const autonomySection = screen.getByText("Autonomia inst.").closest("div");
+    const autonomySection = screen.getByText("Autonomia").closest("div");
     expect(autonomySection?.textContent).toContain("210");
     expect(autonomySection?.textContent).not.toContain("km/l");
   });
 
   it("handles undefined consumption by not rendering km/l", () => {
     render(<TripInfo {...defaultProps} currentConsumption={undefined} />);
-    const autonomySection = screen.getByText("Autonomia inst.").closest("div");
+    const autonomySection = screen.getByText("Autonomia").closest("div");
     expect(autonomySection?.textContent).not.toContain("km/l");
   });
 
@@ -93,7 +93,7 @@ describe("TripInfo", () => {
 
   it("renders autonomy with decimal consumption value", () => {
     render(<TripInfo {...defaultProps} range={185} currentConsumption={8.7} />);
-    const autonomySection = screen.getByText("Autonomia inst.").closest("div");
+    const autonomySection = screen.getByText("Autonomia").closest("div");
     expect(autonomySection?.textContent).toContain("185");
     expect(autonomySection?.textContent).toContain("km/l");
   });

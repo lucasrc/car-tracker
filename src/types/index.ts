@@ -5,6 +5,8 @@ export interface Coordinates {
   accuracy?: number;
   speed?: number;
   heading?: number;
+  altitude?: number;
+  altitudeAccuracy?: number;
 }
 
 export type TripStatus = "idle" | "recording" | "paused" | "completed";
@@ -42,6 +44,7 @@ export interface TripConsumptionBreakdown {
 
 export interface Trip {
   id: string;
+  vehicleId: string;
   startTime: string;
   endTime?: string;
   distanceMeters: number;
@@ -53,8 +56,9 @@ export interface Trip {
   consumption: number;
   fuelCapacity: number;
   fuelUsed: number;
-  fuelPrice: number;
-  totalCost: number;
+  actualCost: number;
+  fuelPrice?: number;
+  totalCost?: number;
   elapsedTime: number;
   totalFuelUsed: number;
   stops?: TripStop[];
@@ -66,6 +70,11 @@ export interface Trip {
     timestamp: number;
   } | null;
   pendingStopLastTimestamp?: number | null;
+  vehicleSnapshot?: {
+    make: string;
+    model: string;
+    year: number;
+  };
 }
 
 export type FuelType = "gasolina" | "etanol" | "flex";
@@ -86,14 +95,18 @@ export interface Settings {
   avgMixedKmPerLiter?: number;
   engineDisplacement: number;
   fuelType: FuelType;
+  activeVehicleId?: string;
 }
 
 export interface Refuel {
   id: string;
+  vehicleId: string;
   timestamp: string;
   amount: number;
   fuelPrice: number;
+  fuelType: FuelType;
   totalCost: number;
+  consumedAmount: number;
 }
 
 export interface BatteryState {
@@ -119,4 +132,100 @@ export interface Radar {
   directionTag?: string;
   source: string;
   wayGeometry?: [number, number][];
+}
+
+export type CopertEuroNorm =
+  | "Euro 1"
+  | "Euro 2"
+  | "Euro 3"
+  | "Euro 4"
+  | "Euro 5"
+  | "Euro 6"
+  | "Euro 6d"
+  | "Euro 7";
+
+export type CopertSegment =
+  | "mini"
+  | "small"
+  | "medium"
+  | "large"
+  | "suv"
+  | "pickup";
+
+export type CopertFuelType = "gasoline" | "diesel" | "ethanol" | "flex";
+
+export type CopertConfidence = "high" | "medium" | "low";
+
+export type DataSource = "web" | "ai_inferred" | "manual";
+
+export interface CopertCalibration {
+  make: string;
+  model: string;
+  year: number;
+  displacement: number;
+  fuelType: CopertFuelType;
+  euroNorm: CopertEuroNorm;
+  segment: CopertSegment;
+  urbanKmpl: number;
+  highwayKmpl: number;
+  combinedKmpl: number;
+  mass: number;
+  grossWeight: number;
+  frontalArea: number;
+  dragCoefficient: number;
+  f0: number;
+  f1: number;
+  f2: number;
+  fuelConversionFactor: number;
+  peakPowerKw: number;
+  peakTorqueNm: number;
+  co2_gkm?: number;
+  nox_mgkm?: number;
+  confidence: CopertConfidence;
+  dataSource?: DataSource;
+}
+
+export interface CopertCalibrationRecord extends CopertCalibration {
+  savedAt: string;
+  vehicleInput: string;
+}
+
+export interface Vehicle {
+  id: string;
+  name: string;
+  make: string;
+  model: string;
+  year: number;
+  displacement: number;
+  fuelType: CopertFuelType;
+  euroNorm: CopertEuroNorm;
+  segment: CopertSegment;
+  urbanKmpl: number;
+  highwayKmpl: number;
+  combinedKmpl: number;
+  mass: number;
+  grossWeight: number;
+  frontalArea: number;
+  dragCoefficient: number;
+  f0: number;
+  f1: number;
+  f2: number;
+  fuelConversionFactor: number;
+  peakPowerKw: number;
+  peakTorqueNm: number;
+  co2_gkm?: number;
+  nox_mgkm?: number;
+  confidence: CopertConfidence;
+  calibrationInput: string;
+  calibratedAt: string;
+  createdAt: string;
+  fuelCapacity: number;
+  currentFuel: number;
+  dataSource?: DataSource;
+}
+
+export interface InclinationCalibration {
+  vehicleId: string;
+  offsetDegrees: number;
+  calibratedAt: string;
 }

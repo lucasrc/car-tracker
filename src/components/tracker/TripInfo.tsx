@@ -7,6 +7,7 @@ interface TripInfoProps {
   elapsedTime: number;
   fuelUsed?: number;
   fuelPrice?: number;
+  actualCost?: number;
   range?: number;
   currentConsumption?: number;
   cityKmPerLiter?: number;
@@ -34,21 +35,23 @@ export function TripInfo({
   elapsedTime,
   fuelUsed = 0,
   fuelPrice = 5.0,
+  actualCost,
   range = 0,
   currentConsumption,
 }: TripInfoProps) {
-  const cost = fuelUsed * fuelPrice;
-  const formattedCost = cost.toLocaleString("pt-BR", {
+  const estimatedCost = fuelUsed * fuelPrice;
+  const displayCost = actualCost ?? estimatedCost;
+  const formattedCost = displayCost.toLocaleString("pt-BR", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
 
   return (
-    <div className="mx-auto max-w-md space-y-2 px-3 pb-2">
-      <div className="flex items-center rounded-3xl border border-white/65 bg-[#d8e8ec]/74 px-4 py-3 shadow-[0_10px_26px_rgba(15,23,42,0.1)] backdrop-blur-xl">
-        <div className="flex min-w-0 flex-1 items-center gap-3">
+    <div className="mx-auto max-w-md rounded-2xl border border-white/50 bg-[#d8e8ec]/74 px-2 py-2 shadow-[0_10px_26px_rgba(15,23,42,0.1)] backdrop-blur-xl">
+      <div className="flex items-center justify-between">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
           <svg
-            className="h-5 w-5 shrink-0 text-slate-700"
+            className="h-4 w-4 shrink-0 text-slate-700"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -62,20 +65,20 @@ export function TripInfo({
             />
           </svg>
           <div className="min-w-0">
-            <p className="text-[0.65rem] font-medium leading-none text-slate-700">
+            <p className="text-[0.5rem] font-medium leading-none text-slate-700">
               Tempo
             </p>
-            <p className="mt-1 truncate font-semibold leading-none tracking-[-0.02em] text-slate-950 [font-size:clamp(0.875rem,3vw,1.2rem)]">
+            <p className="text-2xl font-semibold leading-none tracking-[-0.02em] text-slate-950">
               {formatTimeHms(elapsedTime)}
             </p>
           </div>
         </div>
 
-        <div className="mx-2 h-10 w-px bg-slate-500/20" />
+        <div className="mx-1 h-8 w-px bg-slate-500/20" />
 
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <svg
-            className="h-5 w-5 shrink-0 text-slate-700"
+            className="h-4 w-4 shrink-0 text-slate-700"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -102,20 +105,20 @@ export function TripInfo({
             />
           </svg>
           <div className="min-w-0">
-            <p className="text-[0.65rem] font-medium leading-none text-slate-700">
+            <p className="text-[0.5rem] font-medium leading-none text-slate-700">
               Distância
             </p>
-            <p className="mt-1 truncate font-semibold leading-none tracking-[-0.02em] text-slate-950 [font-size:clamp(0.875rem,3vw,1.2rem)]">
+            <p className="text-2xl font-semibold leading-none tracking-[-0.02em] text-slate-950">
               {formatDistance(distance)}
             </p>
           </div>
         </div>
-      </div>
 
-      <div className="flex items-center rounded-3xl border border-white/65 bg-[#d8e8ec]/74 px-4 py-2 shadow-[0_10px_26px_rgba(15,23,42,0.1)] backdrop-blur-xl">
+        <div className="mx-1 h-8 w-px bg-slate-500/20" />
+
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <svg
-            className="h-5 w-5 shrink-0 text-slate-700"
+            className="h-4 w-4 shrink-0 text-slate-700"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -140,26 +143,27 @@ export function TripInfo({
             />
           </svg>
           <div className="min-w-0">
-            <p className="text-[0.65rem] font-medium leading-none text-slate-700">
-              Autonomia inst.
+            <p className="text-[0.5rem] font-medium leading-none text-slate-700">
+              Autonomia
             </p>
-            <p className="mt-1 truncate font-semibold leading-none tracking-[-0.02em] text-slate-950 [font-size:clamp(0.875rem,3vw,1.2rem)]">
+            <p className="text-xl font-semibold leading-none tracking-[-0.02em] text-slate-950">
               {Math.round(range)} km
-              {currentConsumption && (
-                <span className="text-[0.65rem] font-normal text-slate-600">
-                  {" "}
-                  / {currentConsumption.toFixed(1)} km/l
-                </span>
-              )}
             </p>
+            {currentConsumption && (
+              <p className="text-[0.45rem] font-medium text-slate-600">
+                {currentConsumption.toFixed(1)} km/l
+              </p>
+            )}
           </div>
         </div>
+      </div>
 
-        <div className="mx-2 h-10 w-px bg-slate-500/20" />
+      <div className="mt-1.5 h-px w-full bg-slate-500/20" />
 
+      <div className="mt-1.5 flex items-center justify-between">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <svg
-            className="h-5 w-5 shrink-0 text-slate-700"
+            className="h-4 w-4 shrink-0 text-slate-700"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -171,14 +175,14 @@ export function TripInfo({
               d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
             />
           </svg>
-          <div className="min-w-0">
-            <p className="text-[0.65rem] font-medium leading-none text-slate-700">
+          <div className="min-w-0 rounded-lg bg-slate-800/10 px-2 py-1">
+            <p className="text-[0.5rem] font-medium leading-none text-slate-700">
               Gasto
             </p>
-            <p className="mt-1 font-semibold leading-none tracking-[-0.02em] text-slate-950 [font-size:clamp(0.875rem,3vw,1.2rem)]">
+            <p className="text-xl font-bold leading-none tracking-[-0.02em] text-slate-950">
               R${formattedCost}
             </p>
-            <p className="text-[0.65rem] font-medium text-slate-600">
+            <p className="text-[0.45rem] font-medium text-slate-600">
               {fuelUsed.toFixed(1)} L
             </p>
           </div>

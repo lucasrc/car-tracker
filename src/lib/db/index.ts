@@ -11,7 +11,7 @@ export { createSqliteAdapter } from "./sqlite-adapter";
 
 import { getDb } from "./factory";
 import type { DbAdapter } from "./adapter";
-import type { Trip, Settings, Refuel } from "@/types";
+import type { Trip, Settings, Refuel, FuelType } from "@/types";
 
 async function withDb<T>(fn: (db: DbAdapter) => Promise<T>): Promise<T> {
   const db = await getDb();
@@ -65,8 +65,10 @@ export async function deleteTrip(id: string): Promise<void> {
 export async function addRefuel(
   amount: number,
   fuelPrice: number,
+  fuelType: FuelType,
+  vehicleId: string,
 ): Promise<Refuel> {
-  return withDb((db) => db.addRefuel(amount, fuelPrice));
+  return withDb((db) => db.addRefuel(vehicleId, amount, fuelPrice, fuelType));
 }
 
 export async function getRefuels(
