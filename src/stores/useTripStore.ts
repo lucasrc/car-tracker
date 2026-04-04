@@ -6,6 +6,7 @@ import type {
   TripStop,
   TripConsumptionBreakdown,
   SpeedingEvent,
+  TripTelemetryData,
 } from "@/types";
 import { generateId } from "@/lib/utils";
 import {
@@ -44,6 +45,7 @@ interface TripStore {
     actualCost: number,
     breakdown?: TripConsumptionBreakdown,
     avgConsumption?: number,
+    telemetryData?: TripTelemetryData,
   ) => Promise<string>;
   addPosition: (coords: Coordinates) => void;
   registerStopSample: (coords: Coordinates, speedKmh: number) => void;
@@ -232,6 +234,7 @@ export const useTripStore = create<TripStore>((set, get) => ({
     actualCost: number,
     breakdown?: TripConsumptionBreakdown,
     avgConsumption?: number,
+    telemetryData?: TripTelemetryData,
   ) => {
     const {
       trip,
@@ -300,6 +303,7 @@ export const useTripStore = create<TripStore>((set, get) => ({
       speedingEvents,
       pendingStopStart: null,
       pendingStopLastTimestamp: null,
+      telemetryData,
     };
 
     await saveTrip(completedTrip);

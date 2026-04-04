@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { getSettings, saveSettings, addRefuel } from "@/lib/db";
-import type { Settings as SettingsData, FuelType } from "@/types";
+import type { Settings as SettingsData, FuelType, Vehicle } from "@/types";
 import { isAndroid } from "@/lib/platform";
 import { useAppStore } from "@/stores/useAppStore";
 import { useVehicleStore } from "@/stores/useVehicleStore";
@@ -8,11 +8,16 @@ import { ClassicBluetooth } from "@/services/classicBluetooth";
 import type { ClassicBluetoothDevice } from "@/services/classicBluetooth";
 import { Tabs } from "@/components/ui/Tabs";
 import { RefuelModal } from "@/components/ui/RefuelModal";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { CarCard } from "@/components/settings/CarCard";
+import { AddCarModal } from "@/components/settings/AddCarModal";
+import { EditCarModal } from "@/components/settings/EditCarModal";
 import {
   TruckIcon,
   CpuChipIcon,
   BuildingStorefrontIcon,
   InformationCircleIcon,
+  PlusIcon,
 } from "@heroicons/react/24/outline";
 
 export function Settings() {
@@ -22,13 +27,13 @@ export function Settings() {
   const [saved, setSaved] = useState(false);
   const [refueling, setRefueling] = useState(false);
   const [showRefuelModal, setShowRefuelModal] = useState(false);
-  const [manualFuelLevel, setManualFuelLevel] = useState("");
   const [bondedDevices, setBondedDevices] = useState<ClassicBluetoothDevice[]>(
     [],
   );
   const [btError, setBtError] = useState<string | null>(null);
   const [btAvailable, setBtAvailable] = useState(false);
   const [loadingDevices, setLoadingDevices] = useState(false);
+
   const selectedCarBluetoothName = useAppStore(
     (s) => s.selectedCarBluetoothName,
   );
@@ -39,13 +44,28 @@ export function Settings() {
   const autoTrackingEnabled = useAppStore((s) => s.autoTrackingEnabled);
   const setAutoTrackingEnabled = useAppStore((s) => s.setAutoTrackingEnabled);
 
-  const { activeVehicle, updateVehicleFuelLevel } = useVehicleStore();
+  const {
+    vehicles,
+    activeVehicle,
+    setActiveVehicle,
+    deleteVehicle,
+    updateVehicleFuelLevel,
+    loadVehicles,
+  } = useVehicleStore();
+
+  const [showAddCarModal, setShowAddCarModal] = useState(false);
+  const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
+  const [deletingVehicleId, setDeletingVehicleId] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
     loadSettings();
     if (isAndroid) {
       checkBtAvailability();
     }
+    loadVehicles();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadSettings = async () => {
@@ -174,33 +194,14 @@ export function Settings() {
     }
   };
 
-  const handleManualFuelLevel = async () => {
-    const val = parseFloat(manualFuelLevel);
-    if (isNaN(val) || val < 0) {
-      alert("Digite um valor válido (maior que 0)");
-      return;
-    }
-    if (settings?.fuelCapacity && val > settings.fuelCapacity) {
-      alert(
-        `O valor não pode ser maior que a capacidade do tanque (${settings.fuelCapacity}L)`,
-      );
-      return;
-    }
-    try {
-      const updated = { ...settings!, currentFuel: val };
-      await saveSettings(updated);
-      setSettings(updated);
-      setManualFuelLevel("");
-    } catch (err) {
-      console.error("Error updating fuel level:", err);
-      alert("Erro ao atualizar nível do tanque.");
-    }
+  const handleSelectCar = async (id: string) => {
+    await setActiveVehicle(id);
   };
 
-  const handleChange = (field: keyof SettingsData, value: string) => {
-    if (!settings) return;
-    const numValue = parseFloat(value) || 0;
-    setSettings({ ...settings, [field]: numValue });
+  const handleDeleteCar = async () => {
+    if (!deletingVehicleId) return;
+    await deleteVehicle(deletingVehicleId);
+    setDeletingVehicleId(null);
   };
 
   const tankPercent = settings?.fuelCapacity
@@ -215,211 +216,59 @@ export function Settings() {
     );
   }
 
-  const tabVeiculo = (
-    <div className="space-y-6">
-      <div className="rounded-3xl bg-white p-6 shadow-lg">
-        <h3 className="mb-4 text-base font-semibold text-gray-900">
-          Motor e Combustível
-        </h3>
-        <p className="mb-6 text-sm text-gray-500">
-          Configure as características do motor para cálculos mais precisos de
-          consumo e autonomia.
-        </p>
-
-        <div className="space-y-4">
-          <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700">
-              Cilindrada (cm³)
-            </label>
-            <div className="relative">
-              <input
-                type="number"
-                step="10"
-                min="500"
-                max="6000"
-                value={settings?.engineDisplacement || ""}
-                onChange={(e) =>
-                  handleChange("engineDisplacement", e.target.value)
-                }
-                className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 pr-16 text-lg font-medium text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                placeholder="1000"
-              />
-              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-gray-400">
-                cm³
-              </span>
-            </div>
-            <p className="mt-1 text-xs text-gray-400">
-              Ex: 1000 para motor 1.0, 1600 para 1.6, etc.
-            </p>
-          </div>
-
-          <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700">
-              Tipo de Combustível
-            </label>
-            <select
-              value={settings?.fuelType || "gasolina"}
-              onChange={(e) => {
-                if (!settings) return;
-                setSettings({
-                  ...settings,
-                  fuelType: e.target.value as "gasolina" | "etanol" | "flex",
-                });
-              }}
-              className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-lg font-medium text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-            >
-              <option value="gasolina">Gasolina (E30)</option>
-              <option value="etanol">Etanol</option>
-              <option value="flex">Flex (adaptativo)</option>
-            </select>
-            <p className="mt-1 text-xs text-gray-400">
-              Gasolina brasileira contém 30% de etanol (E30) por lei. O modelo
-              Flex usa fator energético adaptativo.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div className="rounded-3xl bg-white p-6 shadow-lg">
-        <h3 className="mb-4 text-base font-semibold text-gray-900">
-          Consumo do Manual
-        </h3>
-        <p className="mb-6 text-sm text-gray-500">
-          Valores de referência do fabricante para calcular bônus de condução
-          ecológica.
-        </p>
-
-        <div className="space-y-4">
-          <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700">
-              km/l na Cidade
-            </label>
-            <div className="relative">
-              <input
-                type="number"
-                step="0.1"
-                min="0"
-                value={settings?.manualCityKmPerLiter || ""}
-                onChange={(e) =>
-                  handleChange("manualCityKmPerLiter", e.target.value)
-                }
-                className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 pr-12 text-lg font-medium text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                placeholder="10.0"
-              />
-              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-gray-400">
-                km/L
-              </span>
-            </div>
-          </div>
-
-          <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700">
-              km/l Misto
-            </label>
-            <div className="relative">
-              <input
-                type="number"
-                step="0.1"
-                min="0"
-                value={settings?.manualMixedKmPerLiter || ""}
-                onChange={(e) =>
-                  handleChange("manualMixedKmPerLiter", e.target.value)
-                }
-                className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 pr-12 text-lg font-medium text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                placeholder="12.0"
-              />
-              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-gray-400">
-                km/L
-              </span>
-            </div>
-          </div>
-
-          <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700">
-              km/l na Estrada
-            </label>
-            <div className="relative">
-              <input
-                type="number"
-                step="0.1"
-                min="0"
-                value={settings?.manualHighwayKmPerLiter || ""}
-                onChange={(e) =>
-                  handleChange("manualHighwayKmPerLiter", e.target.value)
-                }
-                className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 pr-12 text-lg font-medium text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                placeholder="14.0"
-              />
-              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-gray-400">
-                km/L
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="rounded-3xl bg-white p-6 shadow-lg">
-        <h3 className="mb-4 text-base font-semibold text-gray-900">Tanque</h3>
-
+  const tabCarro = (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
         <div>
-          <label className="mb-2 block text-sm font-medium text-gray-700">
-            Capacidade do Tanque
-          </label>
-          <div className="relative">
-            <input
-              type="number"
-              step="1"
-              min="0"
-              value={settings?.fuelCapacity || ""}
-              onChange={(e) => handleChange("fuelCapacity", e.target.value)}
-              className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 pr-12 text-lg font-medium text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-              placeholder="50"
-            />
-            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-gray-400">
-              L
-            </span>
-          </div>
+          <h3 className="text-base font-semibold text-gray-900">Meus Carros</h3>
+          <p className="text-sm text-gray-500">
+            {vehicles.length}{" "}
+            {vehicles.length === 1
+              ? "veículo cadastrado"
+              : "veículos cadastrados"}
+          </p>
         </div>
+        <button
+          onClick={() => setShowAddCarModal(true)}
+          className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition-all hover:scale-[1.02]"
+        >
+          <PlusIcon className="h-4 w-4" />
+          Adicionar
+        </button>
       </div>
 
-      <div className="rounded-3xl bg-white p-6 shadow-lg">
-        <h3 className="mb-4 text-base font-semibold text-gray-900">
-          Ajuste Manual do Nível do Tanque
-        </h3>
-        <p className="mb-4 text-sm text-gray-500">
-          Defina manualmente o nível atual do tanque. Use quando o sensor não
-          está disponível.
-        </p>
-        <div className="flex gap-3">
-          <div className="relative flex-1">
-            <input
-              type="number"
-              step="0.1"
-              min="0"
-              max={settings?.fuelCapacity}
-              value={manualFuelLevel}
-              onChange={(e) => setManualFuelLevel(e.target.value)}
-              className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 pr-12 text-lg font-medium text-gray-900 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
-              placeholder={settings?.currentFuel?.toFixed(1) || "0"}
-            />
-            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-gray-400">
-              L
-            </span>
-          </div>
+      {vehicles.length === 0 ? (
+        <div className="rounded-3xl bg-white p-8 text-center shadow-lg">
+          <TruckIcon className="mx-auto h-12 w-12 text-gray-300" />
+          <h4 className="mt-4 text-base font-semibold text-gray-900">
+            Nenhum carro cadastrado
+          </h4>
+          <p className="mt-2 text-sm text-gray-500">
+            Adicione seu primeiro carro para começar a rastrear viagens com
+            precisão.
+          </p>
           <button
-            type="button"
-            onClick={handleManualFuelLevel}
-            disabled={!manualFuelLevel}
-            className="rounded-xl bg-purple-500 px-6 py-3 font-semibold text-white shadow-lg transition-all hover:bg-purple-600 disabled:opacity-50"
+            onClick={() => setShowAddCarModal(true)}
+            className="mt-4 flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 px-6 py-3 text-sm font-semibold text-white shadow-lg transition-all hover:scale-[1.02] mx-auto"
           >
-            Atualizar
+            <PlusIcon className="h-4 w-4" />
+            Adicionar Carro
           </button>
         </div>
-        <p className="mt-2 text-xs text-gray-500">
-          Tanque atual: {settings?.currentFuel?.toFixed(1) || 0}L /{" "}
-          {settings?.fuelCapacity || 50}L
-        </p>
-      </div>
+      ) : (
+        <div className="space-y-3">
+          {vehicles.map((vehicle) => (
+            <CarCard
+              key={vehicle.id}
+              vehicle={vehicle}
+              isActive={activeVehicle?.id === vehicle.id}
+              onSelect={handleSelectCar}
+              onDelete={(id) => setDeletingVehicleId(id)}
+              onEdit={(v) => setEditingVehicle(v)}
+            />
+          ))}
+        </div>
+      )}
 
       <button
         onClick={handleSave}
@@ -745,10 +594,10 @@ export function Settings() {
 
   const tabs = [
     {
-      id: "veiculo",
-      label: "Veículo",
+      id: "carro",
+      label: "Carro",
       icon: <TruckIcon className="w-5 h-5" />,
-      content: tabVeiculo,
+      content: tabCarro,
     },
     ...(isAndroid
       ? [
@@ -774,18 +623,51 @@ export function Settings() {
     },
   ];
 
+  const deletingVehicle = vehicles.find((v) => v.id === deletingVehicleId);
+
   return (
     <div className="flex min-h-screen flex-col bg-gradient-to-br from-gray-50 to-gray-100 pb-24">
       <header className="bg-gradient-to-r from-blue-600 to-blue-500 p-4 pb-6 pt-12 shadow-lg">
         <h1 className="text-2xl font-bold text-white">Configurações</h1>
         <p className="mt-1 text-sm text-white/80">
-          Configure o consumo do seu veículo
+          Gerencie seus carros e configurações
         </p>
       </header>
 
       <main className="-mt-4 flex-1 overflow-auto p-4 pt-6">
-        <Tabs tabs={tabs} defaultTab="veiculo" className="mb-4" />
+        <Tabs tabs={tabs} defaultTab="carro" className="mb-4" />
       </main>
+
+      <AddCarModal
+        open={showAddCarModal}
+        onClose={() => setShowAddCarModal(false)}
+      />
+
+      <EditCarModal
+        vehicle={editingVehicle}
+        onClose={() => setEditingVehicle(null)}
+      />
+
+      <ConfirmDialog
+        open={!!deletingVehicle}
+        title="Excluir Carro"
+        message={
+          deletingVehicle ? (
+            <>
+              Tem certeza que deseja excluir{" "}
+              <strong>{deletingVehicle.name}</strong>? As viagens associadas
+              serão mantidas no histórico sem referência ao veículo.
+            </>
+          ) : (
+            ""
+          )
+        }
+        confirmLabel="Excluir"
+        cancelLabel="Cancelar"
+        variant="danger"
+        onConfirm={handleDeleteCar}
+        onCancel={() => setDeletingVehicleId(null)}
+      />
 
       <RefuelModal
         open={showRefuelModal}

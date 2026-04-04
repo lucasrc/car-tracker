@@ -24,13 +24,15 @@ Aplicativo de rastreamento veicular 100% offline. roda no navegador/celular via 
 ┌─────────────────────────────────────────────────────────────┐
 │                    APRESENTAÇÃO                              │
 │  Pages: Home, Tracker, History, Settings, About            │
-│  Components: Dashboard, MapTracker, Speedometer, TripCard  │
+│  Components: DrivingPanel, MapTracker, Speedometer, TripCard│
 └──────────────────────────┬──────────────────────────────────┘
                            │
 ┌──────────────────────────▼──────────────────────────────────┐
 │                      CÁLCULO                                 │
-│  useConsumptionModel → calculateAdjustedConsumption         │
-│  useDriveMode → determineMode                               │
+│  useTelemetryEngine → simulate() + acumulação              │
+│  lib/telemetry-engine → TelemetryEngineRealWorld           │
+│    ├── getCalibratedBase() → INMETRO + user weighted avg   │
+│    └── simulate() → mass, speed, slope, AC, hybrid factors │
 │  lib/distance → vincentyDistance, calculateTotalDistance    │
 │  lib/utils → pointToPolylineDistanceKm, gaussianEmission   │
 │  lib/radar-api → fetchRadarsInArea, isSpeeding             │
@@ -41,6 +43,7 @@ Aplicativo de rastreamento veicular 100% offline. roda no navegador/celular via 
 │  useTripStore → trip atual (path, stats, consumo)          │
 │  useAppStore → configurações (consumo, combustível)        │
 │  useRadarStore → radares próximos, speeding events          │
+│  useVehicleStore → veículos com calibração INMETRO         │
 └──────────────────────────┬──────────────────────────────────┘
                            │
 ┌──────────────────────────▼──────────────────────────────────┐
@@ -52,7 +55,8 @@ Aplicativo de rastreamento veicular 100% offline. roda no navegador/celular via 
                            │
 ┌──────────────────────────▼──────────────────────────────────┐
 │                    PERSISTÊNCIA                              │
-│  Dexie (IndexedDB) → trips, settings, refuels, radar cache│
+│  Dexie (IndexedDB) → trips, settings, refuels, vehicles,   │
+│    inclinationCalibrations, currentTrip, radar cache       │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -79,32 +83,36 @@ Dashboard → formatDistance() → UI
 ```
 GPS (speed em m/s)
          ↓
-useConsumptionModel.addReading(speedMs, timestamp)
+useTelemetryEngine.addPosition(position)
          ↓
-Janela deslizante de 30s
+Calcula aceleração: Δspeed / Δtime
          ↓
-getMetrics() → avgSpeed, maxSpeed, variance, acceleration
+TelemetryEngine.simulate(vehicle, input)
+   ├── getCalibratedBase() → INMETRO * weight + userAvg * weight
+   ├── massPenalty → passageiros + carga + cilindro GNV
+   ├── speedFactor → calibração linear
+   ├── dynamicFactor → inclinação + aceleração
+   ├── acFactor → penalidade do ar condicionado
+   ├── hybridImprovement → 1.6x cidade, 1.1x rodovia
+   └── GNV efficiency factor
          ↓
-calculateAdjustedConsumption()
-   ├── COPERT (60%) → consumo por velocidade
-   └── Modelo custom (40%) → penalidades/bônus por comportamento
+kmpl → acumulado ponderado por tempo
          ↓
-adjustedKmPerLiter → Dashboard
+estimatedConsumption → DrivingPanel
 ```
 
 ### 3. Modo de Condução (Cidade/Rodovia)
 
 ```
-useDriveMode (janela de 60s)
+useTelemetryEngine (janela de 30s)
          ↓
 determineMode():
    - avgSpeed >= 60 km/h → highway
    - avgSpeed < 40 km/h → city
-   - 40-60 km/h → stopsPerKm heuristic
+   - 40-60 km/h → distância/heurística
          ↓
-useTripStore.setDriveMode() → Trip.driveMode
-         ↓
-Consumo base muda (city vs highway km/l)
+Consumo base muda automaticamente
+   (INMETRO city vs highway)
 ```
 
 ### 4. Radares
@@ -149,12 +157,13 @@ src/
 
 ### Tabelas
 
-| Tabela        | Conteúdo                                             |
-| ------------- | ---------------------------------------------------- |
-| `trips`       | Viagens gravadas (path, distância, consumo, paradas) |
-| `settings`    | Configurações do usuário (consumo, combustível)      |
-| `refuels`     | Abastecimentos registrados                           |
-| `radar_cache` | Radares do OSM em cache                              |
+| Tabela        | Conteúdo                                                          |
+| ------------- | ----------------------------------------------------------------- |
+| `trips`       | Viagens gravadas (path, distância, consumo, paradas)              |
+| `settings`    | Configurações do usuário (preço combustível, nível tanque legado) |
+| `refuels`     | Abastecimentos registrados                                        |
+| `vehicles`    | Veículos cadastrados com calibração COPERT (IA)                   |
+| `radar_cache` | Radares do OSM em cache                                           |
 
 ### Operações Principais
 

@@ -149,7 +149,6 @@ db.version(11)
     inclinationCalibrations: "vehicleId",
   })
   .upgrade(async (tx) => {
-    // Adicionar vehicleId aos refuels existentes (associa ao veículo ativo ou "")
     const settings = await tx.table("settings").get("default");
     const activeVehicleId = settings?.activeVehicleId || "";
 
@@ -162,7 +161,6 @@ db.version(11)
         }
       });
 
-    // Adicionar fuelCapacity/currentFuel aos vehicles existentes
     await tx
       .table("vehicles")
       .toCollection()
@@ -172,6 +170,38 @@ db.version(11)
         }
         if (typeof v.currentFuel === "undefined") {
           v.currentFuel = 0;
+        }
+      });
+  });
+
+db.version(12)
+  .stores({
+    trips: "id, startTime, endTime, status, vehicleId",
+    currentTrip: "id, vehicleId",
+    settings: "id",
+    refuels: "id, timestamp, vehicleId",
+    vehicles: "id, createdAt",
+    inclinationCalibrations: "vehicleId",
+  })
+  .upgrade(async (_tx) => {
+    await _tx
+      .table("vehicles")
+      .toCollection()
+      .modify((v) => {
+        if (typeof v.weightInmetro === "undefined") {
+          v.weightInmetro = 0.6;
+        }
+        if (typeof v.weightUser === "undefined") {
+          v.weightUser = 0.4;
+        }
+        if (typeof v.isHybrid === "undefined") {
+          v.isHybrid = false;
+        }
+        if (typeof v.gnvCylinderWeightKg === "undefined") {
+          v.gnvCylinderWeightKg = 80;
+        }
+        if (typeof v.gnvEfficiencyFactor === "undefined") {
+          v.gnvEfficiencyFactor = 1.32;
         }
       });
   });
@@ -486,6 +516,24 @@ export async function migrateLegacyCalibration(): Promise<void> {
       createdAt: new Date().toISOString(),
       fuelCapacity: 50,
       currentFuel: 0,
+      inmetroCityKmpl: legacyData.inmetroCityKmpl || legacyData.urbanKmpl,
+      inmetroHighwayKmpl:
+        legacyData.inmetroHighwayKmpl || legacyData.highwayKmpl,
+      userAvgCityKmpl: legacyData.userAvgCityKmpl || legacyData.urbanKmpl,
+      userAvgHighwayKmpl:
+        legacyData.userAvgHighwayKmpl || legacyData.highwayKmpl,
+      inmetroEthanolCityKmpl: legacyData.inmetroEthanolCityKmpl,
+      inmetroEthanolHighwayKmpl: legacyData.inmetroEthanolHighwayKmpl,
+      userAvgEthanolCityKmpl: legacyData.userAvgEthanolCityKmpl,
+      userAvgEthanolHighwayKmpl: legacyData.userAvgEthanolHighwayKmpl,
+      crr: legacyData.crr || 0.013,
+      idleLph: legacyData.idleLph || 0.9,
+      baseBsfc: legacyData.baseBsfc || 265,
+      weightInmetro: 0.6,
+      weightUser: 0.4,
+      isHybrid: false,
+      gnvCylinderWeightKg: 80,
+      gnvEfficiencyFactor: 1.32,
     };
 
     await db.vehicles.put(vehicle);

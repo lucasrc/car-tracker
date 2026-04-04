@@ -75,9 +75,10 @@ export interface Trip {
     model: string;
     year: number;
   };
+  telemetryData?: TripTelemetryData;
 }
 
-export type FuelType = "gasolina" | "etanol" | "flex";
+export type FuelType = "gasolina" | "etanol" | "flex" | "gnv";
 
 export interface Settings {
   id: string;
@@ -183,6 +184,22 @@ export interface CopertCalibration {
   nox_mgkm?: number;
   confidence: CopertConfidence;
   dataSource?: DataSource;
+  inmetroCityKmpl: number;
+  inmetroHighwayKmpl: number;
+  userAvgCityKmpl: number;
+  userAvgHighwayKmpl: number;
+  inmetroEthanolCityKmpl?: number;
+  inmetroEthanolHighwayKmpl?: number;
+  userAvgEthanolCityKmpl?: number;
+  userAvgEthanolHighwayKmpl?: number;
+  crr: number;
+  idleLph: number;
+  baseBsfc: number;
+  weightInmetro: number;
+  weightUser: number;
+  isHybrid: boolean;
+  gnvCylinderWeightKg: number;
+  gnvEfficiencyFactor: number;
 }
 
 export interface CopertCalibrationRecord extends CopertCalibration {
@@ -222,10 +239,45 @@ export interface Vehicle {
   fuelCapacity: number;
   currentFuel: number;
   dataSource?: DataSource;
+  inmetroCityKmpl: number;
+  inmetroHighwayKmpl: number;
+  userAvgCityKmpl: number;
+  userAvgHighwayKmpl: number;
+  inmetroEthanolCityKmpl?: number;
+  inmetroEthanolHighwayKmpl?: number;
+  userAvgEthanolCityKmpl?: number;
+  userAvgEthanolHighwayKmpl?: number;
+  crr: number;
+  idleLph: number;
+  baseBsfc: number;
+  weightInmetro: number;
+  weightUser: number;
+  isHybrid: boolean;
+  gnvCylinderWeightKg: number;
+  gnvEfficiencyFactor: number;
 }
 
 export interface InclinationCalibration {
   vehicleId: string;
   offsetDegrees: number;
   calibratedAt: string;
+}
+
+export interface TripTelemetryData {
+  fuelType: FuelType;
+  batterySocStart: number;
+  batterySocEnd: number;
+  hybridDistancePct: number;
+  avgSlope: number;
+  maxSlope: number;
+  acUsagePct: number;
+  massPenaltyAvg: number;
+  idleTimeSeconds: number;
+  avgAcceleration: number;
+  maxAcceleration: number;
+  speedDistribution: {
+    city: number;
+    mixed: number;
+    highway: number;
+  };
 }

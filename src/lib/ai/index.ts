@@ -6,8 +6,8 @@ export type AIProviderType = "deepseek" | "openai";
 
 export function getProviderType(): AIProviderType {
   const provider = import.meta.env.VITE_AI_PROVIDER;
-  if (provider === "openai") return "openai";
-  return "deepseek";
+  if (provider === "deepseek") return "deepseek";
+  return "openai";
 }
 
 let providerInstance: AIProvider | null = null;

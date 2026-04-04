@@ -11,7 +11,7 @@ import { useRadarStore } from "@/stores/useRadarStore";
 import { useGeolocation } from "@/hooks/useGeolocation";
 import { useWakeLock } from "@/hooks/useWakeLock";
 import { useSpeedFilter } from "@/hooks/useSpeedFilter";
-import { useDriveMode } from "@/hooks/useDriveMode";
+import { useTelemetryEngine } from "@/hooks/useTelemetryEngine";
 import { useInclination } from "@/hooks/useInclination";
 import { useSimulation } from "@/hooks/useSimulation";
 import { useAutoTracker } from "@/hooks/useAutoTracker";
@@ -225,12 +225,14 @@ export function Tracker() {
 
   const {
     estimatedConsumption,
-    consumptionFactors,
     addPosition: addDriveModePosition,
     reset: resetDriveMode,
     isInitialized,
     getInstantConsumption,
-  } = useDriveMode(
+    getTelemetryData,
+    batterySocPct,
+    isGnv,
+  } = useTelemetryEngine(
     stats.distanceMeters,
     activeVehicle?.currentFuel ?? 0,
     inclination.gradePercent,
@@ -326,7 +328,14 @@ export function Tracker() {
     setShowConfirmDialog(false);
     stopWatching();
     releaseWakeLock();
-    const tripId = await stopTrip(storeTotalFuelUsed, realtimeCost);
+    const telemetryData = getTelemetryData();
+    const tripId = await stopTrip(
+      storeTotalFuelUsed,
+      realtimeCost,
+      undefined,
+      undefined,
+      telemetryData,
+    );
     if (tripId) {
       navigate(`/history/${tripId}`);
     }
@@ -336,6 +345,7 @@ export function Tracker() {
     stopTrip,
     storeTotalFuelUsed,
     realtimeCost,
+    getTelemetryData,
     navigate,
   ]);
 
@@ -611,11 +621,14 @@ export function Tracker() {
                 ? `${(activeVehicle.displacement / 1000).toFixed(1)}L ${activeVehicle.fuelType === "flex" ? "Flex" : activeVehicle.fuelType === "diesel" ? "Diesel" : activeVehicle.fuelType === "ethanol" ? "Etanol" : "Gasolina"} · ${Math.round(activeVehicle.mass)}kg`
                 : undefined
             }
-            calibrated={consumptionFactors.calibrated}
+            calibrated={!!activeVehicle?.inmetroCityKmpl}
             radarMaxSpeed={nearbyRadarMaxSpeed}
             isSpeeding={!!currentSpeedingEvent}
             gradePercent={inclination.gradePercent}
             inclinationConfidence={inclination.confidence}
+            batterySocPct={activeVehicle?.isHybrid ? batterySocPct : undefined}
+            isHybrid={activeVehicle?.isHybrid ?? false}
+            isGnv={isGnv}
           />
         </div>
 

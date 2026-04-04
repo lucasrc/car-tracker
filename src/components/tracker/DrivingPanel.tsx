@@ -17,6 +17,9 @@ interface DrivingPanelProps {
   inclinationConfidence?: number;
   vehicleName?: string;
   vehicleDetails?: string;
+  batterySocPct?: number;
+  isHybrid?: boolean;
+  isGnv?: boolean;
 }
 
 function formatTimeHms(seconds: number): string {
@@ -47,6 +50,9 @@ export function DrivingPanel({
   inclinationConfidence = 0,
   vehicleName,
   vehicleDetails,
+  batterySocPct,
+  isHybrid = false,
+  isGnv = false,
 }: DrivingPanelProps) {
   return (
     <div className="mx-1 rounded-2xl border border-white/50 bg-[#d8e8ec]/80 px-1 py-2 shadow-[0_10px_26px_rgba(15,23,42,0.1)] backdrop-blur-xl">
@@ -165,6 +171,37 @@ export function DrivingPanel({
         <div className="mt-2 flex items-center justify-center rounded-lg border-2 border-red-500 bg-red-50/90 px-2 py-1">
           <span className="text-base font-bold text-red-600">
             Excesso: +{Math.round(currentSpeed - radarMaxSpeed)} km/h
+          </span>
+        </div>
+      )}
+
+      {isHybrid && batterySocPct !== undefined && (
+        <div className="mt-2 flex items-center gap-2">
+          <span className="text-xs font-medium uppercase text-slate-500">
+            Bateria
+          </span>
+          <div className="flex-1 h-2 bg-slate-300/30 rounded-full overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all ${
+                batterySocPct > 50
+                  ? "bg-green-500"
+                  : batterySocPct > 20
+                    ? "bg-yellow-500"
+                    : "bg-red-500"
+              }`}
+              style={{ width: `${batterySocPct}%` }}
+            />
+          </div>
+          <span className="text-xs font-bold tabular-nums text-slate-700">
+            {batterySocPct}%
+          </span>
+        </div>
+      )}
+
+      {isGnv && (
+        <div className="mt-1 flex justify-center">
+          <span className="rounded bg-blue-600 px-1.5 py-0.5 text-[0.6rem] font-bold text-white">
+            GNV · km/m³
           </span>
         </div>
       )}

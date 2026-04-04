@@ -180,6 +180,22 @@ export const useVehicleStore = create<VehicleStore>((set, get) => ({
         fuelCapacity: 50,
         currentFuel: 0,
         dataSource: result.dataSource,
+        inmetroCityKmpl: result.data.inmetroCityKmpl,
+        inmetroHighwayKmpl: result.data.inmetroHighwayKmpl,
+        userAvgCityKmpl: result.data.userAvgCityKmpl,
+        userAvgHighwayKmpl: result.data.userAvgHighwayKmpl,
+        inmetroEthanolCityKmpl: result.data.inmetroEthanolCityKmpl,
+        inmetroEthanolHighwayKmpl: result.data.inmetroEthanolHighwayKmpl,
+        userAvgEthanolCityKmpl: result.data.userAvgEthanolCityKmpl,
+        userAvgEthanolHighwayKmpl: result.data.userAvgEthanolHighwayKmpl,
+        crr: result.data.crr,
+        idleLph: result.data.idleLph,
+        baseBsfc: result.data.baseBsfc,
+        weightInmetro: result.data.weightInmetro ?? 0.6,
+        weightUser: result.data.weightUser ?? 0.4,
+        isHybrid: result.data.isHybrid ?? false,
+        gnvCylinderWeightKg: result.data.gnvCylinderWeightKg ?? 80,
+        gnvEfficiencyFactor: result.data.gnvEfficiencyFactor ?? 1.32,
       };
 
       await saveVehicle(vehicle);
@@ -356,6 +372,17 @@ export const useVehicleStore = create<VehicleStore>((set, get) => ({
         calibrationInput: vehicleInput,
         calibratedAt: now,
         dataSource: result.dataSource,
+        inmetroCityKmpl: result.data.inmetroCityKmpl,
+        inmetroHighwayKmpl: result.data.inmetroHighwayKmpl,
+        userAvgCityKmpl: result.data.userAvgCityKmpl,
+        userAvgHighwayKmpl: result.data.userAvgHighwayKmpl,
+        inmetroEthanolCityKmpl: result.data.inmetroEthanolCityKmpl,
+        inmetroEthanolHighwayKmpl: result.data.inmetroEthanolHighwayKmpl,
+        userAvgEthanolCityKmpl: result.data.userAvgEthanolCityKmpl,
+        userAvgEthanolHighwayKmpl: result.data.userAvgEthanolHighwayKmpl,
+        crr: result.data.crr,
+        idleLph: result.data.idleLph,
+        baseBsfc: result.data.baseBsfc,
       };
 
       await saveVehicle(updatedVehicle);

@@ -56,34 +56,39 @@ Como um dado entra no app e vira informação na tela.
 ### Pipeline
 
 ```
-1. useConsumptionModel.addReading(speedMs, timestamp)
+1. useTelemetryEngine.addPosition(position)
    ├── Calcula aceleração: (speed - lastSpeed) / deltaTime
-   ├── Adiciona leitura à janela de 30s
-   └── Remove leituras antigas (> 30s)
+   ├── Determina modo: city (< 40 km/h), highway (>= 60 km/h), mixed
+   └── Chama TelemetryEngine.simulate()
 
-2. getMetrics(currentTime?)
-   ├── avgSpeedKmh: média das velocidades na janela
-   ├── maxSpeedKmh: velocidade máxima na janela
-   ├── speedVariance: variância das velocidades
-   ├── avgAcceleration: média das acelerações
-   └── idlePercentage: % do tempo com speed < 1 m/s
+2. TelemetryEngine.simulate(vehicle, input)
+   ├── getCalibratedBase(): pondera INMETRO vs user averages com pesos
+   │   base = inmetro * weightInmetro + userAvg * weightUser
+   │   └── Suporta gasolina, etanol, GNV
+   │
+   ├── Aplica fatores de correção:
+   │   ├── massPenalty: 1.0 + (extraMass / vehicleMass) * 0.4
+   │   │   └── extraMass = (passengers-1)*75 + cargo + gnvCylinderWeight
+   │   ├── speedFactor: calibrado linear em torno do ponto de teste
+   │   ├── dynamicFactor: 1.0 - slope*0.025 - accel*0.415
+   │   ├── acFactor: 0.88 (motores <= 80kW) ou 0.92
+   │   └── hybridImprovement: 1.6 (cidade) ou 1.1 (rodovia)
+   │
+   ├── Fuel cut: slope < -3% → consumo zero (freio motor)
+   ├── GNV: multiplica por gnvEfficiencyFactor (padrão 1.32)
+   └── Mínimo: 3.0 km/l
 
-3. calculateAdjustedConsumption(baseConsumption, currentSpeedKmh, ...)
-   └── COPERT Puro (100%):
-       fcPerKm = (217 + 0.253v + 0.00965v²) / (1 + 0.096v - 0.000421v²)
-       km/l = (1000 × densidade) / fcPerKm
-       └── Ajustes técnicos:
-           ├── displacementFactor: (cc / 1600) ^ -0.15
-           └── fuelEnergyFactor: gasolina=0.91, etanol=0.7, flex=0.85
+3. Acumula consumo ponderado por tempo
+   └── averageConsumption = Σ(kmpl * durationMs) / Σ(durationMs)
 
- 4. Resultado: adjustedKmPerLiter (sem penalidades/bônus arbitrários)
+4. Resultado: kmpl ajustado + estado da bateria (híbridos)
 ```
 
 ### Saída
 
 ```typescript
-// Na UI (Dashboard/TripInfo)
-"12.5 km/l"; // adjustedKmPerLiter
+// Na UI (DrivingPanel)
+"12.5 km/l"; // estimatedConsumption
 ```
 
 ---
@@ -93,27 +98,23 @@ Como um dado entra no app e vira informação na tela.
 ### Entrada
 
 ```typescript
-// Quantidade de combustível no tanque (do settings ou última medição)
+// Quantidade de combustível no tanque (do vehicle)
 fuelRemaining: 25; // litros
 ```
 
 ### Pipeline
 
 ```
-1. useDriveMode hook determina modo atual
+1. useTelemetryEngine hook determina modo atual
    ├── Se avgSpeed >= 60 km/h → "highway"
    ├── Se avgSpeed < 40 km/h → "city"
-   └── Se 40-60 km/h → usa stopsPerKm heuristic
+   └── Se 40-60 km/h → usa distância/heurística
 
-2. Escolhe consumo base conforme modo
-   ├── city → settings.manualCityKmPerLiter
-   └── highway → settings.manualHighwayKmPerLiter
+2. Consumo atual calculado pelo TelemetryEngine
+   └── adjustedKmPerLiter (com todos os fatores aplicados)
 
-3. Ajusta consumo base com modelo (similar ao item 2)
-   └── adjustedKmPerLiter
-
-4. Calcula autonomia
-   rawRange = fuelRemaining * adjustedKmPerLiter
+3. Calcula autonomia
+   rawRange = fuelRemaining * currentConsumption
    warmUpFactor = min(elapsedMs / 90000, 1)²
    estimatedRange = lerp(conservativeRange, rawRange, warmUpFactor)
 ```
@@ -121,7 +122,7 @@ fuelRemaining: 25; // litros
 ### Saída
 
 ```typescript
-// Na UI (Dashboard)
+// Na UI (DrivingPanel)
 "312 km"; // autonomia restante
 ```
 
@@ -179,28 +180,46 @@ fuelRemaining: 25; // litros
   distanceMeters: 45000,
   maxSpeed: 120,
   avgSpeed: 65,
-  fuelUsed: 3.8,
-  consumptionBreakdown: {...},
-  stops: [...]
+  totalFuelUsed: 3.8,
+  telemetryData: {
+    fuelType: "gasolina",
+    batterySocStart: 100,
+    batterySocEnd: 65,
+    hybridDistancePct: 40,
+    avgSlope: 1.2,
+    maxSlope: 8.5,
+    acUsagePct: 75,
+    massPenaltyAvg: 1.15,
+    avgAcceleration: 0.8,
+    maxAcceleration: 3.2,
+    speedDistribution: { city: 30, mixed: 25, highway: 45 }
+  }
 }
 ```
 
 ### Pipeline
 
 ```
-1. useTripStore.stopTrip(fuelPrice, fuelUsed, breakdown, actualCost?)
+1. useTripStore.stopTrip(totalFuelUsed, actualCost, breakdown?, avgConsumption?, telemetryData?)
    ├── Verifica mínimos: distance > 30m, duration > 30s
    ├── Se não passa → limpa trip, não salva
    └── Se passa → continua
 
 2. Calcula campos finais
    ├── avgSpeed = distanceKm / durationHours
-   ├── totalCost = fuelUsed * fuelPrice (estimado)
-   ├── actualCost = custo calculado via FIFO
+   ├── consumption = avgConsumption ou trip.consumption
+   ├── fuelUsed = max(totalFuelUsed, 0)
+   ├── telemetryData = snapshot do useTelemetryEngine.getTelemetryData()
    └── endTime = new Date().toISOString()
 
 3. saveTrip(completedTrip)
    └── Dexie.table('trips').put(completedTrip)
+      └── Inclui telemetryData com:
+          ├── fuelType, battery SOC (start/end)
+          ├── hybridDistancePct (para híbridos)
+          ├── avg/max slope, acUsagePct
+          ├── massPenaltyAvg, acceleration stats
+          └── speedDistribution (city/mixed/highway %)
 
 4. clearCurrentTrip()
    └── Limpa trip atual da memória
@@ -211,6 +230,7 @@ fuelRemaining: 25; // litros
 ```typescript
 // Salvo em IndexedDB
 // Disponível em History page para consulta
+// telemetryData permite análise detalhada pós-viagem
 ```
 
 ---

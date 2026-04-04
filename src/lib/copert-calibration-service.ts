@@ -41,6 +41,17 @@ const copertCalibrationSchema = z.object({
   co2_gkm: z.number().positive().optional(),
   nox_mgkm: z.number().positive().optional(),
   confidence: z.enum(["high", "medium", "low"]),
+  inmetroCityKmpl: z.number().positive(),
+  inmetroHighwayKmpl: z.number().positive(),
+  userAvgCityKmpl: z.number().positive(),
+  userAvgHighwayKmpl: z.number().positive(),
+  inmetroEthanolCityKmpl: z.number().positive().optional(),
+  inmetroEthanolHighwayKmpl: z.number().positive().optional(),
+  userAvgEthanolCityKmpl: z.number().positive().optional(),
+  userAvgEthanolHighwayKmpl: z.number().positive().optional(),
+  crr: z.number().positive(),
+  idleLph: z.number().positive(),
+  baseBsfc: z.number().positive(),
 });
 
 const JSON_SCHEMA = `{
@@ -66,70 +77,50 @@ const JSON_SCHEMA = `{
   "peakTorqueNm": number,
   "co2_gkm": number,
   "nox_mgkm": number,
-  "confidence": "high" | "medium" | "low"
+  "confidence": "high" | "medium" | "low",
+  "inmetroCityKmpl": number,
+  "inmetroHighwayKmpl": number,
+  "userAvgCityKmpl": number,
+  "userAvgHighwayKmpl": number,
+  "inmetroEthanolCityKmpl": number (opcional, se flex/etanol),
+  "inmetroEthanolHighwayKmpl": number (opcional, se flex/etanol),
+  "userAvgEthanolCityKmpl": number (opcional, se flex/etanol),
+  "userAvgEthanolHighwayKmpl": number (opcional, se flex/etanol),
+  "crr": number,
+  "idleLph": number,
+  "baseBsfc": number
 }`;
 
-const SEARCH_PROMPT = (
-  vehicle: string,
-) => `Busque em fontes confiáveis (fueleconomy.gov, dados oficiais ACEA/EMEP, sites de fabricantes) os dados do veículo abaixo. Retorne TUDO que encontrar.
+const SYSTEM_PROMPT = `Atue como um engenheiro automotivo especializado em dinâmica veicular, eficiência energética e fichas técnicas homologadas no Brasil.
 
-VEÍCULO: ${vehicle}
+Sua tarefa é fornecer os dados técnicos do veículo informado para uso em um motor de simulação física e telemetria.
 
-1. CONSUMO DE COMBUSTÍVEL (km/L):
-   - Urbano (city): X.X km/L
-   - Rodoviário (highway): X.X km/L
-   - Combinado (combined): X.X km/L
-
-2. DADOS COPERT (se disponíveis em bases de dados europeias):
-   - Categoria/segmento do veículo
-   - Coeficientes de resistência (f0, f1, f2) se disponíveis
-   - Fator de conversão combustível (g/kWh ou km/L)
-   - Emissões de CO2 (g/km)
-   - Emissões de NOx (mg/km)
-
-3. ESPECIFICAÇÕES TÉCNICAS:
-   - Marca, modelo, ano
-   - Cilindrada (cc)
-   - Potência (kW)
-   - Torque (Nm)
-   - Massa em ordem de marcha (kg)
-   - Norma de emissões Euro (Euro 4, 5, 6, etc.)
-
-Retorne em JSON:
-{
-  "consumption": {"urban": X, "highway": Y, "combined": Z},
-  "copert": {"segment": "...", "f0": X, "f1": X, "f2": X, "co2_gkm": X, "nox_mgkm": X},
-  "specs": {"make": "...", "model": "...", "year": X, "displacement": X, "fuelType": "...", "euroNorm": "...", "mass": X, "peakPowerKw": X, "peakTorqueNm": X},
-  "source": "URL da fonte"
-}
-
-Se não encontrar dados completos, retorne o que tiver disponível.
-Se o veículo exato não existir, use um modelo similar do mesmo segmento e marque "confidence": "medium".`;
-
-const SYSTEM_PROMPT = `Você é um especialista em engenharia automotiva e dados COPERT (EMEP/EEA).
-
-Para o veículo informado, retorne UM JSON com TODOS os campos abaixo.
-Use valores realistas baseados em dados de engenharia, não chutes aleatórios.
+Requisitos obrigatórios:
+1. Retorne SOMENTE um JSON válido (sem explicações, sem texto adicional).
+2. Use valores reais sempre que disponíveis (INMETRO, fabricantes, literatura técnica).
+3. Quando não houver dados exatos (ex: Cd, área frontal), utilize aproximações fundamentadas em engenharia para o segmento do veículo.
+4. Mantenha consistência física entre os parâmetros (ex: potência, massa, consumo).
+5. Evite arredondamentos agressivos.
+6. Não invente valores irreais — prefira aproximações conservadoras.
 
 === PARÂMETROS COPERT (muito importante) ===
 Os parâmetros f0, f1, f2 são coeficientes da equação de potência em kW:
   P(kW) = f0 + f1 × v + f2 × v²
 
-Valores típicos (em kW para f0, kW/(m/s) para f1, kW/(m/s)² para f2):
-- f0: 0.1 a 0.4 (consumo em marcha lenta/fricção)
-- f1: 0.002 a 0.008 (perdas mecânicas)
-- f2: 0.0002 a 0.0005 (arrasto aerodinâmico)
+Valores típicos:
+- f0: 0.05 a 0.5 (consumo em marcha lenta/fricção)
+- f1: 0.0005 a 0.01 (perdas mecânicas)
+- f2: 0.0001 a 0.001 (arrasto aerodinâmico)
 
 ⚠️ ATENÇÃO: Valores muito maiores são COMPLETAMENTE ERRADOS.
    - f0 deve ser MENOR que 0.5
-   - f1 deve ser MENOR que 0.01  
+   - f1 deve ser MENOR que 0.01
    - f2 deve ser MENOR que 0.001
-   - Valores como f0=120, f1=0.8, f2=0.035 são IMPOSSÍVEIS
 
 === EXEMPLO de resposta CORRETA ===
 {
   "make": "Renault",
-  "model": "Clio 1.6 16V",
+  "model": "Clio 1.6 16V Flex",
   "year": 2008,
   "displacement": 1598,
   "fuelType": "flex",
@@ -138,19 +129,30 @@ Valores típicos (em kW para f0, kW/(m/s) para f1, kW/(m/s)² para f2):
   "urbanKmpl": 8.5,
   "highwayKmpl": 13.2,
   "combinedKmpl": 10.5,
-  "mass": 1050,
+  "mass": 1025,
   "grossWeight": 1500,
   "frontalArea": 2.05,
-  "dragCoefficient": 0.32,
+  "dragCoefficient": 0.35,
   "f0": 0.15,
   "f1": 0.008,
   "f2": 0.00035,
   "fuelConversionFactor": 8.5,
-  "peakPowerKw": 82,
+  "peakPowerKw": 84.5,
   "peakTorqueNm": 148,
   "co2_gkm": 145,
   "nox_mgkm": 40,
-  "confidence": "high"
+  "confidence": "high",
+  "inmetroCityKmpl": 11.5,
+  "inmetroHighwayKmpl": 15.0,
+  "userAvgCityKmpl": 10.5,
+  "userAvgHighwayKmpl": 14.5,
+  "inmetroEthanolCityKmpl": 8.0,
+  "inmetroEthanolHighwayKmpl": 10.5,
+  "userAvgEthanolCityKmpl": 7.2,
+  "userAvgEthanolHighwayKmpl": 9.8,
+  "crr": 0.013,
+  "idleLph": 0.9,
+  "baseBsfc": 265
 }
 
 ${JSON_SCHEMA}`;
@@ -158,12 +160,12 @@ ${JSON_SCHEMA}`;
 const VERIFY_PROMPT = (
   vehicle: string,
   data: object,
-) => `Você é um verificador independente de dados COPERT.
+) => `Você é um verificador independente de dados automotivos.
 
 Dados recebidos para: ${vehicle}
 ${JSON.stringify(data, null, 2)}
 
-VERIFIQUE CADA CAMPO CRITICO:
+VERIFIQUE CADA CAMPO CRÍTICO:
 
 1. Consumo (urbano < combinado < rodoviário):
    - urbano deve ser o MENOR (mais consumo em cidade)
@@ -184,7 +186,7 @@ ${JSON_SCHEMA}`;
 const INFER_PROMPT = (
   vehicle: string,
   data: object,
-) => `Você é um engenheiro automotivo criativo calculando parâmetros COPERT.
+) => `Você é um engenheiro automotivo criativo calculando parâmetros de veículo.
 
 Veículo: ${vehicle}
 Dados conhecidos:
@@ -196,8 +198,6 @@ Os dados acima podem ter valores incorretos. SUA TAREFA:
 2. Para f0, f1, f2 e fuelConversionFactor: use sua intuição de engenharia
 
 === GUIA DE ENGENHARIA ===
-Use sua experiência como engenheiro automotivo:
-
 f0 (kW) - Resistência básica:
 - Hatchback pequeno (1.0-1.6L): 0.10-0.18 kW
 - Sedan médio (1.6-2.0L): 0.15-0.25 kW
@@ -219,9 +219,6 @@ fuelConversionFactor:
 - Flex (gasolina): 8.0-8.8
 - Flex (etanol): 5.5-6.2
 - Diesel: 10.0-12.0
-
-Seja criativo! Pense como um engenheiro real escolheria valores
-que funcionam bem em simulações de consumo urbano e rodoviário.
 
 Retorne JSON com valores calculados:
 ${JSON_SCHEMA}`;
@@ -258,8 +255,33 @@ function parseJson(content: string): {
 }
 
 function isValid(data: z.infer<typeof copertCalibrationSchema>): boolean {
-  const validation = validateBasic(data);
+  const validation = validateBasic(data as any);
   return validation.valid && data.confidence !== "low";
+}
+
+function withTelemetryDefaults<T extends Record<string, unknown>>(
+  data: T,
+): T & {
+  weightInmetro: number;
+  weightUser: number;
+  isHybrid: boolean;
+  gnvCylinderWeightKg: number;
+  gnvEfficiencyFactor: number;
+} {
+  return {
+    ...data,
+    weightInmetro: (data as any).weightInmetro ?? 0.6,
+    weightUser: (data as any).weightUser ?? 0.4,
+    isHybrid: (data as any).isHybrid ?? false,
+    gnvCylinderWeightKg: (data as any).gnvCylinderWeightKg ?? 80,
+    gnvEfficiencyFactor: (data as any).gnvEfficiencyFactor ?? 1.32,
+  } as T & {
+    weightInmetro: number;
+    weightUser: number;
+    isHybrid: boolean;
+    gnvCylinderWeightKg: number;
+    gnvEfficiencyFactor: number;
+  };
 }
 
 function getModelForStep(
@@ -293,7 +315,10 @@ export async function calibrateCopert(
           content:
             "Você é um especialista em dados de veículos e emissões. Responda apenas com JSON válido.",
         },
-        { role: "user", content: SEARCH_PROMPT(vehicle) },
+        {
+          role: "user",
+          content: `Busque dados técnicos do veículo: ${vehicle}`,
+        },
       ],
       {
         temperature: 0.1,
@@ -316,12 +341,12 @@ export async function calibrateCopert(
     }
   }
 
-  onProgress?.(`Gerando parâmetros COPERT (${providerType})...`);
+  onProgress?.(`Gerando parâmetros do veículo (${providerType})...`);
 
   const systemMessage: ChatMessage = {
     role: "system",
     content: searchData
-      ? `${SYSTEM_PROMPT}\n\nDADOS ENCONTRADOS NA WEB (use estes valores preferentially):\n${JSON.stringify(searchData, null, 2)}`
+      ? `${SYSTEM_PROMPT}\n\nDADOS ENCONTRADOS NA WEB (use estes valores preferencialmente):\n${JSON.stringify(searchData, null, 2)}`
       : SYSTEM_PROMPT,
   };
   const userMessage: ChatMessage = {
@@ -376,7 +401,7 @@ export async function calibrateCopert(
   if (isValid(parsed.data!)) {
     onProgress?.("Dados encontrados");
     return {
-      data: parsed.data!,
+      data: withTelemetryDefaults(parsed.data!),
       confidence: parsed.data!.confidence,
       similarUsed: false,
       dataSource,
@@ -402,7 +427,7 @@ export async function calibrateCopert(
   if (isValid(parsed.data!)) {
     onProgress?.("Dados encontrados");
     return {
-      data: parsed.data!,
+      data: withTelemetryDefaults(parsed.data!),
       confidence: "medium",
       similarUsed: false,
       dataSource,
@@ -431,7 +456,7 @@ export async function calibrateCopert(
       dataSource = "ai_inferred";
       onProgress?.("Dados encontrados");
       return {
-        data: inferredParsed.data,
+        data: withTelemetryDefaults(inferredParsed.data),
         confidence: inferredParsed.data.confidence,
         similarUsed: false,
         dataSource,
@@ -443,7 +468,7 @@ export async function calibrateCopert(
   dataSource = "ai_inferred";
   onProgress?.("Dados parciais");
   return {
-    data: parsed.data!,
+    data: withTelemetryDefaults(parsed.data!),
     confidence: "low",
     similarUsed: false,
     dataSource,

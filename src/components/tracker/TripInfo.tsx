@@ -1,5 +1,4 @@
 import { formatDistance } from "@/lib/utils";
-import type { ConsumptionFactors } from "@/hooks/useConsumptionModel";
 import type { DriveMode, TripConsumptionBreakdown } from "@/types";
 
 interface TripInfoProps {
@@ -15,7 +14,6 @@ interface TripInfoProps {
   mixedKmPerLiter?: number;
   driveMode?: DriveMode;
   useWorstCaseCity?: boolean;
-  consumptionFactors?: ConsumptionFactors;
   consumptionBreakdown?: TripConsumptionBreakdown | null;
 }
 
