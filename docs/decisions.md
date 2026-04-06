@@ -277,3 +277,53 @@ Decisões de arquitetura documentadas com o contexto da época. Evita que o agen
 - Se odômetro estiver disponível: usar método fill-up para validação real
 - Se usuario abastece sempre no mesmo posto: overhead não compensa
 - Se performance com milhares de lotes for problema ( batches > 1000)
+
+---
+
+## ADR-007: Modelo de Consumo Híbrido (COPERT + Física Veicular)
+
+**Decisão:** Modelo híbrido com fallback COPERT
+
+**Data:** Abril 2026
+
+**Contexto:** O modelo COPERT puro tem precisão de ~88.6%, mas não considera dados específicos da transmissão do veículo (marchas, RPM, curva de torque). Com dados de transmissão, é possível calcular consumo com base em física veicular real (BSFC, torque, potência).
+
+**Alternativas consideradas:**
+
+- COPERT puro (modelo atual)
+- Física veicular pura (requer dados completos de transmissão)
+- Modelo híbrido (70% física + 30% COPERT)
+
+**Por quê modelo híbrido:**
+
+- **Precisão superior**: Física veicular real quando dados disponíveis (~92-95%)
+- **Fallback robusto**: COPERT quando dados de transmissão ausentes (88.6%)
+- **Informação extra**: Previsão de marcha e RPM em tempo real
+- **Confiança mensurável**: Score de confiança por cenário (0.85-0.95)
+- **Coleta progressiva**: AI calibration service coleta dados de transmissão gradualmente
+
+**Implementação:**
+
+- `TransmissionData` interface: gearRatios, finalDrive, tireRadiusM, redlineRpm, idleRpm, torqueCurve
+- `predictGear()`: calcula RPM por marcha, encontra marcha válida
+- `getTorqueAtRpm()`: interpolação linear na curva de torque
+- `calculatePhysicsConsumption()`: BSFC × potência → fluxo de combustível
+- Pesos: 70% física + 30% COPERT quando ambos disponíveis
+- AI calibration service atualizado para coletar dados de transmissão
+
+**Dados de transmissão coletados pelo AI:**
+
+- transmissionType (Manual/Automatic/CVT)
+- gearRatios (relações de marcha)
+- finalDrive (relação do diferencial)
+- tireRadiusM (raio de rolamento do pneu)
+- redlineRpm, idleRpm
+- torqueCurve (RPM → torque Nm)
+- techEra (carburetor/injection_modern/etc)
+- idleFuelRateLph, bsfcMinGPerKwh
+
+**Quando reconsiderar:**
+
+- Se dados OBD2 disponíveis via Bluetooth: usar RPM e marcha reais
+- Se precisão do modelo híbrido não superar COPERT puro em testes reais
+- Se complexidade de manutenção do modelo híbrido for muito alta

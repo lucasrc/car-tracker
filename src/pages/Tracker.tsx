@@ -6,9 +6,11 @@ import { TripControls } from "@/components/tracker/TripControls";
 import { DrivingPanel } from "@/components/tracker/DrivingPanel";
 import { FuelBar } from "@/components/tracker/FuelBar";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { SimulationControls } from "@/components/tracker/SimulationControls";
 import { useTripStore } from "@/stores/useTripStore";
 import { useRadarStore } from "@/stores/useRadarStore";
 import { useGeolocation } from "@/hooks/useGeolocation";
+import { useLocationProvider } from "@/hooks/useLocationProvider";
 import { useWakeLock } from "@/hooks/useWakeLock";
 import { useSpeedFilter } from "@/hooks/useSpeedFilter";
 import { useTelemetryEngine } from "@/hooks/useTelemetryEngine";
@@ -62,7 +64,6 @@ export function Tracker() {
   } = useTripStore();
 
   const {
-    position,
     isWatching,
     startWatching,
     stopWatching,
@@ -93,12 +94,16 @@ export function Tracker() {
   const fuelInventory = useFuelInventory(activeVehicle?.id || "");
   const { nearestRadar, currentSpeedingEvent } = useRadarStore();
   const inclination = useInclination({ enabled: status === "recording" });
+  const location = useLocationProvider();
+  const debugModeEnabled = useAppStore((s) => s.debugModeEnabled);
+  const debugModeShowRadars = useAppStore((s) => s.debugModeShowRadars);
+  const pos = location.position;
 
   const nearbyRadarMaxSpeed = (() => {
-    if (!nearestRadar || !position) return undefined;
+    if (!nearestRadar || !pos) return undefined;
     const dist = calculateDistanceKm(
-      position.lat,
-      position.lng,
+      pos.lat,
+      pos.lng,
       nearestRadar.lat,
       nearestRadar.lng,
     );
@@ -151,21 +156,16 @@ export function Tracker() {
 
   const lastGpsDistanceRef = useRef(0);
   useEffect(() => {
-    if (position?.altitude !== undefined) {
+    if (pos?.altitude !== undefined) {
       const lastPos = lastValidPositionRef.current;
       let distance = 0;
       if (lastPos) {
-        distance = vincentyDistance(
-          lastPos.lat,
-          lastPos.lng,
-          position.lat,
-          position.lng,
-        );
+        distance = vincentyDistance(lastPos.lat, lastPos.lng, pos.lat, pos.lng);
       }
-      inclination.addGpsReading(position.altitude, distance);
+      inclination.addGpsReading(pos.altitude, distance);
       lastGpsDistanceRef.current = distance;
     }
-  }, [position?.altitude, position?.lat, position?.lng, inclination]);
+  }, [pos?.altitude, pos?.lat, pos?.lng, inclination]);
 
   useEffect(() => {
     const vehicleFuelType = activeVehicle
@@ -270,6 +270,14 @@ export function Tracker() {
       resetSpeedFilter();
       resetDriveMode();
       lastValidPositionRef.current = null;
+
+      if (debugModeEnabled) {
+        // In simulation mode: skip GPS warmup, start immediately
+        startTrip();
+        await requestWakeLock();
+        return;
+      }
+
       setIsGpsWarming(true);
       setWarmupStartTime(Date.now());
       startWatching();
@@ -379,15 +387,15 @@ export function Tracker() {
     }
 
     const checkWarmup = () => {
-      if (!position || warmupStartTime === null) {
+      if (!pos || warmupStartTime === null) {
         return;
       }
 
       const now = Date.now();
       const elapsedTime = now - warmupStartTime;
       const hasGoodAccuracy =
-        position.accuracy !== undefined &&
-        position.accuracy < GPS_CONFIG.warmupMinAccuracyMeters;
+        pos.accuracy !== undefined &&
+        pos.accuracy < GPS_CONFIG.warmupMinAccuracyMeters;
       const hasMaxTime = elapsedTime >= GPS_CONFIG.warmupMaxTimeMs;
 
       if (hasGoodAccuracy || hasMaxTime) {
@@ -399,50 +407,112 @@ export function Tracker() {
 
     const interval = setInterval(checkWarmup, 1000);
     return () => clearInterval(interval);
-  }, [isGpsWarming, position, warmupStartTime, handleActualStart]);
+  }, [isGpsWarming, pos, warmupStartTime, handleActualStart]);
 
+  // ---------- Debug/Simulation: process simulated positions ----------
   useEffect(() => {
-    if (position && status === "recording") {
+    if (!debugModeEnabled || status !== "recording") return;
+    const simPos = location.simPosition;
+    if (!simPos) return;
+
+    const speedKmh = location.speed;
+    setCurrentSpeed(speedKmh);
+    registerStopSample(simPos, speedKmh);
+
+    const lastPos = lastValidPositionRef.current;
+
+    if (!lastPos) {
+      // First point
+      addPosition(simPos);
+      addDriveModePosition(simPos);
+      lastValidPositionRef.current = {
+        lat: simPos.lat,
+        lng: simPos.lng,
+        timestamp: simPos.timestamp,
+      };
+      return;
+    }
+
+    // Only process if position actually changed (speed > 0)
+    if (speedKmh <= 0) return;
+
+    const timeDelta = simPos.timestamp - lastPos.timestamp;
+    if (timeDelta < GPS_CONFIG.minTimeDeltaMs) return;
+
+    const distance = vincentyDistance(
+      lastPos.lat,
+      lastPos.lng,
+      simPos.lat,
+      simPos.lng,
+    );
+    if (distance < GPS_CONFIG.minDistanceMeters) return;
+
+    const distanceKm = distance / 1000;
+    if (estimatedConsumption > 0) {
+      const fuelUsed = distanceKm / estimatedConsumption;
+      if (fuelUsed > 0) setTotalFuelUsed(storeTotalFuelUsed + fuelUsed);
+    }
+
+    addPosition(simPos);
+    addDriveModePosition(simPos);
+    lastValidPositionRef.current = {
+      lat: simPos.lat,
+      lng: simPos.lng,
+      timestamp: simPos.timestamp,
+    };
+  }, [
+    debugModeEnabled,
+    location.simPosition,
+    location.speed,
+    status,
+    addPosition,
+    addDriveModePosition,
+    registerStopSample,
+    setCurrentSpeed,
+    setTotalFuelUsed,
+    storeTotalFuelUsed,
+    estimatedConsumption,
+  ]);
+
+  // ---------- Real GPS: process positions ----------
+  useEffect(() => {
+    if (debugModeEnabled) return; // handled above
+    if (pos && status === "recording") {
       const filteredSpeed =
-        position.speed !== undefined
-          ? addSpeedReading(position.speed, position.timestamp)
-          : 0;
+        pos.speed !== undefined ? addSpeedReading(pos.speed, pos.timestamp) : 0;
       const speedKmh = speedToKmh(filteredSpeed);
       setCurrentSpeed(speedKmh);
-      registerStopSample(position, speedKmh);
+      registerStopSample(pos, speedKmh);
 
       const lastPos = lastValidPositionRef.current;
       const isFirstPoint = !lastPos;
 
       // Always save the first point, even with poor accuracy/speed
       if (isFirstPoint) {
-        addPosition(position);
-        addDriveModePosition(position);
+        addPosition(pos);
+        addDriveModePosition(pos);
         lastValidPositionRef.current = {
-          lat: position.lat,
-          lng: position.lng,
-          timestamp: position.timestamp,
+          lat: pos.lat,
+          lng: pos.lng,
+          timestamp: pos.timestamp,
         };
         return;
       }
 
       // Apply filters for subsequent points
       if (
-        position.accuracy !== undefined &&
-        position.accuracy > GPS_CONFIG.maxAccuracyMeters
+        pos.accuracy !== undefined &&
+        pos.accuracy > GPS_CONFIG.maxAccuracyMeters
       ) {
         return;
       }
 
-      if (
-        position.speed !== undefined &&
-        position.speed < GPS_CONFIG.minSpeedMs
-      ) {
+      if (pos.speed !== undefined && pos.speed < GPS_CONFIG.minSpeedMs) {
         return;
       }
 
       if (lastPos) {
-        const timeDelta = position.timestamp - lastPos.timestamp;
+        const timeDelta = pos.timestamp - lastPos.timestamp;
         if (timeDelta < GPS_CONFIG.minTimeDeltaMs) {
           return;
         }
@@ -455,9 +525,9 @@ export function Tracker() {
               timestamp: lastPos.timestamp,
             },
             {
-              lat: position.lat,
-              lng: position.lng,
-              timestamp: position.timestamp,
+              lat: pos.lat,
+              lng: pos.lng,
+              timestamp: pos.timestamp,
             },
           )
         ) {
@@ -467,8 +537,8 @@ export function Tracker() {
         const distance = vincentyDistance(
           lastPos.lat,
           lastPos.lng,
-          position.lat,
-          position.lng,
+          pos.lat,
+          pos.lng,
         );
         if (distance < GPS_CONFIG.minDistanceMeters) {
           return;
@@ -489,16 +559,17 @@ export function Tracker() {
         }
       }
 
-      addPosition(position);
-      addDriveModePosition(position);
+      addPosition(pos);
+      addDriveModePosition(pos);
       lastValidPositionRef.current = {
-        lat: position.lat,
-        lng: position.lng,
-        timestamp: position.timestamp,
+        lat: pos.lat,
+        lng: pos.lng,
+        timestamp: pos.timestamp,
       };
     }
   }, [
-    position,
+    debugModeEnabled,
+    pos,
     status,
     addPosition,
     registerStopSample,
@@ -511,7 +582,9 @@ export function Tracker() {
     stats.distanceMeters,
   ]);
 
+  // Auto-start GPS watching only in non-debug mode
   useEffect(() => {
+    if (debugModeEnabled) return; // simulation handles its own position
     if (status === "recording" && !isWatching) {
       startWatching();
     } else if (status === "idle" && !isWatching) {
@@ -519,19 +592,28 @@ export function Tracker() {
     } else if (status === "paused" && isWatching) {
       stopWatching();
     }
-  }, [status, isWatching, startWatching, stopWatching]);
+  }, [debugModeEnabled, status, isWatching, startWatching, stopWatching]);
 
-  const effectivePosition = isSimulating
-    ? simulatedPosition
-    : isAutoTracking
-      ? (autoTrackerPoints[autoTrackerPoints.length - 1] ?? null)
-      : position;
-  const effectivePath = isSimulating
-    ? simulatedPath
-    : isAutoTracking
-      ? autoTrackerPoints
-      : trip?.path || [];
-  const displaySpeed = isSimulating ? simulatedSpeed * 3.6 : currentSpeed;
+  // Determine effective position/path/speed for the UI
+  const effectivePosition = debugModeEnabled
+    ? location.simPosition
+    : isSimulating
+      ? simulatedPosition
+      : isAutoTracking
+        ? (autoTrackerPoints[autoTrackerPoints.length - 1] ?? null)
+        : pos;
+  const effectivePath = debugModeEnabled
+    ? trip?.path || []
+    : isSimulating
+      ? simulatedPath
+      : isAutoTracking
+        ? autoTrackerPoints
+        : trip?.path || [];
+  const displaySpeed = debugModeEnabled
+    ? location.speed
+    : isSimulating
+      ? simulatedSpeed * 3.6
+      : currentSpeed;
   const simulatedDistance = isSimulating
     ? calculateTotalDistance(simulatedPath)
     : 0;
@@ -584,12 +666,15 @@ export function Tracker() {
         <MapTracker
           position={effectivePosition}
           path={effectivePath}
-          showRadars={!!effectivePosition}
+          showRadars={
+            debugModeEnabled ? debugModeShowRadars : !!effectivePosition
+          }
           currentSpeed={displaySpeed}
           onMapReady={setMapInstance}
           isSpeeding={!!currentSpeedingEvent}
           deviceOrientation={deviceOrientation}
           filteredHeading={filteredHeading}
+          isSimulation={debugModeEnabled}
         />
       </div>
 
@@ -651,7 +736,7 @@ export function Tracker() {
               onStop={handleStopRequest}
               onCancel={handleCancelWarmup}
               isGpsWarming={isGpsWarming}
-              gpsAccuracy={position?.accuracy}
+              gpsAccuracy={pos?.accuracy}
               warmupStartTime={warmupStartTime}
             />
           </div>
@@ -660,15 +745,11 @@ export function Tracker() {
         <button
           onClick={() => {
             getCurrentPosition();
-            if (mapInstance && position) {
-              mapInstance.setView(
-                [position.lat, position.lng],
-                mapInstance.getZoom(),
-                {
-                  animate: true,
-                  duration: 0.5,
-                },
-              );
+            if (mapInstance && pos) {
+              mapInstance.setView([pos.lat, pos.lng], mapInstance.getZoom(), {
+                animate: true,
+                duration: 0.5,
+              });
             }
           }}
           className="pointer-events-auto fixed bottom-60 right-4 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-slate-800/70 shadow-md transition-all hover:scale-105 active:scale-95"
@@ -689,6 +770,16 @@ export function Tracker() {
           </svg>
         </button>
       </div>
+
+      {debugModeEnabled && status === "recording" && (
+        <SimulationControls
+          isActive={status === "recording"}
+          speed={location.speed}
+          grade={location.grade}
+          onSpeedChange={location.setSpeed}
+          onGradeChange={location.setGrade}
+        />
+      )}
 
       <ConfirmDialog
         open={showConfirmDialog}

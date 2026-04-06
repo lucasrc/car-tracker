@@ -20,6 +20,10 @@ export function EditCarModal({ vehicle, onClose }: EditCarModalProps) {
   const [userAvgEthanolCityKmpl, setUserAvgEthanolCityKmpl] = useState("");
   const [userAvgEthanolHighwayKmpl, setUserAvgEthanolHighwayKmpl] =
     useState("");
+  const [userAvgGnvCityKmpl, setUserAvgGnvCityKmpl] = useState("");
+  const [userAvgGnvHighwayKmpl, setUserAvgGnvHighwayKmpl] = useState("");
+  const [inmetroGnvCityKmpl, setInmetroGnvCityKmpl] = useState("");
+  const [inmetroGnvHighwayKmpl, setInmetroGnvHighwayKmpl] = useState("");
   const [fuelCapacity, setFuelCapacity] = useState("");
   const [recalibrateInput, setRecalibrateInput] = useState("");
   const [showRecalibrate, setShowRecalibrate] = useState(false);
@@ -39,6 +43,14 @@ export function EditCarModal({ vehicle, onClose }: EditCarModalProps) {
       );
       setUserAvgEthanolHighwayKmpl(
         (vehicle.userAvgEthanolHighwayKmpl ?? "").toString(),
+      );
+      setUserAvgGnvCityKmpl((vehicle.userAvgGnvCityKmpl ?? "").toString());
+      setUserAvgGnvHighwayKmpl(
+        (vehicle.userAvgGnvHighwayKmpl ?? "").toString(),
+      );
+      setInmetroGnvCityKmpl((vehicle.inmetroGnvCityKmpl ?? "").toString());
+      setInmetroGnvHighwayKmpl(
+        (vehicle.inmetroGnvHighwayKmpl ?? "").toString(),
       );
       setFuelCapacity(vehicle.fuelCapacity.toString());
       setRecalibrateInput(vehicle.calibrationInput);
@@ -85,6 +97,18 @@ export function EditCarModal({ vehicle, onClose }: EditCarModalProps) {
       userAvgEthanolHighwayKmpl: userAvgEthanolHighwayKmpl
         ? parseFloat(userAvgEthanolHighwayKmpl)
         : vehicle.userAvgEthanolHighwayKmpl,
+      userAvgGnvCityKmpl: userAvgGnvCityKmpl
+        ? parseFloat(userAvgGnvCityKmpl)
+        : vehicle.userAvgGnvCityKmpl,
+      userAvgGnvHighwayKmpl: userAvgGnvHighwayKmpl
+        ? parseFloat(userAvgGnvHighwayKmpl)
+        : vehicle.userAvgGnvHighwayKmpl,
+      inmetroGnvCityKmpl: inmetroGnvCityKmpl
+        ? parseFloat(inmetroGnvCityKmpl)
+        : vehicle.inmetroGnvCityKmpl,
+      inmetroGnvHighwayKmpl: inmetroGnvHighwayKmpl
+        ? parseFloat(inmetroGnvHighwayKmpl)
+        : vehicle.inmetroGnvHighwayKmpl,
       urbanKmpl: parseFloat(userAvgCityKmpl) || vehicle.urbanKmpl,
       highwayKmpl: parseFloat(userAvgHighwayKmpl) || vehicle.highwayKmpl,
       combinedKmpl:
@@ -286,6 +310,108 @@ export function EditCarModal({ vehicle, onClose }: EditCarModalProps) {
                           setUserAvgEthanolHighwayKmpl(e.target.value)
                         }
                         className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 pr-12 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        placeholder="—"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">
+                        km/l
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {vehicle.fuelType === "gasoline" && (
+            <div className="rounded-xl bg-gray-50 p-4">
+              <p className="mb-3 text-sm font-medium text-gray-700">
+                Consumo — GNV (km/l)
+              </p>
+              <div>
+                <p className="mb-2 text-xs font-medium text-gray-500 uppercase tracking-wide">
+                  Estimativa do Usuário
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="mb-1 block text-xs text-gray-400">
+                      Cidade
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        value={userAvgGnvCityKmpl}
+                        onChange={(e) => setUserAvgGnvCityKmpl(e.target.value)}
+                        className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 pr-12 text-sm font-medium text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        placeholder="—"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">
+                        km/l
+                      </span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs text-gray-400">
+                      Estrada
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        value={userAvgGnvHighwayKmpl}
+                        onChange={(e) =>
+                          setUserAvgGnvHighwayKmpl(e.target.value)
+                        }
+                        className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 pr-12 text-sm font-medium text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        placeholder="—"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">
+                        km/l
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-3">
+                <p className="mb-2 text-xs font-medium text-gray-500 uppercase tracking-wide">
+                  INMETRO
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="mb-1 block text-xs text-gray-400">
+                      Cidade
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        value={inmetroGnvCityKmpl}
+                        onChange={(e) => setInmetroGnvCityKmpl(e.target.value)}
+                        className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 pr-12 text-sm font-medium text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        placeholder="—"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">
+                        km/l
+                      </span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs text-gray-400">
+                      Estrada
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        value={inmetroGnvHighwayKmpl}
+                        onChange={(e) =>
+                          setInmetroGnvHighwayKmpl(e.target.value)
+                        }
+                        className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 pr-12 text-sm font-medium text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         placeholder="—"
                       />
                       <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">

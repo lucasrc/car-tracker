@@ -7,6 +7,8 @@ interface AppState {
   selectedCarBluetoothName: string | null;
   selectedCarBluetoothAddress: string | null;
   autoTrackingEnabled: boolean;
+  debugModeEnabled: boolean;
+  debugModeShowRadars: boolean;
 }
 
 interface AppActions {
@@ -18,6 +20,8 @@ interface AppActions {
     address: string | null,
   ) => void;
   setAutoTrackingEnabled: (enabled: boolean) => void;
+  setDebugModeEnabled: (enabled: boolean) => void;
+  setDebugModeShowRadars: (enabled: boolean) => void;
 }
 
 export const useAppStore = create<AppState & AppActions>()(
@@ -29,6 +33,8 @@ export const useAppStore = create<AppState & AppActions>()(
         selectedCarBluetoothName: null,
         selectedCarBluetoothAddress: null,
         autoTrackingEnabled: false,
+        debugModeEnabled: false,
+        debugModeShowRadars: false,
         setTheme: (theme) => set({ theme }),
         toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
         setSidebarOpen: (open) => set({ sidebarOpen: open }),
@@ -39,6 +45,9 @@ export const useAppStore = create<AppState & AppActions>()(
           }),
         setAutoTrackingEnabled: (enabled) =>
           set({ autoTrackingEnabled: enabled }),
+        setDebugModeEnabled: (enabled) => set({ debugModeEnabled: enabled }),
+        setDebugModeShowRadars: (enabled) =>
+          set({ debugModeShowRadars: enabled }),
       }),
       { name: "app-store" },
     ),

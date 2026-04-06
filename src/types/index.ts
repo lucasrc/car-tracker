@@ -157,6 +157,24 @@ export type CopertFuelType = "gasoline" | "diesel" | "ethanol" | "flex";
 
 export type CopertConfidence = "high" | "medium" | "low";
 
+export type TechEra =
+  | "carburetor"
+  | "injection_early"
+  | "injection_modern"
+  | "direct_injection";
+
+export type TransmissionType = "Manual" | "Automatic" | "CVT";
+
+export interface TransmissionData {
+  type: TransmissionType;
+  gearRatios: number[];
+  finalDrive: number;
+  tireRadiusM: number;
+  redlineRpm: number;
+  idleRpm: number;
+  torqueCurve: Record<number, number>;
+}
+
 export type DataSource = "web" | "ai_inferred" | "manual";
 
 export interface CopertCalibration {
@@ -192,6 +210,10 @@ export interface CopertCalibration {
   inmetroEthanolHighwayKmpl?: number;
   userAvgEthanolCityKmpl?: number;
   userAvgEthanolHighwayKmpl?: number;
+  inmetroGnvCityKmpl?: number;
+  inmetroGnvHighwayKmpl?: number;
+  userAvgGnvCityKmpl?: number;
+  userAvgGnvHighwayKmpl?: number;
   crr: number;
   idleLph: number;
   baseBsfc: number;
@@ -200,6 +222,10 @@ export interface CopertCalibration {
   isHybrid: boolean;
   gnvCylinderWeightKg: number;
   gnvEfficiencyFactor: number;
+  transmission?: TransmissionData;
+  techEra?: TechEra;
+  idleFuelRateLph?: number;
+  bsfcMinGPerKwh?: number;
 }
 
 export interface CopertCalibrationRecord extends CopertCalibration {
@@ -247,6 +273,10 @@ export interface Vehicle {
   inmetroEthanolHighwayKmpl?: number;
   userAvgEthanolCityKmpl?: number;
   userAvgEthanolHighwayKmpl?: number;
+  inmetroGnvCityKmpl?: number;
+  inmetroGnvHighwayKmpl?: number;
+  userAvgGnvCityKmpl?: number;
+  userAvgGnvHighwayKmpl?: number;
   crr: number;
   idleLph: number;
   baseBsfc: number;
@@ -255,6 +285,10 @@ export interface Vehicle {
   isHybrid: boolean;
   gnvCylinderWeightKg: number;
   gnvEfficiencyFactor: number;
+  transmission?: TransmissionData;
+  techEra?: TechEra;
+  idleFuelRateLph?: number;
+  bsfcMinGPerKwh?: number;
 }
 
 export interface InclinationCalibration {
@@ -280,4 +314,8 @@ export interface TripTelemetryData {
     mixed: number;
     highway: number;
   };
+  gearDistribution?: Record<number, number>;
+  avgRpm?: number;
+  maxRpm?: number;
+  hasTransmissionData?: boolean;
 }

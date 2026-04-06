@@ -4,7 +4,7 @@ import { useTripStore } from "./useTripStore";
 import type { Settings, Trip } from "@/types";
 
 // Mock do db
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+ 
 const mockSaveCurrentTrip = vi.fn((_trip: Trip) => Promise.resolve());
 const mockClearCurrentTrip = vi.fn(() => Promise.resolve());
 const mockSaveTrip = vi.fn((trip: Trip) => Promise.resolve(trip.id));

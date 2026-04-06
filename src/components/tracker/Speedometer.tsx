@@ -2,12 +2,18 @@ interface SpeedometerProps {
   currentSpeed: number;
   maxSpeed?: number;
   isSpeeding?: boolean;
+  currentGear?: number;
+  currentRpm?: number;
+  hasTransmissionData?: boolean;
 }
 
 export function Speedometer({
   currentSpeed,
   maxSpeed,
   isSpeeding = false,
+  currentGear,
+  currentRpm,
+  hasTransmissionData,
 }: SpeedometerProps) {
   const displayValue = currentSpeed === 0 ? "--" : Math.round(currentSpeed);
 
@@ -18,6 +24,18 @@ export function Speedometer({
       : "border-white/60";
 
   const bgColor = isSpeeding ? "bg-red-600/80" : "bg-black/50";
+
+  const displayGear =
+    hasTransmissionData && currentGear !== undefined
+      ? currentGear === 0
+        ? "N"
+        : `${currentGear}ª`
+      : null;
+
+  const displayRpm =
+    hasTransmissionData && currentRpm !== undefined && currentSpeed > 0
+      ? Math.round(currentRpm)
+      : null;
 
   return (
     <div
@@ -34,6 +52,18 @@ export function Speedometer({
           <span className="text-[10px] font-medium text-white/50 mt-0.5">
             máx: {maxSpeed}
           </span>
+        )}
+        {displayGear !== null && (
+          <div className="flex items-center gap-1 mt-1">
+            <span className="text-xs font-bold text-green-400">
+              {displayGear}
+            </span>
+            {displayRpm !== null && (
+              <span className="text-[10px] font-medium text-white/60">
+                {displayRpm} RPM
+              </span>
+            )}
+          </div>
         )}
       </div>
     </div>

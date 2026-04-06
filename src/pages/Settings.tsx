@@ -1,13 +1,11 @@
 import { useEffect, useState } from "react";
-import { getSettings, saveSettings, addRefuel } from "@/lib/db";
-import type { Settings as SettingsData, FuelType, Vehicle } from "@/types";
+import type { Vehicle } from "@/types";
 import { isAndroid } from "@/lib/platform";
 import { useAppStore } from "@/stores/useAppStore";
 import { useVehicleStore } from "@/stores/useVehicleStore";
 import { ClassicBluetooth } from "@/services/classicBluetooth";
 import type { ClassicBluetoothDevice } from "@/services/classicBluetooth";
 import { Tabs } from "@/components/ui/Tabs";
-import { RefuelModal } from "@/components/ui/RefuelModal";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { CarCard } from "@/components/settings/CarCard";
 import { AddCarModal } from "@/components/settings/AddCarModal";
@@ -15,18 +13,12 @@ import { EditCarModal } from "@/components/settings/EditCarModal";
 import {
   TruckIcon,
   CpuChipIcon,
-  BuildingStorefrontIcon,
   InformationCircleIcon,
   PlusIcon,
+  BeakerIcon,
 } from "@heroicons/react/24/outline";
 
 export function Settings() {
-  const [settings, setSettings] = useState<SettingsData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [refueling, setRefueling] = useState(false);
-  const [showRefuelModal, setShowRefuelModal] = useState(false);
   const [bondedDevices, setBondedDevices] = useState<ClassicBluetoothDevice[]>(
     [],
   );
@@ -43,13 +35,16 @@ export function Settings() {
   const setSelectedCarBluetooth = useAppStore((s) => s.setSelectedCarBluetooth);
   const autoTrackingEnabled = useAppStore((s) => s.autoTrackingEnabled);
   const setAutoTrackingEnabled = useAppStore((s) => s.setAutoTrackingEnabled);
+  const debugModeEnabled = useAppStore((s) => s.debugModeEnabled);
+  const setDebugModeEnabled = useAppStore((s) => s.setDebugModeEnabled);
+  const debugModeShowRadars = useAppStore((s) => s.debugModeShowRadars);
+  const setDebugModeShowRadars = useAppStore((s) => s.setDebugModeShowRadars);
 
   const {
     vehicles,
     activeVehicle,
     setActiveVehicle,
     deleteVehicle,
-    updateVehicleFuelLevel,
     loadVehicles,
   } = useVehicleStore();
 
@@ -60,24 +55,11 @@ export function Settings() {
   );
 
   useEffect(() => {
-    loadSettings();
     if (isAndroid) {
       checkBtAvailability();
     }
     loadVehicles();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const loadSettings = async () => {
-    try {
-      const s = await getSettings();
-      setSettings(s);
-    } catch (err) {
-      console.error("Error loading settings:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const checkBtAvailability = async () => {
     try {
@@ -134,66 +116,6 @@ export function Settings() {
     }
   };
 
-  const handleSave = async () => {
-    if (!settings) return;
-    setSaving(true);
-    try {
-      await saveSettings(settings);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    } catch (err) {
-      console.error("Error saving settings:", err);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleRefuel = async (
-    liters: number,
-    pricePerLiter: number,
-    fuelType: FuelType,
-  ) => {
-    if (!activeVehicle) {
-      alert("Selecione um veículo para abastecimento.");
-      return;
-    }
-    setRefueling(true);
-    setShowRefuelModal(false);
-    try {
-      const newFuel = Math.min(
-        activeVehicle.currentFuel + liters,
-        activeVehicle.fuelCapacity,
-      );
-      await updateVehicleFuelLevel(activeVehicle.id, newFuel);
-      await addRefuel(liters, pricePerLiter, fuelType, activeVehicle.id);
-    } catch (err) {
-      console.error("Error refueling:", err);
-      alert("Erro ao abastecimento. Tente novamente.");
-    } finally {
-      setRefueling(false);
-    }
-  };
-
-  const handleFuelPriceChange = (value: string) => {
-    if (!settings) return;
-    const numValue = parseFloat(value) || 0;
-    setSettings({ ...settings, fuelPrice: numValue });
-  };
-
-  const handleFuelPriceBlur = async () => {
-    if (!settings) return;
-    setSaving(true);
-    try {
-      await saveSettings(settings);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    } catch (err) {
-      console.error("Error saving fuel price:", err);
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const handleSelectCar = async (id: string) => {
     await setActiveVehicle(id);
   };
@@ -203,18 +125,6 @@ export function Settings() {
     await deleteVehicle(deletingVehicleId);
     setDeletingVehicleId(null);
   };
-
-  const tankPercent = settings?.fuelCapacity
-    ? (settings.currentFuel / settings.fuelCapacity) * 100
-    : 0;
-
-  if (loading) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-gradient-to-br from-blue-500 to-blue-700">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-white/30 border-t-white"></div>
-      </div>
-    );
-  }
 
   const tabCarro = (
     <div className="space-y-4">
@@ -269,14 +179,6 @@ export function Settings() {
           ))}
         </div>
       )}
-
-      <button
-        onClick={handleSave}
-        disabled={saving}
-        className="w-full rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 py-4 text-lg font-semibold text-white shadow-lg transition-all hover:scale-[1.02] hover:shadow-xl disabled:opacity-50"
-      >
-        {saving ? "Salvando..." : saved ? "Salvo!" : "Salvar Configurações"}
-      </button>
     </div>
   );
 
@@ -380,116 +282,11 @@ export function Settings() {
             </div>
             {autoTrackingEnabled && (
               <p className="mt-2 text-xs text-green-600 font-medium">
-                Ativo - o rastreamento iniciará automaticamente
+                Ativo - o rastreamento He'll iniciar automaticamente
               </p>
             )}
           </div>
         )}
-      </div>
-    </div>
-  );
-
-  const tabCombustivel = (
-    <div className="space-y-6">
-      <div className="rounded-3xl bg-white p-6 shadow-lg">
-        <h3 className="mb-6 text-base font-semibold text-gray-900">
-          Nível do Tanque
-        </h3>
-
-        <div className="mb-6">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-sm font-medium text-gray-700">
-              Nível Atual
-            </span>
-            <span className="text-2xl font-bold text-gray-900">
-              {settings?.currentFuel?.toFixed(1) || 0}L
-            </span>
-          </div>
-          <div className="h-4 w-full overflow-hidden rounded-full bg-gray-200">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-yellow-400 to-orange-500 transition-all"
-              style={{ width: `${tankPercent}%` }}
-            />
-          </div>
-          <p className="mt-1 text-xs text-gray-500">
-            {settings?.fuelCapacity
-              ? `${tankPercent.toFixed(0)}% do tanque`
-              : "0% do tanque"}
-          </p>
-        </div>
-      </div>
-
-      <div className="rounded-3xl bg-white p-6 shadow-lg">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-900">
-            Preço da Gasolina
-          </h3>
-          {saving && (
-            <span className="text-sm text-blue-600 font-medium">
-              Salvando...
-            </span>
-          )}
-          {!saving && saved && (
-            <span className="text-sm text-green-600 font-medium">Salvo!</span>
-          )}
-        </div>
-        <p className="mb-4 text-sm text-gray-500">
-          Este é o preço base usado para calcular o custo de combustível em cada
-          viagem.
-        </p>
-
-        <div className="relative">
-          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm text-gray-400">
-            R$
-          </span>
-          <input
-            type="number"
-            step="0.01"
-            min="0"
-            value={settings?.fuelPrice || ""}
-            onChange={(e) => handleFuelPriceChange(e.target.value)}
-            onBlur={handleFuelPriceBlur}
-            className="w-full rounded-xl border border-gray-200 bg-gray-50 pl-10 py-3 pr-12 text-lg font-medium text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-            placeholder="5.00"
-          />
-          <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-gray-400">
-            /L
-          </span>
-        </div>
-        <p className="mt-2 text-xs text-gray-400">
-          O valor é salvo automaticamente ao sair do campo
-        </p>
-      </div>
-
-      <div className="rounded-3xl bg-white p-6 shadow-lg">
-        <h3 className="mb-6 text-base font-semibold text-gray-900">
-          Abastecer
-        </h3>
-
-        <button
-          type="button"
-          onClick={() => setShowRefuelModal(true)}
-          disabled={refueling}
-          className="flex w-full items-center justify-center gap-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 px-6 py-4 font-semibold text-white shadow-lg transition-all hover:scale-[1.02] hover:shadow-xl disabled:opacity-50"
-        >
-          <svg
-            className="h-6 w-6"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-            />
-          </svg>
-          {refueling ? "Processando..." : "Registrar Abastecimento"}
-        </button>
-        <p className="mt-3 text-center text-xs text-gray-500">
-          Clique para abrir o modal de abastecimento
-        </p>
       </div>
     </div>
   );
@@ -592,6 +389,71 @@ export function Settings() {
     </div>
   );
 
+  const tabDesenvolvedor = (
+    <div className="space-y-6">
+      <div className="rounded-3xl bg-white p-6 shadow-lg">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-base font-semibold text-gray-900">
+              Modo Simulador
+            </h3>
+            <p className="text-sm text-gray-500 mt-1">
+              Ative para testar o modelo de consumo com velocidade e inclinação
+              simulados
+            </p>
+          </div>
+          <button
+            onClick={() => setDebugModeEnabled(!debugModeEnabled)}
+            className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${
+              debugModeEnabled ? "bg-blue-600" : "bg-gray-300"
+            }`}
+          >
+            <span
+              className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                debugModeEnabled ? "translate-x-6" : "translate-x-1"
+              }`}
+            />
+          </button>
+        </div>
+        {debugModeEnabled && (
+          <div className="mt-4 space-y-3">
+            <div className="rounded-lg bg-blue-50 p-4 border border-blue-200">
+              <p className="text-sm text-blue-700 font-medium">
+                Modo simulador ativado
+              </p>
+              <p className="text-xs text-blue-600 mt-1">
+                Durante o rastreamento, controles de simulação aparecerão no
+                canto direito da tela
+              </p>
+            </div>
+            <div className="flex items-center justify-between rounded-lg bg-gray-50 p-3 border border-gray-200">
+              <div>
+                <p className="text-sm font-medium text-gray-800">
+                  Mostrar radares
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Exibir câmeras de velocidade no mapa durante simulação
+                </p>
+              </div>
+              <button
+                onClick={() => setDebugModeShowRadars(!debugModeShowRadars)}
+                className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${
+                  debugModeShowRadars ? "bg-blue-600" : "bg-gray-300"
+                }`}
+              >
+                <span
+                  className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                    debugModeShowRadars ? "translate-x-6" : "translate-x-1"
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   const tabs = [
     {
       id: "carro",
@@ -610,10 +472,10 @@ export function Settings() {
         ]
       : []),
     {
-      id: "combustivel",
-      label: "Combustível",
-      icon: <BuildingStorefrontIcon className="w-5 h-5" />,
-      content: tabCombustivel,
+      id: "desenvolvedor",
+      label: "Dev",
+      icon: <BeakerIcon className="w-5 h-5" />,
+      content: tabDesenvolvedor,
     },
     {
       id: "sobre",
@@ -667,21 +529,6 @@ export function Settings() {
         variant="danger"
         onConfirm={handleDeleteCar}
         onCancel={() => setDeletingVehicleId(null)}
-      />
-
-      <RefuelModal
-        open={showRefuelModal}
-        defaultFuelType={
-          (activeVehicle?.fuelType === "gasoline"
-            ? "gasolina"
-            : activeVehicle?.fuelType === "ethanol"
-              ? "etanol"
-              : "flex") as FuelType
-        }
-        currentFuel={activeVehicle?.currentFuel || 0}
-        fuelCapacity={activeVehicle?.fuelCapacity || 50}
-        onConfirm={handleRefuel}
-        onCancel={() => setShowRefuelModal(false)}
       />
     </div>
   );

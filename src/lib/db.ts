@@ -203,6 +203,18 @@ db.version(12)
         if (typeof v.gnvEfficiencyFactor === "undefined") {
           v.gnvEfficiencyFactor = 1.32;
         }
+        if (typeof v.inmetroGnvCityKmpl === "undefined") {
+          v.inmetroGnvCityKmpl = v.inmetroCityKmpl;
+        }
+        if (typeof v.inmetroGnvHighwayKmpl === "undefined") {
+          v.inmetroGnvHighwayKmpl = v.inmetroHighwayKmpl;
+        }
+        if (typeof v.userAvgGnvCityKmpl === "undefined") {
+          v.userAvgGnvCityKmpl = v.userAvgCityKmpl;
+        }
+        if (typeof v.userAvgGnvHighwayKmpl === "undefined") {
+          v.userAvgGnvHighwayKmpl = v.userAvgHighwayKmpl;
+        }
       });
   });
 
@@ -526,6 +538,14 @@ export async function migrateLegacyCalibration(): Promise<void> {
       inmetroEthanolHighwayKmpl: legacyData.inmetroEthanolHighwayKmpl,
       userAvgEthanolCityKmpl: legacyData.userAvgEthanolCityKmpl,
       userAvgEthanolHighwayKmpl: legacyData.userAvgEthanolHighwayKmpl,
+      inmetroGnvCityKmpl:
+        legacyData.inmetroGnvCityKmpl || legacyData.inmetroCityKmpl,
+      inmetroGnvHighwayKmpl:
+        legacyData.inmetroGnvHighwayKmpl || legacyData.inmetroHighwayKmpl,
+      userAvgGnvCityKmpl:
+        legacyData.userAvgGnvCityKmpl || legacyData.userAvgCityKmpl,
+      userAvgGnvHighwayKmpl:
+        legacyData.userAvgGnvHighwayKmpl || legacyData.userAvgHighwayKmpl,
       crr: legacyData.crr || 0.013,
       idleLph: legacyData.idleLph || 0.9,
       baseBsfc: legacyData.baseBsfc || 265,

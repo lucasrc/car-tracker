@@ -44,7 +44,7 @@ Como um dado entra no app e vira informação na tela.
 
 ---
 
-## 2. GPS → Consumo em Tempo Real
+## 2. GPS → Consumo em Tempo Real + Previsão de Marcha
 
 ### Entrada
 
@@ -62,11 +62,37 @@ Como um dado entra no app e vira informação na tela.
    └── Chama TelemetryEngine.simulate()
 
 2. TelemetryEngine.simulate(vehicle, input)
+   ├── Verifica se vehicle.transmission existe
+   │
+   ├── SE transmission disponível:
+   │   ├── predictGear(speed, transmission)
+   │   │   ├── Para cada marcha: calcula RPM = (speed / 3.6) / (2π × tireRadius) × gearRatio × finalDrive × 60
+   │   │   ├── Encontra marcha onde idleRpm <= RPM <= redlineRpm
+   │   │   └── Retorna { gear, rpm }
+   │   │
+   │   ├── SE torqueCurve + bsfcMinGPerKwh disponíveis:
+   │   │   ├── getTorqueAtRpm(rpm, torqueCurve) → interpolação linear
+   │   │   ├── calculatePhysicsConsumption(rpm, torque, bsfc, techEra, fuelType, speed)
+   │   │   │   ├── powerKw = (torque × rpm × 2π) / 60000
+   │   │   │   ├── bsfc = bsfcMin × (1 + |rpm - 2500| / 5000)
+   │   │   │   ├── fuelFlowLPerH = (bsfc × powerKw) / fuelDensity / 1000
+   │   │   │   └── physicsKmpl = speed / fuelFlowLPerH
+   │   │   └── kmpl = physicsKmpl × 0.7 + copertKmpl × 0.3 (modelo híbrido)
+   │   │   └── confidence = 0.95
+   │   │
+   │   └── SENÃO (sem torqueCurve ou bsfc):
+   │       └── kmpl = copertKmpl (fallback COPERT puro)
+   │       └── confidence = 0.9
+   │
+   └── SENÃO (sem transmission):
+       └── kmpl = copertKmpl (modelo COPERT tradicional)
+       └── confidence = 0.85
+   │
    ├── getCalibratedBase(): pondera INMETRO vs user averages com pesos
    │   base = inmetro * weightInmetro + userAvg * weightUser
    │   └── Suporta gasolina, etanol, GNV
    │
-   ├── Aplica fatores de correção:
+   ├── Aplica fatores de correção (COPERT):
    │   ├── massPenalty: 1.0 + (extraMass / vehicleMass) * 0.4
    │   │   └── extraMass = (passengers-1)*75 + cargo + gnvCylinderWeight
    │   ├── speedFactor: calibrado linear em torno do ponto de teste
@@ -81,14 +107,24 @@ Como um dado entra no app e vira informação na tela.
 3. Acumula consumo ponderado por tempo
    └── averageConsumption = Σ(kmpl * durationMs) / Σ(durationMs)
 
-4. Resultado: kmpl ajustado + estado da bateria (híbridos)
+4. Acumula dados de marcha/RPM (se disponível)
+   ├── gearDistribution: contagem de tempo por marcha
+   ├── rpmReadings: últimas 300 leituras de RPM
+   └── Atualiza estado: currentGear, currentRpm, confidence
+
+5. Resultado: kmpl ajustado + gear + rpm + confidence + estado da bateria (híbridos)
 ```
 
 ### Saída
 
 ```typescript
-// Na UI (DrivingPanel)
+// Na UI (Dashboard)
 "12.5 km/l"; // estimatedConsumption
+
+// Na UI (Speedometer - se transmission disponível)
+"3ª marcha"; // currentGear
+"2800 RPM"; // currentRpm
+"95% confiança"; // confidence
 ```
 
 ---
@@ -192,7 +228,12 @@ fuelRemaining: 25; // litros
     massPenaltyAvg: 1.15,
     avgAcceleration: 0.8,
     maxAcceleration: 3.2,
-    speedDistribution: { city: 30, mixed: 25, highway: 45 }
+    speedDistribution: { city: 30, mixed: 25, highway: 45 },
+    // Dados de marcha (se transmission disponível)
+    gearDistribution: { 1: 15, 2: 20, 3: 25, 4: 20, 5: 20 },
+    avgRpm: 2500,
+    maxRpm: 4500,
+    hasTransmissionData: true
   }
 }
 ```
@@ -219,7 +260,11 @@ fuelRemaining: 25; // litros
           ├── hybridDistancePct (para híbridos)
           ├── avg/max slope, acUsagePct
           ├── massPenaltyAvg, acceleration stats
-          └── speedDistribution (city/mixed/highway %)
+          ├── speedDistribution (city/mixed/highway %)
+          └── Se transmission disponível:
+              ├── gearDistribution (tempo por marcha)
+              ├── avgRpm, maxRpm
+              └── hasTransmissionData (flag)
 
 4. clearCurrentTrip()
    └── Limpa trip atual da memória

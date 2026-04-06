@@ -96,7 +96,7 @@ export function useMadgwickFilter(
       try {
         const mag = pendingMagRef.current;
 
-        // eslint-disable-next-line no-console
+         
         console.log("Madgwick update:", {
           gyro: {
             x: gyroX.toFixed(3),
@@ -142,7 +142,7 @@ export function useMadgwickFilter(
 
         const euler = ahrsRef.current.getEulerAnglesDegrees();
 
-        // eslint-disable-next-line no-console
+         
         console.log("Raw Euler:", JSON.stringify(euler));
 
         if (
@@ -153,7 +153,7 @@ export function useMadgwickFilter(
           isNaN(euler.pitch) ||
           isNaN(euler.roll)
         ) {
-          // eslint-disable-next-line no-console
+           
           console.log("NaN detected in euler, skipping");
           return;
         }
@@ -167,7 +167,7 @@ export function useMadgwickFilter(
         setHeading(headingDegrees);
         setPitch(euler.pitch);
         setRoll(euler.roll);
-        // eslint-disable-next-line no-console
+         
         console.log("Madgwick result:", {
           heading: headingDegrees.toFixed(0),
           pitch: euler.pitch.toFixed(0),
