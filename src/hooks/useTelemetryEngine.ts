@@ -37,6 +37,10 @@ export interface TelemetryEngineReturn {
   getTelemetryData: () => TripTelemetryData;
   batterySocPct: number;
   isGnv: boolean;
+  currentGear?: number;
+  currentRpm?: number;
+  hasTransmissionData: boolean;
+  confidence: number;
 }
 
 const WINDOW_SIZE_MS = 30000;
@@ -91,6 +95,13 @@ export function useTelemetryEngine(
   const slopeReadingsRef = useRef<number[]>([]);
   const accelReadingsRef = useRef<number[]>([]);
   const massPenaltyReadingsRef = useRef<number[]>([]);
+  const [currentGear, setCurrentGear] = useState<number | undefined>();
+  const [currentRpm, setCurrentRpm] = useState<number | undefined>();
+  const [confidence, setConfidence] = useState(0.85);
+  const [hasTransmissionData, setHasTransmissionData] = useState(false);
+
+  const gearDistributionRef = useRef<Record<number, number>>({});
+  const rpmReadingsRef = useRef<number[]>([]);
   const speedDistributionRef = useRef<{
     city: number;
     mixed: number;
@@ -211,6 +222,23 @@ export function useTelemetryEngine(
 
       batterySocRef.current = result.updatedBatterySocPct;
       setBatterySocPct(result.updatedBatterySocPct);
+
+      setCurrentGear(result.gear);
+      setCurrentRpm(result.rpm);
+      setConfidence(result.confidence);
+      setHasTransmissionData(result.hasTransmissionData);
+
+      if (result.gear !== undefined && result.gear > 0) {
+        const dist = gearDistributionRef.current;
+        dist[result.gear] = (dist[result.gear] || 0) + 1;
+      }
+
+      if (result.rpm !== undefined) {
+        rpmReadingsRef.current.push(result.rpm);
+        if (rpmReadingsRef.current.length > 300) {
+          rpmReadingsRef.current = rpmReadingsRef.current.slice(-300);
+        }
+      }
 
       slopeReadingsRef.current.push(gradePercent);
       if (slopeReadingsRef.current.length > 300) {
@@ -333,7 +361,13 @@ export function useTelemetryEngine(
     slopeReadingsRef.current = [];
     accelReadingsRef.current = [];
     massPenaltyReadingsRef.current = [];
+    gearDistributionRef.current = {};
+    rpmReadingsRef.current = [];
     speedDistributionRef.current = { city: 0, mixed: 0, highway: 0 };
+    setCurrentGear(undefined);
+    setCurrentRpm(undefined);
+    setConfidence(0.85);
+    setHasTransmissionData(false);
     setDriveMode("city");
     setAvgSpeed(0);
     setCurrentKmPerLiter(cityKmpl);
@@ -343,13 +377,11 @@ export function useTelemetryEngine(
   const getAverageConsumption = useCallback((): number => {
     const samples = samplesRef.current;
     if (samples.length === 0) return 0;
-    const totalConsumption = samples.reduce(
-      (sum, s) => sum + s.kmpl * s.durationMs,
-      0,
-    );
-    const totalTime = samples.reduce((sum, s) => sum + s.durationMs, 0);
-    if (totalTime === 0) return 0;
-    return totalConsumption / totalTime;
+    // Correct formula: total distance / total fuel used (harmonic mean)
+    const totalDistance = samples.reduce((sum, s) => sum + s.distanceKm, 0);
+    const totalFuel = samples.reduce((sum, s) => sum + s.fuelUsed, 0);
+    if (totalFuel === 0 || totalDistance === 0) return 0;
+    return totalDistance / totalFuel;
   }, []);
 
   const getInstantConsumption = useCallback((): number => {
@@ -358,13 +390,11 @@ export function useTelemetryEngine(
     const recentCutoff = Date.now() - WINDOW_SIZE_MS;
     const recent = samples.filter((s) => s.timestamp > recentCutoff);
     if (recent.length === 0) return 0;
-    const totalConsumption = recent.reduce(
-      (sum, s) => sum + s.kmpl * s.durationMs,
-      0,
-    );
-    const totalTime = recent.reduce((sum, s) => sum + s.durationMs, 0);
-    if (totalTime === 0) return 0;
-    return totalConsumption / totalTime;
+    // Correct formula: total distance / total fuel used (harmonic mean)
+    const totalDistance = recent.reduce((sum, s) => sum + s.distanceKm, 0);
+    const totalFuel = recent.reduce((sum, s) => sum + s.fuelUsed, 0);
+    if (totalFuel === 0 || totalDistance === 0) return 0;
+    return totalDistance / totalFuel;
   }, []);
 
   const getTotalFuelUsed = useCallback((): number => {
@@ -414,6 +444,16 @@ export function useTelemetryEngine(
     const dist = speedDistributionRef.current;
     const totalDistDist = dist.city + dist.mixed + dist.highway;
 
+    const avgRpm =
+      rpmReadingsRef.current.length > 0
+        ? rpmReadingsRef.current.reduce((a, b) => a + b, 0) /
+          rpmReadingsRef.current.length
+        : undefined;
+    const maxRpm =
+      rpmReadingsRef.current.length > 0
+        ? Math.max(...rpmReadingsRef.current)
+        : undefined;
+
     return {
       fuelType,
       batterySocStart: 100,
@@ -431,8 +471,12 @@ export function useTelemetryEngine(
         mixed: totalDistDist > 0 ? (dist.mixed / totalDistDist) * 100 : 0,
         highway: totalDistDist > 0 ? (dist.highway / totalDistDist) * 100 : 0,
       },
+      gearDistribution: { ...gearDistributionRef.current },
+      avgRpm,
+      maxRpm,
+      hasTransmissionData,
     };
-  }, [fuelType]);
+  }, [fuelType, hasTransmissionData]);
 
   const litersRemaining = Math.max(0, currentFuel);
 
@@ -451,13 +495,11 @@ export function useTelemetryEngine(
       setCurrentConsumption(driveMode === "highway" ? highwayKmpl : cityKmpl);
       return;
     }
-    const totalConsumption = recent.reduce(
-      (sum, s) => sum + s.kmpl * s.durationMs,
-      0,
-    );
-    const totalTime = recent.reduce((sum, s) => sum + s.durationMs, 0);
+    // Correct formula: total distance / total fuel used (harmonic mean)
+    const totalDistance = recent.reduce((sum, s) => sum + s.distanceKm, 0);
+    const totalFuel = recent.reduce((sum, s) => sum + s.fuelUsed, 0);
     setCurrentConsumption(
-      totalTime > 0 ? totalConsumption / totalTime : cityKmpl,
+      totalFuel > 0 && totalDistance > 0 ? totalDistance / totalFuel : cityKmpl,
     );
   }, [driveMode, cityKmpl, highwayKmpl, warmUpElapsedMs]);
 
@@ -493,5 +535,9 @@ export function useTelemetryEngine(
     getTelemetryData,
     batterySocPct,
     isGnv: fuelType === "gnv",
+    currentGear,
+    currentRpm,
+    hasTransmissionData,
+    confidence,
   };
 }

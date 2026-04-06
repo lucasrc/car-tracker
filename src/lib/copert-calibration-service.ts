@@ -103,6 +103,17 @@ Requisitos obrigatórios:
 5. Evite arredondamentos agressivos.
 6. Não invente valores irreais — prefira aproximações conservadoras.
 
+=== CONSUMO (urbano < combinado < rodoviário) - CRÍTICO ===
+ISTO É FÍSICO E NÃO NEGOCIÁVEL:
+- urbanKmpl: SEMPRE o MENOR (ex: 9.5 km/l) — cidade com trânsito consome mais
+- highwayKmpl: SEMPRE o MAIOR (ex: 14.0 km/l) — rodovia com velocidade constante consome menos
+- combinedKmpl: NO MEIO dos dois (ex: 12.0 km/l)
+
+ATENÇÃO: Dados INMETRO publicados são ciclos otimizados. Valores REAIS usuários:
+- Clio 1.6 gasolina (2008): INMETRO diz 11.5/15.0 → usuários relatam ≈ 9.5/13.5
+- HB20 1.0 flex (2015): INMETRO diz 12.0/16.5 → usuários relatam ≈ 8.8/12.5
+SEMPRE USE VALORES REAIS OU CONSERVADORES.
+
 === PARÂMETROS COPERT (muito importante) ===
 Os parâmetros f0, f1, f2 são coeficientes da equação de potência em kW:
   P(kW) = f0 + f1 × v + f2 × v²
@@ -126,9 +137,9 @@ Valores típicos:
   "fuelType": "flex",
   "euroNorm": "Euro 4",
   "segment": "small",
-  "urbanKmpl": 8.5,
-  "highwayKmpl": 13.2,
-  "combinedKmpl": 10.5,
+  "urbanKmpl": 9.5,
+  "highwayKmpl": 13.5,
+  "combinedKmpl": 11.5,
   "mass": 1025,
   "grossWeight": 1500,
   "frontalArea": 2.05,
@@ -143,9 +154,9 @@ Valores típicos:
   "nox_mgkm": 40,
   "confidence": "high",
   "inmetroCityKmpl": 11.5,
-  "inmetroHighwayKmpl": 15.0,
-  "userAvgCityKmpl": 10.5,
-  "userAvgHighwayKmpl": 14.5,
+  "inmetroHighwayKmpl": 14.5,
+  "userAvgCityKmpl": 9.5,
+  "userAvgHighwayKmpl": 13.5,
   "inmetroEthanolCityKmpl": 8.0,
   "inmetroEthanolHighwayKmpl": 10.5,
   "userAvgEthanolCityKmpl": 7.2,
@@ -186,7 +197,7 @@ ${JSON_SCHEMA}`;
 const INFER_PROMPT = (
   vehicle: string,
   data: object,
-) => `Você é um engenheiro automotivo criativo calculando parâmetros de veículo.
+) => `Você é um engenheiro automotivo metódico calculando parâmetros de veículo.
 
 Veículo: ${vehicle}
 Dados conhecidos:

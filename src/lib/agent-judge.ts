@@ -43,12 +43,16 @@ export function validateBasic(data: CopertCalibration): ValidationResult {
   if (data.mass >= data.grossWeight) {
     errors.push(`massa deve ser menor que peso bruto`);
   }
+  // BUG FIX: Consumo urbano < consumo combinado < consumo rodoviário (em km/l)
+  // Cidade tem MENOR km/l (consome mais), rodovia tem MAIOR km/l (consome menos)
   if (
     !(
-      data.urbanKmpl > data.combinedKmpl && data.combinedKmpl > data.highwayKmpl
+      data.urbanKmpl < data.combinedKmpl && data.combinedKmpl < data.highwayKmpl
     )
   ) {
-    errors.push(`consumo inválido: urbano deve ser menor que rodoviário`);
+    errors.push(
+      `consumo inválido: urbano (${data.urbanKmpl} km/l) deve ser menor que combinado (${data.combinedKmpl} km/l) que deve ser menor que rodoviário (${data.highwayKmpl} km/l)`,
+    );
   }
 
   return { valid: errors.length === 0, errors };
