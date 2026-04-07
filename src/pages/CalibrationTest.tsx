@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { calibrateCopert } from "@/lib/copert-calibration-service";
+import { calibrateVehicle } from "@/lib/vehicle-calibration-service";
 import { validateBasic } from "@/lib/agent-judge";
 
-export function CopertTest() {
+export function CalibrationTest() {
   const [vehicle, setVehicle] = useState("Renault Clio 2008 1.6");
   const [result, setResult] = useState<string>("");
   const [loading, setLoading] = useState(false);
@@ -12,7 +12,7 @@ export function CopertTest() {
     setResult("");
 
     try {
-      const data = await calibrateCopert(vehicle, (progress) => {
+      const data = await calibrateVehicle(vehicle, (progress) => {
         setResult((prev) => prev + `\n${progress}`);
       });
 

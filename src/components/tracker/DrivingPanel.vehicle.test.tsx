@@ -13,7 +13,6 @@ function makeDefaultProps() {
     range: 270,
     currentConsumption: 10.5,
     avgConsumption: 11.2,
-    calibrated: true,
     radarMaxSpeed: undefined,
     isSpeeding: false,
     gradePercent: 0,
@@ -84,30 +83,6 @@ describe("DrivingPanel vehicle display", () => {
 
     expect(screen.getByText("225 km")).toBeInTheDocument();
     expect(screen.getByText("25.0 L")).toBeInTheDocument();
-  });
-
-  it("shows calibrated badge when calibrated", () => {
-    render(
-      <DrivingPanel
-        {...makeDefaultProps()}
-        calibrated={true}
-        vehicleName="Test Car"
-      />,
-    );
-
-    expect(screen.getByText("CALIBRADO")).toBeInTheDocument();
-  });
-
-  it("does not show calibrated badge when not calibrated", () => {
-    const { container } = render(
-      <DrivingPanel
-        {...makeDefaultProps()}
-        calibrated={false}
-        vehicleName="Test Car"
-      />,
-    );
-
-    expect(container.textContent).not.toMatch(/CALIBRADO/);
   });
 
   it("shows grade/inclination when confidence is high", () => {

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { calibrateCopert } from "@/lib/copert-calibration-service";
+import { calibrateVehicle } from "@/lib/vehicle-calibration-service";
 import { useVehicleStore } from "@/stores/useVehicleStore";
 import { ImportDetailsModal } from "./ImportDetailsModal";
 import { SparklesIcon, XMarkIcon } from "@heroicons/react/24/outline";
@@ -16,7 +16,7 @@ export function AddCarModal({ open, onClose }: AddCarModalProps) {
   const [progress, setProgress] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pendingCalibration, setPendingCalibration] = useState<{
-    data: NonNullable<Awaited<ReturnType<typeof calibrateCopert>>>["data"];
+    data: NonNullable<Awaited<ReturnType<typeof calibrateVehicle>>>["data"];
     vehicleInput: string;
   } | null>(null);
 
@@ -67,7 +67,7 @@ export function AddCarModal({ open, onClose }: AddCarModalProps) {
     setProgress("");
 
     try {
-      const result = await calibrateCopert(vehicleInput, (status) => {
+      const result = await calibrateVehicle(vehicleInput, (status) => {
         setProgress(status);
       });
 

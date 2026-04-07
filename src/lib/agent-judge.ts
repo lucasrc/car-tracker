@@ -1,9 +1,9 @@
-import type { CopertCalibration } from "@/types";
+import type { VehicleCalibration } from "@/types";
 
 export type ConfidenceLevel = "high" | "medium" | "low";
 
 export interface CalibrationResult {
-  data: CopertCalibration;
+  data: VehicleCalibration;
   confidence: ConfidenceLevel;
   similarUsed: boolean;
   originalVehicle?: string;
@@ -28,7 +28,18 @@ const PHYSICAL_LIMITS = {
   dragCoefficient: [0.2, 0.5],
 };
 
-export function validateBasic(data: CopertCalibration): ValidationResult {
+export function validateBasic(data: VehicleCalibration): ValidationResult {
+  console.log("[Calibration] validateBasic input:", {
+    f0: data.f0,
+    f1: data.f1,
+    f2: data.f2,
+    mass: data.mass,
+    grossWeight: data.grossWeight,
+    urbanKmpl: data.urbanKmpl,
+    combinedKmpl: data.combinedKmpl,
+    highwayKmpl: data.highwayKmpl,
+  });
+
   const errors: string[] = [];
 
   if (data.f0 < PHYSICAL_LIMITS.f0[0] || data.f0 > PHYSICAL_LIMITS.f0[1]) {
@@ -58,7 +69,7 @@ export function validateBasic(data: CopertCalibration): ValidationResult {
   return { valid: errors.length === 0, errors };
 }
 
-export function determineConfidence(data: CopertCalibration): ConfidenceLevel {
+export function determineConfidence(data: VehicleCalibration): ConfidenceLevel {
   const conf = data.confidence;
   if (conf === "high") return "high";
   if (conf === "low") return "low";

@@ -41,10 +41,12 @@ export function CarCard({
     : 0;
 
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={() => onSelect(vehicle.id)}
-      className={`w-full rounded-2xl border-2 p-4 text-left transition-all ${
+      onKeyDown={(e) => e.key === "Enter" && onSelect(vehicle.id)}
+      className={`w-full rounded-2xl border-2 p-4 text-left transition-all cursor-pointer ${
         isActive
           ? "border-blue-500 bg-blue-50 shadow-lg shadow-blue-500/10"
           : "border-gray-200 bg-white hover:border-blue-300 hover:shadow-md"
@@ -153,6 +155,6 @@ export function CarCard({
           </span>
         </div>
       </div>
-    </button>
+    </div>
   );
 }

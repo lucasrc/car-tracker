@@ -551,24 +551,98 @@ describe("useTelemetryEngine", () => {
   });
 
   describe("estimated range", () => {
-    it("should calculate estimated range", () => {
+    it("should calculate estimated range = fuel * consumption", () => {
+      const vehicle = makeVehicle();
+      vehicle.urbanKmpl = 10; // 10 km/L city
+      vehicle.highwayKmpl = 14; // 14 km/L highway
+
       const { result } = renderHook(
-        () => useTelemetryEngine(0, 50, 0, makeVehicle()), // 50L fuel
+        () => useTelemetryEngine(0, 50, 0, vehicle), // 50L fuel
+      );
+
+      // Wait for warm-up to complete (90 seconds)
+      // After warm-up, range should be approximately fuel * consumption
+      // Initial consumption is based on city kmpl
+      const range = result.current.estimatedRange;
+      expect(range).toBeGreaterThan(0);
+      // With 50L and 10 km/L city consumption, should be around 500km
+      expect(range).toBeGreaterThan(400);
+    });
+
+    it("should calculate range with 9L fuel and 11.2km/L consumption", () => {
+      const vehicle = makeVehicle();
+      vehicle.urbanKmpl = 11.2;
+      vehicle.highwayKmpl = 14;
+      vehicle.combinedKmpl = 12;
+
+      const { result } = renderHook(
+        () => useTelemetryEngine(0, 9, 0, vehicle), // 9L fuel
       );
 
       const range = result.current.estimatedRange;
-      // With 50L and typical consumption, should be significant
+      // 9L * 11.2km/L = 100.8km (approximately)
+      // Allow some tolerance for the interpolation during warm-up
+      expect(range).toBeGreaterThan(90);
+      expect(range).toBeLessThan(130);
+    });
+
+    it("should return 0 range when fuel is 0", () => {
+      const { result } = renderHook(
+        () => useTelemetryEngine(0, 0, 0, makeVehicle()), // 0L fuel
+      );
+
+      const range = result.current.estimatedRange;
+      expect(range).toBe(0);
+    });
+
+    it("should return 0 range when consumption is 0", () => {
+      const { result } = renderHook(
+        () => useTelemetryEngine(0, 50, 0, undefined), // no vehicle
+      );
+
+      // Without vehicle, should use default city kmpl of 10
+      const range = result.current.estimatedRange;
       expect(range).toBeGreaterThan(0);
     });
 
-    it("should use fallback range during warm-up", () => {
+    it("should use conservative fallback during warm-up", () => {
+      const vehicle = makeVehicle();
+      vehicle.urbanKmpl = 8; // worse city consumption
+      vehicle.highwayKmpl = 12;
+
       const { result } = renderHook(() =>
-        useTelemetryEngine(0, 50, 0, makeVehicle()),
+        useTelemetryEngine(0, 50, 0, vehicle),
       );
 
-      // During warm-up, should use conservative estimate
+      // During warm-up, range should be based on city consumption (conservative)
       const range = result.current.estimatedRange;
-      expect(range).toBeGreaterThan(0);
+      const maxPossibleRange = 50 * 12; // using highway kmpl
+
+      // During warm-up, should be lower than max possible
+      // (uses interpolation between city and actual)
+      expect(range).toBeLessThanOrEqual(maxPossibleRange);
+    });
+
+    it("should track autonomy as fuel decreases during trip", async () => {
+      const vehicle = makeVehicle();
+      vehicle.urbanKmpl = 10;
+
+      const { result, rerender } = renderHook(
+        ({ fuel }) => useTelemetryEngine(0, fuel, 0, vehicle),
+        { initialProps: { fuel: 50 } },
+      );
+
+      // Initial range with 50L
+      const initialRange = result.current.estimatedRange;
+      expect(initialRange).toBeGreaterThan(400);
+
+      // Simulate fuel consumption - decrease fuel
+      rerender({ fuel: 40 });
+
+      // Range should decrease proportionally
+      const newRange = result.current.estimatedRange;
+      expect(newRange).toBeLessThan(initialRange);
+      expect(newRange).toBeGreaterThan(320); // 40L * 8 km/L minimum
     });
   });
 

@@ -135,7 +135,7 @@ export interface Radar {
   wayGeometry?: [number, number][];
 }
 
-export type CopertEuroNorm =
+export type VehicleEuroNorm =
   | "Euro 1"
   | "Euro 2"
   | "Euro 3"
@@ -145,7 +145,7 @@ export type CopertEuroNorm =
   | "Euro 6d"
   | "Euro 7";
 
-export type CopertSegment =
+export type VehicleSegment =
   | "mini"
   | "small"
   | "medium"
@@ -153,9 +153,9 @@ export type CopertSegment =
   | "suv"
   | "pickup";
 
-export type CopertFuelType = "gasoline" | "diesel" | "ethanol" | "flex";
+export type VehicleFuelType = "gasoline" | "diesel" | "ethanol" | "flex";
 
-export type CopertConfidence = "high" | "medium" | "low";
+export type VehicleConfidence = "high" | "medium" | "low";
 
 export type TechEra =
   | "carburetor"
@@ -172,19 +172,23 @@ export interface TransmissionData {
   tireRadiusM: number;
   redlineRpm: number;
   idleRpm: number;
-  torqueCurve: Record<number, number>;
+  torqueCurve?: Record<number, number>;
+  cda?: number;
+  rollingResistance?: number;
+  cruiseRpm?: number;
+  rpmAt100Kmh?: number;
 }
 
 export type DataSource = "web" | "ai_inferred" | "manual";
 
-export interface CopertCalibration {
+export interface VehicleCalibration {
   make: string;
   model: string;
   year: number;
   displacement: number;
-  fuelType: CopertFuelType;
-  euroNorm: CopertEuroNorm;
-  segment: CopertSegment;
+  fuelType: VehicleFuelType;
+  euroNorm: VehicleEuroNorm;
+  segment: VehicleSegment;
   urbanKmpl: number;
   highwayKmpl: number;
   combinedKmpl: number;
@@ -200,7 +204,7 @@ export interface CopertCalibration {
   peakTorqueNm: number;
   co2_gkm?: number;
   nox_mgkm?: number;
-  confidence: CopertConfidence;
+  confidence: VehicleConfidence;
   dataSource?: DataSource;
   inmetroCityKmpl: number;
   inmetroHighwayKmpl: number;
@@ -228,7 +232,7 @@ export interface CopertCalibration {
   bsfcMinGPerKwh?: number;
 }
 
-export interface CopertCalibrationRecord extends CopertCalibration {
+export interface VehicleCalibrationRecord extends VehicleCalibration {
   savedAt: string;
   vehicleInput: string;
 }
@@ -240,9 +244,9 @@ export interface Vehicle {
   model: string;
   year: number;
   displacement: number;
-  fuelType: CopertFuelType;
-  euroNorm: CopertEuroNorm;
-  segment: CopertSegment;
+  fuelType: VehicleFuelType;
+  euroNorm: VehicleEuroNorm;
+  segment: VehicleSegment;
   urbanKmpl: number;
   highwayKmpl: number;
   combinedKmpl: number;
@@ -258,7 +262,7 @@ export interface Vehicle {
   peakTorqueNm: number;
   co2_gkm?: number;
   nox_mgkm?: number;
-  confidence: CopertConfidence;
+  confidence: VehicleConfidence;
   calibrationInput: string;
   calibratedAt: string;
   createdAt: string;

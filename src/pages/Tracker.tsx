@@ -7,6 +7,8 @@ import { DrivingPanel } from "@/components/tracker/DrivingPanel";
 import { FuelBar } from "@/components/tracker/FuelBar";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { SimulationControls } from "@/components/tracker/SimulationControls";
+import { DrivingModePanel } from "@/components/tracker/DrivingModePanel";
+import { EngineLoadBar } from "@/components/tracker/EngineLoadBar";
 import { useTripStore } from "@/stores/useTripStore";
 import { useRadarStore } from "@/stores/useRadarStore";
 import { useGeolocation } from "@/hooks/useGeolocation";
@@ -22,13 +24,11 @@ import { useVehicleStore } from "@/stores/useVehicleStore";
 import { useAppStore } from "@/stores/useAppStore";
 import { isAndroid } from "@/lib/platform";
 import { speedToKmh } from "@/lib/utils";
-import type { Settings } from "@/types";
 import {
   isValidSpeedForDistance,
   vincentyDistance,
   calculateTotalDistance,
 } from "@/lib/distance";
-import { getSettings } from "@/lib/db";
 import { calculateDistanceKm } from "@/lib/radar-api";
 import L from "leaflet";
 
@@ -90,7 +90,7 @@ export function Tracker() {
     stop: stopAutoTracker,
     setOnTripComplete,
   } = useAutoTracker();
-  const { activeVehicle } = useVehicleStore();
+  const { activeVehicle, updateVehicleFuelLevel } = useVehicleStore();
   const fuelInventory = useFuelInventory(activeVehicle?.id || "");
   const { nearestRadar, currentSpeedingEvent } = useRadarStore();
   const inclination = useInclination({ enabled: status === "recording" });
@@ -98,6 +98,9 @@ export function Tracker() {
   const debugModeEnabled = useAppStore((s) => s.debugModeEnabled);
   const debugModeShowRadars = useAppStore((s) => s.debugModeShowRadars);
   const pos = location.position;
+
+  const accumulatedFuelRef = useRef(0);
+  const lastFuelUpdateRef = useRef(0);
 
   const nearbyRadarMaxSpeed = (() => {
     if (!nearestRadar || !pos) return undefined;
@@ -124,29 +127,19 @@ export function Tracker() {
     timestamp: number;
   } | null>(null);
 
-  const [settings, setSettings] = useState<Settings>({
-    id: "default",
-    cityKmPerLiter: 8,
-    highwayKmPerLiter: 12,
-    mixedKmPerLiter: 10,
-    manualCityKmPerLiter: 10,
-    manualHighwayKmPerLiter: 14,
-    manualMixedKmPerLiter: 12,
-    fuelCapacity: 50,
-    currentFuel: 0,
-    fuelPrice: 0,
-    engineDisplacement: 1000,
-    fuelType: "gasolina",
-  });
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [isGpsWarming, setIsGpsWarming] = useState(false);
   const [warmupStartTime, setWarmupStartTime] = useState<number | null>(null);
   const [mapInstance, setMapInstance] = useState<L.Map | null>(null);
   const [realtimeCost, setRealtimeCost] = useState(0);
+  const [localFuelUsed, setLocalFuelUsed] = useState(0);
+  const [acOn, setAcOn] = useState(false);
 
   useEffect(() => {
-    fuelInventory.loadInventory();
-  }, [fuelInventory]);
+    if (activeVehicle?.id) {
+      fuelInventory.loadInventory();
+    }
+  }, [activeVehicle?.id, fuelInventory]);
 
   useEffect(() => {
     if (filteredPitch !== null) {
@@ -176,11 +169,25 @@ export function Tracker() {
           : activeVehicle.fuelType === "flex"
             ? "flex"
             : "gasolina"
-      : settings.fuelType;
+      : "gasolina";
+
+    const totalLiters = fuelInventory.getTotalLiters(
+      vehicleFuelType as "gasolina" | "etanol" | "flex" | "gnv",
+    );
     const weightedPrice =
-      fuelInventory.getWeightedAveragePrice(vehicleFuelType);
-    setRealtimeCost(storeTotalFuelUsed * weightedPrice);
-  }, [storeTotalFuelUsed, fuelInventory, activeVehicle, settings.fuelType]);
+      totalLiters > 0
+        ? fuelInventory.getWeightedAveragePrice(
+            vehicleFuelType as "gasolina" | "etanol" | "flex" | "gnv",
+          )
+        : 0;
+
+    if (totalLiters === 0 && storeTotalFuelUsed > 0) {
+      const fallbackPrice = 5.5;
+      setRealtimeCost(storeTotalFuelUsed * fallbackPrice);
+    } else {
+      setRealtimeCost(storeTotalFuelUsed * weightedPrice);
+    }
+  }, [storeTotalFuelUsed, fuelInventory, activeVehicle]);
 
   useEffect(() => {
     if (autoTrackingEnabled && selectedCarBluetoothAddress) {
@@ -225,48 +232,37 @@ export function Tracker() {
 
   const {
     estimatedConsumption,
+    estimatedRange,
     addPosition: addDriveModePosition,
     reset: resetDriveMode,
     isInitialized,
     getInstantConsumption,
+    getAverageConsumption,
     getTelemetryData,
     batterySocPct,
     isGnv,
+    currentGear,
+    currentRpm,
+    currentEngineLoad,
+    hasTransmissionData,
+    drivingStyle,
   } = useTelemetryEngine(
     stats.distanceMeters,
     activeVehicle?.currentFuel ?? 0,
-    inclination.gradePercent,
+    location.grade,
     activeVehicle,
+    acOn,
   );
-
-  useEffect(() => {
-    getSettings().then((s) => {
-      setSettings({
-        id: s.id,
-        cityKmPerLiter: s.cityKmPerLiter,
-        highwayKmPerLiter: s.highwayKmPerLiter,
-        mixedKmPerLiter: s.mixedKmPerLiter,
-        manualCityKmPerLiter: s.manualCityKmPerLiter,
-        manualHighwayKmPerLiter: s.manualHighwayKmPerLiter,
-        manualMixedKmPerLiter: s.manualMixedKmPerLiter,
-        fuelCapacity: s.fuelCapacity,
-        currentFuel: s.currentFuel,
-        fuelPrice: s.fuelPrice,
-        engineDisplacement: s.engineDisplacement,
-        fuelType: s.fuelType,
-      });
-    });
-  }, []);
 
   const handleStart = useCallback(async () => {
     try {
-      await fuelInventory.loadInventory();
-      const totalLiters = fuelInventory.getTotalLiters();
-      if (totalLiters === 0) {
+      if (!activeVehicle || (activeVehicle.currentFuel ?? 0) <= 0) {
         alert(
-          "Sem combustível no tanque. O custo da viagem não será calculado. Faça um abastecimento antes de iniciar.",
+          "Sem combustível no tanque. Faça um abastecimento antes de iniciar.",
         );
+        return;
       }
+      await fuelInventory.loadInventory();
       resetSpeedFilter();
       resetDriveMode();
       lastValidPositionRef.current = null;
@@ -280,6 +276,7 @@ export function Tracker() {
 
       setIsGpsWarming(true);
       setWarmupStartTime(Date.now());
+      setLocalFuelUsed(0);
       startWatching();
       await requestWakeLock();
     } catch (err) {
@@ -299,11 +296,15 @@ export function Tracker() {
       }
     }
   }, [
+    activeVehicle,
+    debugModeEnabled,
+    startTrip,
     startWatching,
     requestWakeLock,
     resetSpeedFilter,
     resetDriveMode,
     fuelInventory,
+    setLocalFuelUsed,
   ]);
 
   const handleActualStart = useCallback(() => {
@@ -332,29 +333,103 @@ export function Tracker() {
     releaseWakeLock();
   }, [stopWatching, releaseWakeLock]);
 
+  const consumeFuelFromVehicle = useCallback(
+    async (fuelLiters: number, currentFuelLevel: number) => {
+      if (!activeVehicle || fuelLiters <= 0) return;
+
+      const newAccumulated = accumulatedFuelRef.current + fuelLiters;
+      accumulatedFuelRef.current = newAccumulated;
+
+      const now = Date.now();
+      const timeSinceLastUpdate = now - lastFuelUpdateRef.current;
+      const MIN_UPDATE_INTERVAL_MS = 5000;
+      const MIN_FUEL_TO_CONSUME = 0.05;
+
+      if (
+        timeSinceLastUpdate < MIN_UPDATE_INTERVAL_MS &&
+        newAccumulated < MIN_FUEL_TO_CONSUME
+      ) {
+        return;
+      }
+
+      if (!fuelInventory.isLoaded()) {
+        console.log("[FUEL] Waiting for inventory to load...");
+        await fuelInventory.loadInventory();
+      }
+
+      const fuelToConsume = accumulatedFuelRef.current;
+      accumulatedFuelRef.current = 0;
+      lastFuelUpdateRef.current = now;
+
+      console.log(
+        `[FUEL] Consuming ${fuelToConsume.toFixed(3)}L from vehicle ${activeVehicle.id} (current: ${currentFuelLevel.toFixed(2)}L)`,
+      );
+
+      const vehicleFuelType: "gasolina" | "etanol" | "flex" | "gnv" =
+        activeVehicle.fuelType === "diesel"
+          ? "gasolina"
+          : activeVehicle.fuelType === "ethanol"
+            ? "etanol"
+            : activeVehicle.fuelType === "flex"
+              ? "flex"
+              : "gasolina";
+
+      try {
+        const result = await fuelInventory.consumeFuel(
+          fuelToConsume,
+          vehicleFuelType,
+        );
+        console.log(
+          `[FUEL] Batch consumption result: cost=${result.cost.toFixed(2)}, batches=${result.batches.length}`,
+        );
+      } catch (err) {
+        console.warn("[FUEL] Failed to consume from batch:", err);
+      }
+
+      const newFuelLevel = Math.max(0, currentFuelLevel - fuelToConsume);
+      await updateVehicleFuelLevel(activeVehicle.id, newFuelLevel);
+      console.log(
+        `[FUEL] Vehicle fuel updated: ${currentFuelLevel.toFixed(2)}L -> ${newFuelLevel.toFixed(2)}L`,
+      );
+    },
+    [activeVehicle, fuelInventory, updateVehicleFuelLevel],
+  );
+
   const handleConfirmStop = useCallback(async () => {
     setShowConfirmDialog(false);
     stopWatching();
     releaseWakeLock();
+
+    if (accumulatedFuelRef.current > 0) {
+      console.log(
+        `[FUEL] Trip ending - consuming remaining ${accumulatedFuelRef.current.toFixed(3)}L`,
+      );
+      await consumeFuelFromVehicle(0, activeVehicle?.currentFuel ?? 0);
+    }
+
     const telemetryData = getTelemetryData();
+    const tripFuelUsed = localFuelUsed;
     const tripId = await stopTrip(
-      storeTotalFuelUsed,
+      tripFuelUsed,
       realtimeCost,
       undefined,
       undefined,
       telemetryData,
     );
+    setLocalFuelUsed(0);
     if (tripId) {
       navigate(`/history/${tripId}`);
     }
   }, [
+    activeVehicle,
     stopWatching,
     releaseWakeLock,
     stopTrip,
-    storeTotalFuelUsed,
+    localFuelUsed,
     realtimeCost,
     getTelemetryData,
     navigate,
+    consumeFuelFromVehicle,
   ]);
 
   const handleCancelStop = useCallback(() => {
@@ -425,6 +500,7 @@ export function Tracker() {
       // First point
       addPosition(simPos);
       addDriveModePosition(simPos);
+      console.log("[SIM] First point - grade:", location.grade);
       lastValidPositionRef.current = {
         lat: simPos.lat,
         lng: simPos.lng,
@@ -450,9 +526,14 @@ export function Tracker() {
     const distanceKm = distance / 1000;
     if (estimatedConsumption > 0) {
       const fuelUsed = distanceKm / estimatedConsumption;
-      if (fuelUsed > 0) setTotalFuelUsed(storeTotalFuelUsed + fuelUsed);
+      if (fuelUsed > 0) {
+        setTotalFuelUsed(storeTotalFuelUsed + fuelUsed);
+        setLocalFuelUsed((prev) => prev + fuelUsed);
+        consumeFuelFromVehicle(fuelUsed, activeVehicle?.currentFuel ?? 0);
+      }
     }
 
+    console.log("[SIM] Calling addDriveModePosition - grade:", location.grade);
     addPosition(simPos);
     addDriveModePosition(simPos);
     lastValidPositionRef.current = {
@@ -464,13 +545,17 @@ export function Tracker() {
     debugModeEnabled,
     location.simPosition,
     location.speed,
+    location.grade,
     status,
     addPosition,
     addDriveModePosition,
     registerStopSample,
     setCurrentSpeed,
     setTotalFuelUsed,
+    setLocalFuelUsed,
     storeTotalFuelUsed,
+    consumeFuelFromVehicle,
+    activeVehicle,
     estimatedConsumption,
   ]);
 
@@ -556,6 +641,8 @@ export function Tracker() {
         if (fuelUsed > 0 && status === "recording") {
           const newTotalFuel = storeTotalFuelUsed + fuelUsed;
           setTotalFuelUsed(newTotalFuel);
+          setLocalFuelUsed((prev) => prev + fuelUsed);
+          consumeFuelFromVehicle(fuelUsed, activeVehicle?.currentFuel ?? 0);
         }
       }
 
@@ -575,11 +662,14 @@ export function Tracker() {
     registerStopSample,
     setCurrentSpeed,
     setTotalFuelUsed,
+    setLocalFuelUsed,
     addSpeedReading,
     addDriveModePosition,
     storeTotalFuelUsed,
     estimatedConsumption,
     stats.distanceMeters,
+    consumeFuelFromVehicle,
+    activeVehicle,
   ]);
 
   // Auto-start GPS watching only in non-debug mode
@@ -619,46 +709,25 @@ export function Tracker() {
     : 0;
   const isRecordingOrSimulating = isSimulating || status === "recording";
 
-  useEffect(() => {
-    if (isSimulating && simulatedPath.length >= 2) {
-      const lastIdx = simulatedPath.length - 1;
-      const prev = simulatedPath[lastIdx - 1];
-      const curr = simulatedPath[lastIdx];
+  const displayedFuel = activeVehicle?.currentFuel ?? 0;
 
-      const dist = vincentyDistance(prev.lat, prev.lng, curr.lat, curr.lng);
-      const distKm = dist / 1000;
-
-      if (distKm > 0.001 && estimatedConsumption > 0) {
-        const fuelUsed = distKm / estimatedConsumption;
-        setTotalFuelUsed(storeTotalFuelUsed + fuelUsed);
-      }
-    }
-  }, [
-    simulatedPath,
-    isSimulating,
-    estimatedConsumption,
-    setTotalFuelUsed,
-    storeTotalFuelUsed,
-  ]);
-
-  const idleWorstCaseRange =
-    (activeVehicle?.currentFuel ?? 0) * (activeVehicle?.urbanKmpl ?? 10);
+  const idleWorstCaseRange = displayedFuel * (activeVehicle?.urbanKmpl ?? 10);
 
   const currentConsumption = isRecordingOrSimulating
     ? estimatedConsumption
     : (activeVehicle?.urbanKmpl ?? 10);
 
   const displayedRange =
-    status === "idle"
+    status === "idle" || !isInitialized
       ? idleWorstCaseRange
-      : isInitialized && currentConsumption > 0
-        ? (activeVehicle?.currentFuel ?? 0) * currentConsumption
-        : idleWorstCaseRange;
+      : estimatedRange > 0
+        ? estimatedRange
+        : displayedFuel * currentConsumption;
 
   return (
     <>
       <FuelBar
-        currentFuel={activeVehicle?.currentFuel ?? 0}
+        currentFuel={displayedFuel}
         fuelCapacity={activeVehicle?.fuelCapacity ?? 50}
       />
 
@@ -686,19 +755,15 @@ export function Tracker() {
             currentSpeed={displaySpeed}
             distance={isSimulating ? simulatedDistance : stats.distanceMeters}
             elapsedTime={isSimulating ? simulatedElapsedTime : elapsedTime}
-            fuelUsed={isRecordingOrSimulating ? storeTotalFuelUsed : 0}
+            fuelUsed={isRecordingOrSimulating ? localFuelUsed : 0}
             cost={realtimeCost}
-            currentFuelLiters={activeVehicle?.currentFuel ?? 0}
+            currentFuelLiters={displayedFuel}
             range={displayedRange}
             currentConsumption={
-              isRecordingOrSimulating
-                ? estimatedConsumption
-                : (activeVehicle?.urbanKmpl ?? 10)
+              isRecordingOrSimulating ? getInstantConsumption() : 0
             }
             avgConsumption={
-              isRecordingOrSimulating
-                ? getInstantConsumption() || estimatedConsumption
-                : (activeVehicle?.urbanKmpl ?? 10)
+              isRecordingOrSimulating ? getAverageConsumption() : 0
             }
             vehicleName={activeVehicle?.name}
             vehicleDetails={
@@ -706,7 +771,6 @@ export function Tracker() {
                 ? `${(activeVehicle.displacement / 1000).toFixed(1)}L ${activeVehicle.fuelType === "flex" ? "Flex" : activeVehicle.fuelType === "diesel" ? "Diesel" : activeVehicle.fuelType === "ethanol" ? "Etanol" : "Gasolina"} · ${Math.round(activeVehicle.mass)}kg`
                 : undefined
             }
-            calibrated={!!activeVehicle?.inmetroCityKmpl}
             radarMaxSpeed={nearbyRadarMaxSpeed}
             isSpeeding={!!currentSpeedingEvent}
             gradePercent={inclination.gradePercent}
@@ -717,30 +781,66 @@ export function Tracker() {
           />
         </div>
 
-        <div className="pointer-events-none fixed bottom-24 left-4">
+        {status !== "idle" && (
+          <div className="pointer-events-auto absolute bottom-44 left-4 z-30">
+            <DrivingModePanel
+              drivingStyle={drivingStyle ?? "eco"}
+              acOn={acOn}
+              onAcChange={setAcOn}
+            />
+          </div>
+        )}
+
+        <EngineLoadBar engineLoad={currentEngineLoad} />
+
+        <div className="pointer-events-none fixed bottom-6 left-4 z-40">
           <Speedometer
             currentSpeed={displaySpeed}
             maxSpeed={nearbyRadarMaxSpeed}
             isSpeeding={!!currentSpeedingEvent}
+            currentGear={currentGear}
+            currentRpm={currentRpm}
+            hasTransmissionData={hasTransmissionData}
           />
         </div>
 
-        <div className="pointer-events-none fixed bottom-24 right-4">
-          <div className="pointer-events-auto">
-            <TripControls
-              status={status}
-              battery={battery}
-              onStart={handleStart}
-              onPause={handlePause}
-              onResume={handleResume}
-              onStop={handleStopRequest}
-              onCancel={handleCancelWarmup}
-              isGpsWarming={isGpsWarming}
-              gpsAccuracy={pos?.accuracy}
-              warmupStartTime={warmupStartTime}
-            />
+        {status === "idle" && (
+          <div className="pointer-events-none fixed bottom-6 right-4">
+            <div className="pointer-events-auto">
+              <TripControls
+                status={status}
+                battery={battery}
+                onStart={handleStart}
+                onPause={handlePause}
+                onResume={handleResume}
+                onStop={handleStopRequest}
+                onCancel={handleCancelWarmup}
+                isGpsWarming={isGpsWarming}
+                gpsAccuracy={pos?.accuracy}
+                warmupStartTime={warmupStartTime}
+              />
+            </div>
           </div>
-        </div>
+        )}
+
+        {status !== "idle" && (
+          <div className="pointer-events-none fixed bottom-6 right-4">
+            <div className="pointer-events-auto">
+              <TripControls
+                status={status}
+                battery={battery}
+                onStart={handleStart}
+                onPause={handlePause}
+                onResume={handleResume}
+                onStop={handleStopRequest}
+                onCancel={handleCancelWarmup}
+                isGpsWarming={isGpsWarming}
+                gpsAccuracy={pos?.accuracy}
+                warmupStartTime={warmupStartTime}
+              />
+            </div>
+          </div>
+        )}
 
         <button
           onClick={() => {
@@ -752,7 +852,7 @@ export function Tracker() {
               });
             }
           }}
-          className="pointer-events-auto fixed bottom-60 right-4 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-slate-800/70 shadow-md transition-all hover:scale-105 active:scale-95"
+          className="pointer-events-auto fixed bottom-44 right-4 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-slate-800/70 shadow-md transition-all hover:scale-105 active:scale-95"
         >
           <svg
             className="h-4 w-4 text-white/80"

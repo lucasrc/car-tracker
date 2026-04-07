@@ -8,9 +8,8 @@ interface DrivingPanelProps {
   cost: number;
   currentFuelLiters: number;
   range: number;
-  currentConsumption: number;
-  avgConsumption: number;
-  calibrated?: boolean;
+  currentConsumption?: number;
+  avgConsumption?: number;
   radarMaxSpeed?: number;
   isSpeeding?: boolean;
   gradePercent?: number;
@@ -43,7 +42,6 @@ export function DrivingPanel({
   range,
   currentConsumption,
   avgConsumption,
-  calibrated = false,
   radarMaxSpeed,
   isSpeeding = false,
   gradePercent = 0,
@@ -109,20 +107,19 @@ export function DrivingPanel({
 
         <div className="flex flex-1 flex-col items-center">
           <span className="text-xs font-medium uppercase text-slate-500">
-            Consumo inst.
+            Consumo instantâneo
           </span>
-          <div className="flex items-center gap-1">
-            <span className="text-lg font-bold tabular-nums text-green-700">
-              {currentConsumption.toFixed(1)}
-            </span>
-            {calibrated && (
-              <span className="rounded bg-green-600 px-1 py-0.5 text-[0.55rem] font-bold text-white">
-                CALIBRADO
-              </span>
-            )}
-          </div>
-          <span className="text-xs text-slate-500">
-            km/l · Méd: {avgConsumption.toFixed(1)}
+          <span className="text-lg font-bold tabular-nums text-green-700">
+            {currentConsumption !== undefined && currentConsumption > 0
+              ? currentConsumption.toFixed(1)
+              : "--"}
+          </span>
+          <span className="text-[0.65rem] text-slate-500">
+            Méd:{" "}
+            {avgConsumption !== undefined && avgConsumption > 0
+              ? avgConsumption.toFixed(1)
+              : "--"}{" "}
+            km/l
           </span>
         </div>
 

@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import {
   getRefuelsByVehicle,
   addRefuel as dbAddRefuel,
@@ -56,8 +56,11 @@ function calculateWeightedAverage(
 
 export function useFuelInventory(vehicleId: string) {
   const batchesRef = useRef<FuelBatch[]>([]);
+  const isLoadingRef = useRef(false);
+  const isLoadedRef = useRef(false);
 
   const loadInventory = useCallback(async (): Promise<FuelBatch[]> => {
+    isLoadingRef.current = true;
     const refuels = await getRefuelsByVehicle(vehicleId);
     const batches: FuelBatch[] = refuels.map((r) => ({
       id: r.id,
@@ -69,6 +72,8 @@ export function useFuelInventory(vehicleId: string) {
       consumedAmount: r.consumedAmount ?? 0,
     }));
     batchesRef.current = batches;
+    isLoadingRef.current = false;
+    isLoadedRef.current = true;
     return batches;
   }, [vehicleId]);
 
@@ -171,13 +176,28 @@ export function useFuelInventory(vehicleId: string) {
     batchesRef.current = batchesRef.current.filter((b) => b.id !== id);
   }, []);
 
-  return {
-    loadInventory,
-    addBatch,
-    consumeFuel,
-    getWeightedAveragePrice,
-    getInventory,
-    getTotalLiters,
-    deleteBatch,
-  };
+  const api = useMemo(
+    () => ({
+      loadInventory,
+      addBatch,
+      consumeFuel,
+      getWeightedAveragePrice,
+      getInventory,
+      getTotalLiters,
+      deleteBatch,
+      isLoaded: () => isLoadedRef.current,
+      isLoading: () => isLoadingRef.current,
+    }),
+    [
+      loadInventory,
+      addBatch,
+      consumeFuel,
+      getWeightedAveragePrice,
+      getInventory,
+      getTotalLiters,
+      deleteBatch,
+    ],
+  );
+
+  return api;
 }

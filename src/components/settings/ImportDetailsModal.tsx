@@ -1,4 +1,4 @@
-import { type CopertCalibration } from "@/types";
+import { type VehicleCalibration } from "@/types";
 import {
   XMarkIcon,
   CheckCircleIcon,
@@ -7,7 +7,7 @@ import {
 import { CheckIcon } from "@heroicons/react/24/solid";
 
 interface ImportDetailsModalProps {
-  data: CopertCalibration;
+  data: VehicleCalibration;
   vehicleInput: string;
   onConfirm: () => void;
   onCancel: () => void;

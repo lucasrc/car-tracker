@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { validateBasic, determineConfidence } from "./agent-judge";
-import type { CopertCalibration } from "@/types";
+import type { VehicleCalibration } from "@/types";
 
 function makeValidCalibration(
-  overrides: Partial<CopertCalibration> = {},
-): CopertCalibration {
-  const base: CopertCalibration = {
+  overrides: Partial<VehicleCalibration> = {},
+): VehicleCalibration {
+  const base: VehicleCalibration = {
     make: "Toyota",
     model: "Corolla",
     year: 2020,
@@ -243,7 +243,7 @@ describe("agent-judge", () => {
 
   describe("real-world vehicle scenarios", () => {
     it("validates realistic HB20 1.0 Flex (2023) data", () => {
-      const hb20: CopertCalibration = {
+      const hb20: VehicleCalibration = {
         make: "Hyundai",
         model: "HB20 1.0 Flex",
         year: 2023,
@@ -285,7 +285,7 @@ describe("agent-judge", () => {
     });
 
     it("validates realistic Corolla 2.0 Flex (2020) data", () => {
-      const corolla: CopertCalibration = {
+      const corolla: VehicleCalibration = {
         make: "Toyota",
         model: "Corolla 2.0 Flex",
         year: 2020,
@@ -327,7 +327,7 @@ describe("agent-judge", () => {
     });
 
     it("validates realistic Creta 1.6 Flex (2021) data", () => {
-      const creta: CopertCalibration = {
+      const creta: VehicleCalibration = {
         make: "Hyundai",
         model: "Creta 1.6 Flex",
         year: 2021,

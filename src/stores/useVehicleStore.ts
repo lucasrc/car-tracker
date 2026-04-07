@@ -15,7 +15,7 @@ import {
   unlinkVehicleRefuels,
   db,
 } from "@/lib/db";
-import { calibrateCopert } from "@/lib/copert-calibration-service";
+import { calibrateVehicle } from "@/lib/vehicle-calibration-service";
 import { generateId } from "@/lib/utils";
 
 interface CalibrationState {
@@ -36,7 +36,7 @@ interface VehicleStore {
   setActiveVehicle: (vehicleId: string) => Promise<void>;
   createVehicle: (
     name: string,
-    data: Parameters<typeof calibrateCopert>[0],
+    data: Parameters<typeof calibrateVehicle>[0],
   ) => Promise<Vehicle | null>;
   updateVehicle: (vehicle: Vehicle) => Promise<void>;
   deleteVehicle: (vehicleId: string) => Promise<{ hasTrips: boolean }>;
@@ -127,7 +127,7 @@ export const useVehicleStore = create<VehicleStore>((set, get) => ({
     });
 
     try {
-      const result = await calibrateCopert(vehicleInput, (progress) => {
+      const result = await calibrateVehicle(vehicleInput, (progress) => {
         set((state) => ({
           calibrationState: {
             ...state.calibrationState,
@@ -196,6 +196,7 @@ export const useVehicleStore = create<VehicleStore>((set, get) => ({
         isHybrid: result.data.isHybrid ?? false,
         gnvCylinderWeightKg: result.data.gnvCylinderWeightKg ?? 80,
         gnvEfficiencyFactor: result.data.gnvEfficiencyFactor ?? 1.32,
+        transmission: result.data.transmission,
       };
 
       await saveVehicle(vehicle);
@@ -309,7 +310,7 @@ export const useVehicleStore = create<VehicleStore>((set, get) => ({
     });
 
     try {
-      const result = await calibrateCopert(vehicleInput, (progress) => {
+      const result = await calibrateVehicle(vehicleInput, (progress) => {
         set((state) => ({
           calibrationState: {
             ...state.calibrationState,

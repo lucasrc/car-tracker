@@ -4,7 +4,7 @@ import { useTripStore } from "./useTripStore";
 import type { Settings, Trip } from "@/types";
 
 // Mock do db
- 
+
 const mockSaveCurrentTrip = vi.fn((_trip: Trip) => Promise.resolve());
 const mockClearCurrentTrip = vi.fn(() => Promise.resolve());
 const mockSaveTrip = vi.fn((trip: Trip) => Promise.resolve(trip.id));
@@ -66,7 +66,7 @@ vi.mock("@/lib/db", () => ({
   getVehicle: () => mockGetVehicle(),
 }));
 
-vi.mock("@/lib/copert-calibration-service", () => ({
+vi.mock("@/lib/vehicle-calibration-service", () => ({
   getSavedCalibration: vi.fn(() => ({
     make: "Toyota",
     model: "Corolla",

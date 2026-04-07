@@ -6,7 +6,11 @@ import type {
   FuelType,
   TripTelemetryData,
 } from "@/types";
-import { simulate, type TelemetryResult } from "@/lib/telemetry-engine";
+import {
+  simulate,
+  type TelemetryResult,
+  resetGearEstimator,
+} from "@/lib/telemetry-engine";
 
 interface SpeedReading {
   speed: number;
@@ -39,11 +43,13 @@ export interface TelemetryEngineReturn {
   isGnv: boolean;
   currentGear?: number;
   currentRpm?: number;
+  currentEngineLoad?: number; // Engine load percentage (0-100%)
   hasTransmissionData: boolean;
   confidence: number;
+  drivingStyle?: "eco" | "normal" | "sport";
 }
 
-const WINDOW_SIZE_MS = 30000;
+const WINDOW_SIZE_MS = 2000;
 const HYSTERESIS_MS = 10000;
 const MIN_SPEED_CITY = 40 / 3.6;
 const MAX_SPEED_HIGHWAY = 60 / 3.6;
@@ -97,8 +103,14 @@ export function useTelemetryEngine(
   const massPenaltyReadingsRef = useRef<number[]>([]);
   const [currentGear, setCurrentGear] = useState<number | undefined>();
   const [currentRpm, setCurrentRpm] = useState<number | undefined>();
+  const [currentEngineLoad, setCurrentEngineLoad] = useState<
+    number | undefined
+  >();
   const [confidence, setConfidence] = useState(0.85);
   const [hasTransmissionData, setHasTransmissionData] = useState(false);
+  const [drivingStyle, setDrivingStyle] = useState<
+    "eco" | "normal" | "sport" | undefined
+  >();
 
   const gearDistributionRef = useRef<Record<number, number>>({});
   const rpmReadingsRef = useRef<number[]>([]);
@@ -128,6 +140,25 @@ export function useTelemetryEngine(
   const cityKmpl = v?.urbanKmpl ?? DEFAULT_CITY;
   const highwayKmpl = v?.highwayKmpl ?? DEFAULT_HIGHWAY;
   const fuelType = v ? mapVehicleFuelType(v) : DEFAULT_FUEL_TYPE;
+
+  useEffect(() => {
+    if (v?.transmission) {
+      console.log(
+        "[Telemetry] ✅ Vehicle has transmission data:",
+        JSON.stringify({
+          type: v.transmission.type,
+          gearRatios: v.transmission.gearRatios,
+          finalDrive: v.transmission.finalDrive,
+          hasTorqueCurve: !!v.transmission.torqueCurve,
+          torqueCurveKeys: v.transmission.torqueCurve
+            ? Object.keys(v.transmission.torqueCurve).length
+            : 0,
+        }),
+      );
+    } else {
+      console.log("[Telemetry] ⚠️ No transmission data on vehicle");
+    }
+  }, [v]);
 
   const calculateMetrics = useCallback(() => {
     const now = Date.now();
@@ -209,6 +240,15 @@ export function useTelemetryEngine(
         return;
       }
 
+      console.log(
+        "[TELEMETRY] gradePercent:",
+        gradePercent,
+        "speed:",
+        speedKmh.toFixed(1),
+        "accel:",
+        accel.toFixed(2),
+      );
+
       const result: TelemetryResult = simulate(vehicle, {
         speed: speedKmh,
         slope: gradePercent,
@@ -225,8 +265,16 @@ export function useTelemetryEngine(
 
       setCurrentGear(result.gear);
       setCurrentRpm(result.rpm);
+      setCurrentEngineLoad(result.engineLoad);
       setConfidence(result.confidence);
       setHasTransmissionData(result.hasTransmissionData);
+      setDrivingStyle(result.drivingStyle);
+
+      if (result.hasTransmissionData) {
+        console.log(
+          `[Telemetry] Gear/RPM calculated: gear=${result.gear}, rpm=${result.rpm}, hasData=${result.hasTransmissionData}`,
+        );
+      }
 
       if (result.gear !== undefined && result.gear > 0) {
         const dist = gearDistributionRef.current;
@@ -366,31 +414,28 @@ export function useTelemetryEngine(
     speedDistributionRef.current = { city: 0, mixed: 0, highway: 0 };
     setCurrentGear(undefined);
     setCurrentRpm(undefined);
+    setCurrentEngineLoad(undefined);
     setConfidence(0.85);
     setHasTransmissionData(false);
     setDriveMode("city");
     setAvgSpeed(0);
     setCurrentKmPerLiter(cityKmpl);
     setWarmUpElapsedMs(0);
+    setDrivingStyle(undefined);
+    resetGearEstimator();
   }, [cityKmpl]);
 
   const getAverageConsumption = useCallback((): number => {
-    const samples = samplesRef.current;
-    if (samples.length === 0) return 0;
-    // Correct formula: total distance / total fuel used (harmonic mean)
-    const totalDistance = samples.reduce((sum, s) => sum + s.distanceKm, 0);
-    const totalFuel = samples.reduce((sum, s) => sum + s.fuelUsed, 0);
-    if (totalFuel === 0 || totalDistance === 0) return 0;
-    return totalDistance / totalFuel;
+    if (totalFuelUsedRef.current === 0 || totalDistanceRef.current === 0)
+      return 0;
+    return totalDistanceRef.current / totalFuelUsedRef.current;
   }, []);
 
   const getInstantConsumption = useCallback((): number => {
     const samples = samplesRef.current;
     if (samples.length === 0) return 0;
-    const recentCutoff = Date.now() - WINDOW_SIZE_MS;
-    const recent = samples.filter((s) => s.timestamp > recentCutoff);
+    const recent = samples.slice(-3);
     if (recent.length === 0) return 0;
-    // Correct formula: total distance / total fuel used (harmonic mean)
     const totalDistance = recent.reduce((sum, s) => sum + s.distanceKm, 0);
     const totalFuel = recent.reduce((sum, s) => sum + s.fuelUsed, 0);
     if (totalFuel === 0 || totalDistance === 0) return 0;
@@ -537,7 +582,9 @@ export function useTelemetryEngine(
     isGnv: fuelType === "gnv",
     currentGear,
     currentRpm,
+    currentEngineLoad,
     hasTransmissionData,
     confidence,
+    drivingStyle,
   };
 }

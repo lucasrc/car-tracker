@@ -1,7 +1,13 @@
 import { NavLink, useLocation } from "react-router-dom";
+import { useTripStore } from "@/stores/useTripStore";
 
 export function BottomNav() {
   const location = useLocation();
+  const status = useTripStore((s) => s.status);
+
+  if (status !== "idle") {
+    return null;
+  }
   const searchParams = new URLSearchParams(location.search);
   const isHistoryRoute = location.pathname.startsWith("/history");
   const isReportTab = isHistoryRoute && searchParams.get("tab") === "report";

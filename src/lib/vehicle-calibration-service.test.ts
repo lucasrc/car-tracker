@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { extractJsonFromResponse } from "./copert-calibration-service";
+import { extractJsonFromResponse } from "./vehicle-calibration-service";
 
 describe("extractJsonFromResponse", () => {
   it("extracts JSON from markdown code block", () => {

@@ -7,7 +7,7 @@ import { History } from "@/pages/History";
 import { TripDetail } from "@/pages/TripDetail";
 import { Settings } from "@/pages/Settings";
 import { NotFound } from "@/pages/NotFound";
-import { CopertTest } from "@/pages/CopertTest";
+import { CalibrationTest } from "@/pages/CalibrationTest";
 import { RefuelPage } from "@/pages/Refuel";
 import { useEffect, useState } from "react";
 import { useTripStore } from "@/stores/useTripStore";
@@ -54,7 +54,7 @@ export function App() {
           <Route path="/history/:id" element={<TripDetail />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/refuel" element={<RefuelPage />} />
-          <Route path="/test-copert" element={<CopertTest />} />
+          <Route path="/test-calibration" element={<CalibrationTest />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
         <BottomNav />

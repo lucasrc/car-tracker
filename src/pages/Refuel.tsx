@@ -7,7 +7,7 @@ import { RefuelCard } from "@/components/history/RefuelCard";
 import type { Refuel, FuelType } from "@/types";
 
 export function RefuelPage() {
-  const { vehicles, setActiveVehicle, updateVehicleFuelLevel } =
+  const { vehicles, activeVehicle, setActiveVehicle, updateVehicleFuelLevel } =
     useVehicleStore();
 
   const [selectedVehicleId, setSelectedVehicleId] = useState("");
@@ -15,6 +15,10 @@ export function RefuelPage() {
   const [showModal, setShowModal] = useState(false);
 
   const selectedVehicle = vehicles.find((v) => v.id === selectedVehicleId);
+  const currentVehicleFuel =
+    activeVehicle?.id === selectedVehicleId
+      ? (activeVehicle?.currentFuel ?? 0)
+      : (selectedVehicle?.currentFuel ?? 0);
 
   const loadRefuels = useCallback(async (vehicleId: string) => {
     try {
@@ -57,7 +61,7 @@ export function RefuelPage() {
 
     try {
       const newFuel = Math.min(
-        selectedVehicle.currentFuel + liters,
+        currentVehicleFuel + liters,
         selectedVehicle.fuelCapacity,
       );
       await updateVehicleFuelLevel(selectedVehicle.id, newFuel);
@@ -136,11 +140,10 @@ export function RefuelPage() {
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-gray-500">Tanque atual</span>
                   <span className="font-semibold text-gray-900">
-                    {selectedVehicle.currentFuel.toFixed(1)} /{" "}
+                    {currentVehicleFuel.toFixed(1)} /{" "}
                     {selectedVehicle.fuelCapacity}L (
                     {(
-                      (selectedVehicle.currentFuel /
-                        selectedVehicle.fuelCapacity) *
+                      (currentVehicleFuel / selectedVehicle.fuelCapacity) *
                       100
                     ).toFixed(0)}
                     %)
@@ -212,7 +215,7 @@ export function RefuelPage() {
             ? "gasolina"
             : (selectedVehicle?.fuelType as FuelType) || "gasolina"
         }
-        currentFuel={selectedVehicle?.currentFuel || 0}
+        currentFuel={currentVehicleFuel}
         fuelCapacity={selectedVehicle?.fuelCapacity || 50}
         onConfirm={handleRefuel}
         onCancel={() => setShowModal(false)}
