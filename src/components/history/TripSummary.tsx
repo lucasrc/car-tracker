@@ -35,7 +35,7 @@ export function TripSummary({ startDate, endDate }: TripSummaryProps) {
         const refuels = await getRefuelsInPeriod(start, end);
 
         const totalDistance = trips.reduce(
-          (acc, t) => acc + t.distanceMeters,
+          (acc, t) => acc + (t.distanceMeters || 0),
           0,
         );
         const totalFuelUsed = trips.reduce(
@@ -43,20 +43,32 @@ export function TripSummary({ startDate, endDate }: TripSummaryProps) {
           0,
         );
         const totalLitersRefueled = refuels.reduce(
-          (acc, r) => acc + r.amount,
+          (acc, r) => acc + (r.amount || 0),
           0,
         );
-        const tripActualCost = trips.reduce((acc, t) => acc + t.actualCost, 0);
-        const refuelCost = refuels.reduce((acc, r) => acc + r.totalCost, 0);
+        const tripActualCost = trips.reduce(
+          (acc, t) => acc + (t.actualCost || 0),
+          0,
+        );
+        const refuelCost = refuels.reduce(
+          (acc, r) => acc + (r.totalCost || 0),
+          0,
+        );
+        const totalDistanceKm = totalDistance / 1000;
         const avgKmPerLiter =
-          totalFuelUsed > 0 ? totalDistance / 1000 / totalFuelUsed : 0;
+          totalFuelUsed > 0 && totalDistanceKm > 0
+            ? totalDistanceKm / totalFuelUsed
+            : 0;
         const costPerKm =
-          totalDistance > 0 ? tripActualCost / (totalDistance / 1000) : 0;
+          totalDistanceKm > 0 ? tripActualCost / totalDistanceKm : 0;
         const avgCostPerTrip =
           trips.length > 0 ? tripActualCost / trips.length : 0;
 
         const tripsWithPenalty = trips.filter(
-          (t) => t.consumptionBreakdown && t.consumptionBreakdown.extraCost > 0,
+          (t) =>
+            t.consumptionBreakdown &&
+            typeof t.consumptionBreakdown.extraCost === "number" &&
+            t.consumptionBreakdown.extraCost > 0,
         );
         const totalPenalty = tripsWithPenalty.reduce(
           (acc, t) => acc + (t.consumptionBreakdown?.extraCost || 0),

@@ -4,11 +4,11 @@ import { MapTracker } from "@/components/tracker/MapTracker";
 import { Speedometer } from "@/components/tracker/Speedometer";
 import { TripControls } from "@/components/tracker/TripControls";
 import { DrivingPanel } from "@/components/tracker/DrivingPanel";
-import { FuelBar } from "@/components/tracker/FuelBar";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { SimulationControls } from "@/components/tracker/SimulationControls";
 import { DrivingModePanel } from "@/components/tracker/DrivingModePanel";
 import { EngineLoadBar } from "@/components/tracker/EngineLoadBar";
+import { LocationButton } from "@/components/tracker/LocationButton";
 import { useTripStore } from "@/stores/useTripStore";
 import { useRadarStore } from "@/stores/useRadarStore";
 import { useGeolocation } from "@/hooks/useGeolocation";
@@ -19,7 +19,7 @@ import { useTelemetryEngine } from "@/hooks/useTelemetryEngine";
 import { useInclination } from "@/hooks/useInclination";
 import { useSimulation } from "@/hooks/useSimulation";
 import { useAutoTracker } from "@/hooks/useAutoTracker";
-import { useFuelInventory } from "@/hooks/useFuelInventory";
+import { useFuelInventoryStore } from "@/stores/useFuelInventoryStore";
 import { useVehicleStore } from "@/stores/useVehicleStore";
 import { useAppStore } from "@/stores/useAppStore";
 import { isAndroid } from "@/lib/platform";
@@ -91,7 +91,9 @@ export function Tracker() {
     setOnTripComplete,
   } = useAutoTracker();
   const { activeVehicle, updateVehicleFuelLevel } = useVehicleStore();
-  const fuelInventory = useFuelInventory(activeVehicle?.id || "");
+  const fuelInventoryIsLoaded = useFuelInventoryStore((s) => s.isLoaded);
+  const { loadBatches, consumeFuel, getTotalLiters, getWeightedAveragePrice } =
+    useFuelInventoryStore();
   const { nearestRadar, currentSpeedingEvent } = useRadarStore();
   const inclination = useInclination({ enabled: status === "recording" });
   const location = useLocationProvider();
@@ -137,9 +139,13 @@ export function Tracker() {
 
   useEffect(() => {
     if (activeVehicle?.id) {
-      fuelInventory.loadInventory();
+      // Reset and reload when vehicle changes
+      console.log(
+        `[FUEL] Vehicle changed to ${activeVehicle.id}, reloading inventory`,
+      );
+      loadBatches(activeVehicle.id);
     }
-  }, [activeVehicle?.id, fuelInventory]);
+  }, [activeVehicle?.id]);
 
   useEffect(() => {
     if (filteredPitch !== null) {
@@ -171,12 +177,12 @@ export function Tracker() {
             : "gasolina"
       : "gasolina";
 
-    const totalLiters = fuelInventory.getTotalLiters(
+    const totalLiters = getTotalLiters(
       vehicleFuelType as "gasolina" | "etanol" | "flex" | "gnv",
     );
     const weightedPrice =
       totalLiters > 0
-        ? fuelInventory.getWeightedAveragePrice(
+        ? getWeightedAveragePrice(
             vehicleFuelType as "gasolina" | "etanol" | "flex" | "gnv",
           )
         : 0;
@@ -187,7 +193,7 @@ export function Tracker() {
     } else {
       setRealtimeCost(storeTotalFuelUsed * weightedPrice);
     }
-  }, [storeTotalFuelUsed, fuelInventory, activeVehicle]);
+  }, [storeTotalFuelUsed, activeVehicle]);
 
   useEffect(() => {
     if (autoTrackingEnabled && selectedCarBluetoothAddress) {
@@ -262,7 +268,7 @@ export function Tracker() {
         );
         return;
       }
-      await fuelInventory.loadInventory();
+      await loadBatches(activeVehicle.id);
       resetSpeedFilter();
       resetDriveMode();
       lastValidPositionRef.current = null;
@@ -303,7 +309,7 @@ export function Tracker() {
     requestWakeLock,
     resetSpeedFilter,
     resetDriveMode,
-    fuelInventory,
+    loadBatches,
     setLocalFuelUsed,
   ]);
 
@@ -352,9 +358,9 @@ export function Tracker() {
         return;
       }
 
-      if (!fuelInventory.isLoaded()) {
+      if (!fuelInventoryIsLoaded) {
         console.log("[FUEL] Waiting for inventory to load...");
-        await fuelInventory.loadInventory();
+        await loadBatches(activeVehicle.id);
       }
 
       const fuelToConsume = accumulatedFuelRef.current;
@@ -375,9 +381,13 @@ export function Tracker() {
               : "gasolina";
 
       try {
-        const result = await fuelInventory.consumeFuel(
+        console.log(
+          `[FUEL] Calling consumeFuel with ${fuelToConsume}L, type=${vehicleFuelType}, vehicleId=${activeVehicle.id}`,
+        );
+        const result = await consumeFuel(
           fuelToConsume,
           vehicleFuelType,
+          activeVehicle.id,
         );
         console.log(
           `[FUEL] Batch consumption result: cost=${result.cost.toFixed(2)}, batches=${result.batches.length}`,
@@ -392,7 +402,7 @@ export function Tracker() {
         `[FUEL] Vehicle fuel updated: ${currentFuelLevel.toFixed(2)}L -> ${newFuelLevel.toFixed(2)}L`,
       );
     },
-    [activeVehicle, fuelInventory, updateVehicleFuelLevel],
+    [activeVehicle, updateVehicleFuelLevel],
   );
 
   const handleConfirmStop = useCallback(async () => {
@@ -726,11 +736,6 @@ export function Tracker() {
 
   return (
     <>
-      <FuelBar
-        currentFuel={displayedFuel}
-        fuelCapacity={activeVehicle?.fuelCapacity ?? 50}
-      />
-
       <div className="fixed inset-0 z-0">
         <MapTracker
           position={effectivePosition}
@@ -793,56 +798,41 @@ export function Tracker() {
 
         <EngineLoadBar engineLoad={currentEngineLoad} />
 
-        <div className="pointer-events-none fixed bottom-6 left-4 z-40">
-          <Speedometer
-            currentSpeed={displaySpeed}
-            maxSpeed={nearbyRadarMaxSpeed}
-            isSpeeding={!!currentSpeedingEvent}
-            currentGear={currentGear}
-            currentRpm={currentRpm}
-            hasTransmissionData={hasTransmissionData}
-          />
+        <div
+          className={`pointer-events-none fixed left-4 right-4 z-40 transition-all duration-300 ${
+            status === "idle" ? "bottom-24" : "bottom-6"
+          }`}
+        >
+          <div className="flex items-end justify-between pointer-events-none">
+            <div className="flex flex-col items-start">
+              <Speedometer
+                currentSpeed={displaySpeed}
+                maxSpeed={nearbyRadarMaxSpeed}
+                isSpeeding={!!currentSpeedingEvent}
+                currentGear={currentGear}
+                currentRpm={currentRpm}
+                hasTransmissionData={hasTransmissionData}
+              />
+            </div>
+
+            <div className="pointer-events-auto">
+              <TripControls
+                status={status}
+                battery={battery}
+                onStart={handleStart}
+                onPause={handlePause}
+                onResume={handleResume}
+                onStop={handleStopRequest}
+                onCancel={handleCancelWarmup}
+                isGpsWarming={isGpsWarming}
+                gpsAccuracy={pos?.accuracy}
+                warmupStartTime={warmupStartTime}
+              />
+            </div>
+          </div>
         </div>
 
-        {status === "idle" && (
-          <div className="pointer-events-none fixed bottom-6 right-4">
-            <div className="pointer-events-auto">
-              <TripControls
-                status={status}
-                battery={battery}
-                onStart={handleStart}
-                onPause={handlePause}
-                onResume={handleResume}
-                onStop={handleStopRequest}
-                onCancel={handleCancelWarmup}
-                isGpsWarming={isGpsWarming}
-                gpsAccuracy={pos?.accuracy}
-                warmupStartTime={warmupStartTime}
-              />
-            </div>
-          </div>
-        )}
-
-        {status !== "idle" && (
-          <div className="pointer-events-none fixed bottom-6 right-4">
-            <div className="pointer-events-auto">
-              <TripControls
-                status={status}
-                battery={battery}
-                onStart={handleStart}
-                onPause={handlePause}
-                onResume={handleResume}
-                onStop={handleStopRequest}
-                onCancel={handleCancelWarmup}
-                isGpsWarming={isGpsWarming}
-                gpsAccuracy={pos?.accuracy}
-                warmupStartTime={warmupStartTime}
-              />
-            </div>
-          </div>
-        )}
-
-        <button
+        <LocationButton
           onClick={() => {
             getCurrentPosition();
             if (mapInstance && pos) {
@@ -852,23 +842,8 @@ export function Tracker() {
               });
             }
           }}
-          className="pointer-events-auto fixed bottom-44 right-4 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-slate-800/70 shadow-md transition-all hover:scale-105 active:scale-95"
-        >
-          <svg
-            className="h-4 w-4 text-white/80"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-            strokeWidth="2"
-          >
-            <circle cx="12" cy="12" r="10" />
-            <circle cx="12" cy="12" r="3" />
-            <line x1="12" y1="2" x2="12" y2="6" />
-            <line x1="12" y1="18" x2="12" y2="22" />
-            <line x1="2" y1="12" x2="6" y2="12" />
-            <line x1="18" y1="12" x2="22" y2="12" />
-          </svg>
-        </button>
+          className={`fixed right-4 z-10 ${status === "idle" ? "bottom-52" : "bottom-48"}`}
+        />
       </div>
 
       {debugModeEnabled && status === "recording" && (

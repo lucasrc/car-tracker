@@ -92,7 +92,10 @@ export function AddCarModal({ open, onClose }: AddCarModalProps) {
     if (!pendingCalibration) return;
 
     const name = vehicleName.trim() || vehicleInput.trim();
-    const result = await createVehicle(name, pendingCalibration.vehicleInput);
+    const result = await createVehicle(name, pendingCalibration.vehicleInput, {
+      ...pendingCalibration.data,
+      dataSource: pendingCalibration.data.dataSource,
+    });
 
     if (result) {
       await loadVehicles();
@@ -125,12 +128,12 @@ export function AddCarModal({ open, onClose }: AddCarModalProps) {
         onClick={() => !isCalibrating && onClose()}
         aria-hidden="true"
       />
-      <div className="relative w-full max-w-lg rounded-t-3xl bg-white p-6 shadow-2xl sm:rounded-2xl">
+      <div className="relative w-full max-w-lg rounded-t-3xl bg-white p-6 pb-10 shadow-2xl sm:rounded-2xl sm:pb-6">
         <div className="mb-6 flex items-center justify-between">
           <div>
             <h2 className="text-xl font-bold text-gray-900">Adicionar Carro</h2>
             <p className="mt-1 text-sm text-gray-500">
-              Descreva seu carro e a IA calibrará automaticamente os parâmetros.
+              Descreva seu carro para calibrar os parâmetros.
             </p>
           </div>
           <button
@@ -181,7 +184,7 @@ export function AddCarModal({ open, onClose }: AddCarModalProps) {
                 <SparklesIcon className="h-5 w-5 animate-pulse text-blue-600" />
                 <div className="flex-1">
                   <p className="text-sm font-medium text-blue-700">
-                    Calibrando com IA...
+                    Aguarde...
                   </p>
                   <p className="mt-1 text-xs text-blue-600">{progress}</p>
                 </div>
@@ -204,7 +207,7 @@ export function AddCarModal({ open, onClose }: AddCarModalProps) {
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 py-4 text-base font-semibold text-white shadow-lg transition-all hover:scale-[1.02] hover:shadow-xl disabled:opacity-50 disabled:hover:scale-100"
           >
             <SparklesIcon className="h-5 w-5" />
-            {isCalibrating ? "Processando..." : "Adicionar com IA"}
+            {isCalibrating ? "Processando..." : "Adicionar Carro"}
           </button>
         </div>
       </div>

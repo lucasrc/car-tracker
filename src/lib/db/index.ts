@@ -1,17 +1,18 @@
 export { getDb, closeDb } from "./factory";
-export {
-  attemptMigration,
-  migrateFromDexie,
-  forceUseDexie,
-  forceUseSqlite,
-} from "./migration";
+export { attemptMigration, forceUseSqlite } from "./migration";
 export type { DbAdapter, DbAdapterConstructor, DbAdapterType } from "./adapter";
-export { createDexieAdapter } from "./dexie-adapter";
 export { createSqliteAdapter } from "./sqlite-adapter";
 
 import { getDb } from "./factory";
 import type { DbAdapter } from "./adapter";
-import type { Trip, Settings, Refuel, FuelType } from "@/types";
+import type {
+  Trip,
+  Settings,
+  Refuel,
+  FuelType,
+  Vehicle,
+  InclinationCalibration,
+} from "@/types";
 
 async function withDb<T>(fn: (db: DbAdapter) => Promise<T>): Promise<T> {
   const db = await getDb();
@@ -63,10 +64,10 @@ export async function deleteTrip(id: string): Promise<void> {
 }
 
 export async function addRefuel(
+  vehicleId: string,
   amount: number,
   fuelPrice: number,
   fuelType: FuelType,
-  vehicleId: string,
 ): Promise<Refuel> {
   return withDb((db) => db.addRefuel(vehicleId, amount, fuelPrice, fuelType));
 }
@@ -85,6 +86,14 @@ export async function getRefuelsInPeriod(
   return withDb((db) => db.getRefuelsInPeriod(startDate, endDate));
 }
 
+export async function getRefuelsByVehicle(
+  vehicleId: string,
+  startDate?: Date,
+  endDate?: Date,
+): Promise<Refuel[]> {
+  return withDb((db) => db.getRefuelsByVehicle(vehicleId, startDate, endDate));
+}
+
 export async function deleteRefuel(id: string): Promise<void> {
   return withDb((db) => db.deleteRefuel(id));
 }
@@ -92,6 +101,56 @@ export async function deleteRefuel(id: string): Promise<void> {
 export async function getTripsInPeriod(
   startDate: Date,
   endDate: Date,
+  vehicleId?: string,
 ): Promise<Trip[]> {
-  return withDb((db) => db.getTripsInPeriod(startDate, endDate));
+  return withDb((db) => db.getTripsInPeriod(startDate, endDate, vehicleId));
+}
+
+export async function getVehicles(): Promise<Vehicle[]> {
+  return withDb((db) => db.getVehicles());
+}
+
+export async function getVehicle(id: string): Promise<Vehicle | undefined> {
+  return withDb((db) => db.getVehicle(id));
+}
+
+export async function saveVehicle(vehicle: Vehicle): Promise<void> {
+  return withDb((db) => db.saveVehicle(vehicle));
+}
+
+export async function deleteVehicle(id: string): Promise<void> {
+  return withDb((db) => db.deleteVehicle(id));
+}
+
+export async function updateVehicleFuel(
+  vehicleId: string,
+  currentFuel: number,
+): Promise<void> {
+  return withDb((db) => db.updateVehicleFuel(vehicleId, currentFuel));
+}
+
+export async function unlinkVehicleRefuels(vehicleId: string): Promise<void> {
+  return withDb((db) => db.unlinkVehicleRefuels(vehicleId));
+}
+
+export async function getInclinationCalibration(
+  vehicleId: string,
+): Promise<InclinationCalibration | undefined> {
+  return withDb((db) => db.getInclinationCalibration(vehicleId));
+}
+
+export async function saveInclinationCalibration(
+  calibration: InclinationCalibration,
+): Promise<void> {
+  return withDb((db) => db.saveInclinationCalibration(calibration));
+}
+
+export async function clearInclinationCalibration(
+  vehicleId: string,
+): Promise<void> {
+  return withDb((db) => db.clearInclinationCalibration(vehicleId));
+}
+
+export async function migrateLegacyCalibration(): Promise<void> {
+  return withDb((db) => db.migrateLegacyCalibration());
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useVehicleStore } from "@/stores/useVehicleStore";
-import { getRefuelsByVehicle, addRefuel, deleteRefuel } from "@/lib/db";
+import { useFuelInventoryStore } from "@/stores/useFuelInventoryStore";
+import { getRefuelsByVehicle, deleteRefuel } from "@/lib/db";
 import { VehicleSelector } from "@/components/ui/VehicleSelector";
 import { RefuelModal } from "@/components/ui/RefuelModal";
 import { RefuelCard } from "@/components/history/RefuelCard";
@@ -38,10 +39,12 @@ export function RefuelPage() {
   }, [selectedVehicleId, loadRefuels]);
 
   useEffect(() => {
-    if (vehicles.length > 0 && !selectedVehicleId) {
+    if (activeVehicle?.id && !selectedVehicleId) {
+      setSelectedVehicleId(activeVehicle.id);
+    } else if (vehicles.length > 0 && !selectedVehicleId) {
       setSelectedVehicleId(vehicles[0].id);
     }
-  }, [vehicles, selectedVehicleId]);
+  }, [vehicles, selectedVehicleId, activeVehicle]);
 
   const handleSelectVehicle = async (vehicleId: string) => {
     setSelectedVehicleId(vehicleId);
@@ -49,6 +52,14 @@ export function RefuelPage() {
       await setActiveVehicle(vehicleId);
     }
   };
+
+  const { loadBatches, addBatch } = useFuelInventoryStore();
+
+  useEffect(() => {
+    if (selectedVehicleId) {
+      loadBatches(selectedVehicleId);
+    }
+  }, [selectedVehicleId]);
 
   const handleRefuel = async (
     liters: number,
@@ -65,7 +76,7 @@ export function RefuelPage() {
         selectedVehicle.fuelCapacity,
       );
       await updateVehicleFuelLevel(selectedVehicle.id, newFuel);
-      await addRefuel(liters, pricePerLiter, fuelType, selectedVehicle.id);
+      await addBatch(liters, pricePerLiter, fuelType, selectedVehicle.id);
       await loadRefuels(selectedVehicle.id);
     } catch (err) {
       console.error("Error refueling:", err);
@@ -87,7 +98,7 @@ export function RefuelPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20">
+    <div className="min-h-screen bg-gray-50 pb-24">
       <div className="bg-gradient-to-r from-green-600 to-emerald-600 p-6 text-white">
         <h1 className="text-2xl font-bold">Abastecimento</h1>
         <p className="text-sm text-white/80">

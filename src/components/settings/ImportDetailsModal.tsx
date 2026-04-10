@@ -26,11 +26,6 @@ const confidenceLabels: Record<string, string> = {
   low: "Baixa",
 };
 
-const dataSourceLabels: Record<string, string> = {
-  web: "Busca na Web",
-  ai_inferred: "Inferência IA",
-};
-
 export function ImportDetailsModal({
   data,
   vehicleInput,
@@ -175,22 +170,17 @@ export function ImportDetailsModal({
                 {fuelTypeLabels[data.fuelType]}
               </span>
             </div>
-            <div className="flex items-center gap-3">
-              <span className="text-xs text-gray-500">
-                Fonte: {dataSourceLabels[data.dataSource ?? "ai_inferred"]}
-              </span>
-              <span
-                className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                  data.confidence === "high"
-                    ? "bg-green-100 text-green-700"
-                    : data.confidence === "medium"
-                      ? "bg-yellow-100 text-yellow-700"
-                      : "bg-red-100 text-red-700"
-                }`}
-              >
-                {confidenceLabels[data.confidence]}
-              </span>
-            </div>
+            <span
+              className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                data.confidence === "high"
+                  ? "bg-green-100 text-green-700"
+                  : data.confidence === "medium"
+                    ? "bg-yellow-100 text-yellow-700"
+                    : "bg-red-100 text-red-700"
+              }`}
+            >
+              {confidenceLabels[data.confidence]}
+            </span>
           </div>
 
           <div className="flex gap-3">

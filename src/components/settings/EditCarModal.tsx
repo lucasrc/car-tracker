@@ -140,7 +140,7 @@ export function EditCarModal({ vehicle, onClose }: EditCarModalProps) {
         onClick={() => !calibrationState.isCalibrating && onClose()}
         aria-hidden="true"
       />
-      <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-t-3xl bg-white p-6 shadow-2xl sm:rounded-2xl">
+      <div className="relative w-full max-w-lg max-h-[calc(100vh-80px)] overflow-y-auto rounded-t-3xl bg-white p-6 pb-20 shadow-2xl sm:rounded-2xl sm:max-h-[85vh] sm:pb-6">
         <div className="mb-6 flex items-center justify-between">
           <div>
             <h2 className="text-xl font-bold text-gray-900">Editar Carro</h2>
@@ -450,7 +450,7 @@ export function EditCarModal({ vehicle, onClose }: EditCarModalProps) {
               className="flex w-full items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-700"
             >
               <SparklesIcon className="h-4 w-4" />
-              {showRecalibrate ? "Fechar recalibração" : "Recalibrar com IA"}
+              {showRecalibrate ? "Fechar recalibração" : "Recalibrar"}
             </button>
 
             {showRecalibrate && (

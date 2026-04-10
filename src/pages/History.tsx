@@ -12,6 +12,7 @@ import {
   deleteTrip,
   getTripsInPeriod,
   getRefuelsInPeriod,
+  getRefuelsByVehicle,
   deleteRefuel,
   getVehicles,
 } from "@/lib/db";
@@ -41,9 +42,17 @@ export function History() {
   const loadTrips = useCallback(async () => {
     try {
       const { start, end } = normalizeDateRange(startDate, endDate);
+
+      const vehicleId =
+        selectedVehicleId === "all"
+          ? undefined
+          : selectedVehicleId || undefined;
+
       const [filteredTrips, filteredRefuels, allVehicles] = await Promise.all([
-        getTripsInPeriod(start, end),
-        getRefuelsInPeriod(start, end),
+        getTripsInPeriod(start, end, vehicleId),
+        vehicleId
+          ? getRefuelsByVehicle(vehicleId, start, end)
+          : getRefuelsInPeriod(start, end),
         getVehicles(),
       ]);
       setTrips(filteredTrips);
@@ -54,7 +63,7 @@ export function History() {
     } finally {
       setLoading(false);
     }
-  }, [startDate, endDate]);
+  }, [startDate, endDate, selectedVehicleId]);
 
   useEffect(() => {
     loadTrips();

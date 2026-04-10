@@ -1,6 +1,13 @@
 import initSqlJs, { type Database } from "sql.js";
 import type { DbAdapter } from "./adapter";
-import type { Trip, Settings, Refuel, FuelType } from "@/types";
+import type {
+  Trip,
+  Settings,
+  Refuel,
+  FuelType,
+  Vehicle,
+  InclinationCalibration,
+} from "@/types";
 import { generateId } from "@/lib/utils";
 
 const DB_NAME = "CarTelemetrySQLite";
@@ -105,6 +112,7 @@ class SqliteAdapter implements DbAdapter {
     this.db.run(`
       CREATE TABLE IF NOT EXISTS refuels (
         id TEXT PRIMARY KEY,
+        vehicleId TEXT,
         timestamp TEXT,
         amount REAL,
         fuelPrice REAL,
@@ -143,8 +151,82 @@ class SqliteAdapter implements DbAdapter {
     );
     this.db.run(`CREATE INDEX IF NOT EXISTS idx_trips_status ON trips(status)`);
     this.db.run(
+      `CREATE INDEX IF NOT EXISTS idx_trips_vehicleId ON trips(vehicleId)`,
+    );
+    this.db.run(
       `CREATE INDEX IF NOT EXISTS idx_refuels_timestamp ON refuels(timestamp)`,
     );
+    this.db.run(
+      `CREATE INDEX IF NOT EXISTS idx_refuels_vehicleId ON refuels(vehicleId)`,
+    );
+
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS vehicles (
+        id TEXT PRIMARY KEY,
+        name TEXT,
+        make TEXT,
+        model TEXT,
+        year INTEGER,
+        displacement REAL,
+        fuelType TEXT,
+        euroNorm TEXT,
+        segment TEXT,
+        urbanKmpl REAL,
+        highwayKmpl REAL,
+        combinedKmpl REAL,
+        mass REAL,
+        grossWeight REAL,
+        frontalArea REAL,
+        dragCoefficient REAL,
+        f0 REAL,
+        f1 REAL,
+        f2 REAL,
+        fuelConversionFactor REAL,
+        peakPowerKw REAL,
+        peakTorqueNm REAL,
+        co2_gkm REAL,
+        nox_mgkm REAL,
+        confidence TEXT,
+        calibrationInput TEXT,
+        calibratedAt TEXT,
+        createdAt TEXT,
+        fuelCapacity REAL,
+        currentFuel REAL,
+        dataSource TEXT,
+        inmetroCityKmpl REAL,
+        inmetroHighwayKmpl REAL,
+        userAvgCityKmpl REAL,
+        userAvgHighwayKmpl REAL,
+        inmetroEthanolCityKmpl REAL,
+        inmetroEthanolHighwayKmpl REAL,
+        userAvgEthanolCityKmpl REAL,
+        userAvgEthanolHighwayKmpl REAL,
+        inmetroGnvCityKmpl REAL,
+        inmetroGnvHighwayKmpl REAL,
+        userAvgGnvCityKmpl REAL,
+        userAvgGnvHighwayKmpl REAL,
+        crr REAL,
+        idleLph REAL,
+        baseBsfc REAL,
+        weightInmetro REAL,
+        weightUser REAL,
+        isHybrid INTEGER,
+        gnvCylinderWeightKg REAL,
+        gnvEfficiencyFactor REAL,
+        transmission TEXT,
+        techEra TEXT,
+        idleFuelRateLph REAL,
+        bsfcMinGPerKwh REAL
+      )
+    `);
+
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS inclination_calibrations (
+        vehicleId TEXT PRIMARY KEY,
+        offsetDegrees REAL,
+        calibratedAt TEXT
+      )
+    `);
 
     const settings = this.db.exec(
       "SELECT * FROM settings WHERE id = 'default'",
@@ -300,6 +382,7 @@ class SqliteAdapter implements DbAdapter {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private refuelToRow(refuel: Refuel): any[] {
     return [
+      refuel.vehicleId,
       refuel.id,
       refuel.timestamp,
       refuel.amount,
@@ -472,6 +555,7 @@ class SqliteAdapter implements DbAdapter {
   }
 
   async addRefuel(
+    vehicleId: string,
     amount: number,
     fuelPrice: number,
     fuelType: FuelType = "gasolina",
@@ -479,6 +563,7 @@ class SqliteAdapter implements DbAdapter {
     await this.init();
     const refuel: Refuel = {
       id: generateId(),
+      vehicleId,
       timestamp: new Date().toISOString(),
       amount,
       fuelPrice,
@@ -489,6 +574,7 @@ class SqliteAdapter implements DbAdapter {
 
     const row = this.refuelToRow(refuel);
     const cols = [
+      "vehicleId",
       "id",
       "timestamp",
       "amount",
@@ -539,14 +625,24 @@ class SqliteAdapter implements DbAdapter {
     await this.save();
   }
 
-  async getTripsInPeriod(startDate: Date, endDate: Date): Promise<Trip[]> {
+  async getTripsInPeriod(
+    startDate: Date,
+    endDate: Date,
+    vehicleId?: string,
+  ): Promise<Trip[]> {
     await this.init();
     const start = startDate.toISOString();
     const end = endDate.toISOString();
 
-    const result = this.db!.exec(
-      `SELECT * FROM trips WHERE startTime >= '${start}' AND startTime <= '${end}' AND status = 'completed' ORDER BY startTime DESC`,
-    );
+    let query = `SELECT * FROM trips WHERE startTime >= '${start}' AND startTime <= '${end}' AND status = 'completed'`;
+
+    if (vehicleId) {
+      query += ` AND vehicleId = '${vehicleId}'`;
+    }
+
+    query += " ORDER BY startTime DESC";
+
+    const result = this.db!.exec(query);
 
     if (result.length === 0) {
       return [];
@@ -554,6 +650,334 @@ class SqliteAdapter implements DbAdapter {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return result[0].values.map((row: any[]) => this.tripFromRow(row));
+  }
+
+  async getVehicles(): Promise<Vehicle[]> {
+    await this.init();
+    const result = this.db!.exec(
+      "SELECT * FROM vehicles ORDER BY createdAt DESC",
+    );
+
+    if (result.length === 0) {
+      return [];
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return result[0].values.map((row: any[]) => this.vehicleFromRow(row));
+  }
+
+  async getVehicle(id: string): Promise<Vehicle | undefined> {
+    await this.init();
+    const result = this.db!.exec(`SELECT * FROM vehicles WHERE id = '${id}'`);
+
+    if (result.length === 0 || result[0].values.length === 0) {
+      return undefined;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return this.vehicleFromRow(result[0].values[0]);
+  }
+
+  async saveVehicle(vehicle: Vehicle): Promise<void> {
+    await this.init();
+    const row = this.vehicleToRow(vehicle);
+    const cols = Object.keys(vehicle);
+
+    this.db!.run(
+      `INSERT OR REPLACE INTO vehicles (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`,
+      row,
+    );
+    await this.save();
+  }
+
+  async deleteVehicle(id: string): Promise<void> {
+    await this.init();
+    this.db!.run(`DELETE FROM vehicles WHERE id = '${id}'`);
+    await this.save();
+  }
+
+  async updateVehicleFuel(
+    vehicleId: string,
+    currentFuel: number,
+  ): Promise<void> {
+    await this.init();
+    this.db!.run("UPDATE vehicles SET currentFuel = ? WHERE id = ?", [
+      currentFuel,
+      vehicleId,
+    ]);
+    await this.save();
+  }
+
+  async unlinkVehicleRefuels(vehicleId: string): Promise<void> {
+    await this.init();
+    this.db!.run("UPDATE refuels SET vehicleId = '' WHERE vehicleId = ?", [
+      vehicleId,
+    ]);
+    await this.save();
+  }
+
+  async getInclinationCalibration(
+    vehicleId: string,
+  ): Promise<InclinationCalibration | undefined> {
+    await this.init();
+    const result = this.db!.exec(
+      `SELECT * FROM inclination_calibrations WHERE vehicleId = '${vehicleId}'`,
+    );
+
+    if (result.length === 0 || result[0].values.length === 0) {
+      return undefined;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const row = result[0].values[0];
+    return {
+      vehicleId: String(row[0]),
+      offsetDegrees: Number(row[1]),
+      calibratedAt: String(row[2]),
+    };
+  }
+
+  async saveInclinationCalibration(
+    calibration: InclinationCalibration,
+  ): Promise<void> {
+    await this.init();
+    this.db!.run(
+      `INSERT OR REPLACE INTO inclination_calibrations (vehicleId, offsetDegrees, calibratedAt) VALUES (?, ?, ?)`,
+      [
+        calibration.vehicleId,
+        calibration.offsetDegrees,
+        calibration.calibratedAt,
+      ],
+    );
+    await this.save();
+  }
+
+  async clearInclinationCalibration(vehicleId: string): Promise<void> {
+    await this.init();
+    this.db!.run(
+      `DELETE FROM inclination_calibrations WHERE vehicleId = '${vehicleId}'`,
+    );
+    await this.save();
+  }
+
+  async migrateLegacyCalibration(): Promise<void> {
+    const LEGACY_CALIBRATION_KEY = "copert-calibration";
+    const LEGACY_INCLINATION_KEY = "inclination-calibration";
+
+    const rawCalibration = localStorage.getItem(LEGACY_CALIBRATION_KEY);
+    if (!rawCalibration) return;
+
+    const existingVehicles = await this.getVehicles();
+    if (existingVehicles.length > 0) return;
+
+    try {
+      const legacyData = JSON.parse(rawCalibration);
+
+      const vehicle: Vehicle = {
+        id: generateId(),
+        name: `${legacyData.make} ${legacyData.model}`,
+        make: legacyData.make,
+        model: legacyData.model,
+        year: legacyData.year,
+        displacement: legacyData.displacement,
+        fuelType: legacyData.fuelType,
+        euroNorm: legacyData.euroNorm,
+        segment: legacyData.segment,
+        urbanKmpl: legacyData.urbanKmpl,
+        highwayKmpl: legacyData.highwayKmpl,
+        combinedKmpl: legacyData.combinedKmpl,
+        mass: legacyData.mass,
+        grossWeight: legacyData.grossWeight,
+        frontalArea: legacyData.frontalArea,
+        dragCoefficient: legacyData.dragCoefficient,
+        f0: legacyData.f0,
+        f1: legacyData.f1,
+        f2: legacyData.f2,
+        fuelConversionFactor: legacyData.fuelConversionFactor,
+        peakPowerKw: legacyData.peakPowerKw,
+        peakTorqueNm: legacyData.peakTorqueNm,
+        co2_gkm: legacyData.co2_gkm,
+        nox_mgkm: legacyData.nox_mgkm,
+        confidence: legacyData.confidence,
+        calibrationInput: legacyData.vehicleInput,
+        calibratedAt: legacyData.savedAt,
+        createdAt: new Date().toISOString(),
+        fuelCapacity: 50,
+        currentFuel: 0,
+        inmetroCityKmpl: legacyData.inmetroCityKmpl || legacyData.urbanKmpl,
+        inmetroHighwayKmpl:
+          legacyData.inmetroHighwayKmpl || legacyData.highwayKmpl,
+        userAvgCityKmpl: legacyData.userAvgCityKmpl || legacyData.urbanKmpl,
+        userAvgHighwayKmpl:
+          legacyData.userAvgHighwayKmpl || legacyData.highwayKmpl,
+        inmetroEthanolCityKmpl: legacyData.inmetroEthanolCityKmpl,
+        inmetroEthanolHighwayKmpl: legacyData.inmetroEthanolHighwayKmpl,
+        userAvgEthanolCityKmpl: legacyData.userAvgEthanolCityKmpl,
+        userAvgEthanolHighwayKmpl: legacyData.userAvgEthanolHighwayKmpl,
+        inmetroGnvCityKmpl:
+          legacyData.inmetroGnvCityKmpl || legacyData.inmetroCityKmpl,
+        inmetroGnvHighwayKmpl:
+          legacyData.inmetroGnvHighwayKmpl || legacyData.inmetroHighwayKmpl,
+        userAvgGnvCityKmpl:
+          legacyData.userAvgGnvCityKmpl || legacyData.userAvgCityKmpl,
+        userAvgGnvHighwayKmpl:
+          legacyData.userAvgGnvHighwayKmpl || legacyData.userAvgHighwayKmpl,
+        crr: legacyData.crr || 0.013,
+        idleLph: legacyData.idleLph || 0.9,
+        baseBsfc: legacyData.baseBsfc || 265,
+        weightInmetro: 0.6,
+        weightUser: 0.4,
+        isHybrid: false,
+        gnvCylinderWeightKg: 80,
+        gnvEfficiencyFactor: 1.32,
+      };
+
+      await this.saveVehicle(vehicle);
+
+      const settings = await this.getSettings();
+      if (!settings.activeVehicleId) {
+        await this.saveSettings({ ...settings, activeVehicleId: vehicle.id });
+      }
+
+      localStorage.removeItem(LEGACY_CALIBRATION_KEY);
+
+      const rawInclination = localStorage.getItem(LEGACY_INCLINATION_KEY);
+      if (rawInclination) {
+        try {
+          const inclinationData = JSON.parse(rawInclination);
+          const inclinationCalibration: InclinationCalibration = {
+            vehicleId: vehicle.id,
+            offsetDegrees: inclinationData.offsetDegrees,
+            calibratedAt: inclinationData.calibratedAt,
+          };
+          await this.saveInclinationCalibration(inclinationCalibration);
+          localStorage.removeItem(LEGACY_INCLINATION_KEY);
+        } catch {
+          // Ignore invalid inclination data
+        }
+      }
+    } catch {
+      // Ignore invalid calibration data
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private vehicleFromRow(row: any[]): Vehicle {
+    const cols = [
+      "id",
+      "name",
+      "make",
+      "model",
+      "year",
+      "displacement",
+      "fuelType",
+      "euroNorm",
+      "segment",
+      "urbanKmpl",
+      "highwayKmpl",
+      "combinedKmpl",
+      "mass",
+      "grossWeight",
+      "frontalArea",
+      "dragCoefficient",
+      "f0",
+      "f1",
+      "f2",
+      "fuelConversionFactor",
+      "peakPowerKw",
+      "peakTorqueNm",
+      "co2_gkm",
+      "nox_mgkm",
+      "confidence",
+      "calibrationInput",
+      "calibratedAt",
+      "createdAt",
+      "fuelCapacity",
+      "currentFuel",
+      "dataSource",
+      "inmetroCityKmpl",
+      "inmetroHighwayKmpl",
+      "userAvgCityKmpl",
+      "userAvgHighwayKmpl",
+      "inmetroEthanolCityKmpl",
+      "inmetroEthanolHighwayKmpl",
+      "userAvgEthanolCityKmpl",
+      "userAvgEthanolHighwayKmpl",
+      "inmetroGnvCityKmpl",
+      "inmetroGnvHighwayKmpl",
+      "userAvgGnvCityKmpl",
+      "userAvgGnvHighwayKmpl",
+      "crr",
+      "idleLph",
+      "baseBsfc",
+      "weightInmetro",
+      "weightUser",
+      "isHybrid",
+      "gnvCylinderWeightKg",
+      "gnvEfficiencyFactor",
+      "transmission",
+      "techEra",
+      "idleFuelRateLph",
+      "bsfcMinGPerKwh",
+    ];
+
+    const vehicle: Record<string, unknown> = {};
+    cols.forEach((col, i) => {
+      if (row[i] !== null && row[i] !== undefined) {
+        vehicle[col] = row[i];
+      }
+    });
+
+    if (vehicle.transmission) {
+      vehicle.transmission = JSON.parse(vehicle.transmission as string);
+    }
+
+    return vehicle as unknown as Vehicle;
+  }
+
+  private vehicleToRow(vehicle: Vehicle): unknown[] {
+    const values = Object.values(vehicle).map((v) => {
+      if (typeof v === "object" && v !== null) {
+        return JSON.stringify(v);
+      }
+      return v;
+    });
+    return values;
+  }
+
+  async getRefuelsByVehicle(
+    vehicleId: string,
+    startDate?: Date,
+    endDate?: Date,
+  ): Promise<Refuel[]> {
+    await this.init();
+    let query = "SELECT * FROM refuels WHERE vehicleId = ?";
+    const params: string[] = [vehicleId];
+
+    if (startDate && endDate) {
+      query += " AND timestamp >= ? AND timestamp <= ?";
+      params.push(startDate.toISOString(), endDate.toISOString());
+    }
+
+    query += " ORDER BY timestamp DESC";
+
+    const result = this.db!.exec(query, params);
+
+    if (result.length === 0) {
+      return [];
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return result[0].values.map((row: any[]) => ({
+      id: String(row[0]),
+      vehicleId: String(row[1] || ""),
+      timestamp: String(row[2]),
+      amount: Number(row[3]),
+      fuelPrice: Number(row[4]),
+      fuelType: (row[5] || "gasolina") as FuelType,
+      totalCost: Number(row[6]),
+      consumedAmount: Number(row[7] || 0),
+    }));
   }
 }
 

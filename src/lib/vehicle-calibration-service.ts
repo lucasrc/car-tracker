@@ -1,5 +1,9 @@
 import { z } from "zod";
-import { validateBasic, type CalibrationResult } from "./agent-judge";
+import {
+  validateBasic,
+  validateFull,
+  type CalibrationResult,
+} from "./agent-judge";
 import { createAIProvider, getProviderType } from "./ai";
 import type { ChatMessage } from "./ai/providers";
 
@@ -23,7 +27,7 @@ export function calculateTireRadiusM(
 const vehicleCalibrationSchema = z.object({
   make: z.string().min(1),
   model: z.string().min(1),
-  year: z.number().int().min(1990).max(2027),
+  year: z.number().int().min(1900).max(2028),
   displacement: z.number().positive(),
   fuelType: z.enum(["gasoline", "diesel", "ethanol", "flex"]),
   euroNorm: z.enum([
@@ -78,206 +82,100 @@ const vehicleCalibrationSchema = z.object({
     .optional(),
 });
 
-const JSON_SCHEMA = `{
-  "make": "string",
-  "model": "string",
-  "year": number,
-  "displacement": number,
-  "fuelType": "gasoline" | "diesel" | "ethanol" | "flex",
-  "euroNorm": "Euro 1" | "Euro 2" | "Euro 3" | "Euro 4" | "Euro 5" | "Euro 6" | "Euro 6d" | "Euro 7",
-  "segment": "mini" | "small" | "medium" | "large" | "suv" | "pickup",
-  "urbanKmpl": number,
-  "highwayKmpl": number,
-  "combinedKmpl": number,
-  "mass": number,
-  "grossWeight": number,
-  "frontalArea": number,
-  "dragCoefficient": number,
-  "f0": number,
-  "f1": number,
-  "f2": number,
-  "fuelConversionFactor": number,
-  "peakPowerKw": number,
-  "peakTorqueNm": number,
-  "co2_gkm": number,
-  "nox_mgkm": number,
-  "confidence": "high" | "medium" | "low",
-  "inmetroCityKmpl": number,
-  "inmetroHighwayKmpl": number,
-  "userAvgCityKmpl": number,
-  "userAvgHighwayKmpl": number,
-  "inmetroEthanolCityKmpl": number (opcional, se flex/etanol),
-  "inmetroEthanolHighwayKmpl": number (opcional, se flex/etanol),
-  "userAvgEthanolCityKmpl": number (opcional, se flex/etanol),
-  "userAvgEthanolHighwayKmpl": number (opcional, se flex/etanol),
-  "crr": number,
-  "idleLph": number,
-  "baseBsfc": number,
-  "transmission": {
-    "type": "Manual" | "Automatic" | "CVT",
-    "gearRatios": number[],
-    "finalDrive": number,
-    "tireRadiusM": number,
-    "redlineRpm": number,
-    "idleRpm": number,
-    "rpmAt100Kmh": number,
-    "torqueCurve": {"rpm": number, "torqueNm": number}[] (opcional)
-  } (opcional)
-};`;
+const SYSTEM_PROMPT = `Você é especialista em engenharia automotiva e dados COPERT (EMEP/EEA).
 
-const SYSTEM_PROMPT = `Você é um especialista em engenharia automotiva e dados COPERT (EMEP/EEA).
+Retorne UM JSON válido com todos os campos abaixo.
 
-Para o veículo informado, retorne UM JSON com TODOS os campos abaixo.
-Use valores realistas baseados em dados de engenharia, não chutes aleatórios.
+## CAMPOS OBRIGATÓRIOS - todos devem estar presentes no JSON:
 
-=== PARÂMETROS COPERT (muito importante) ===
-Os parâmetros f0, f1, f2 são coeficientes da equação de potência em kW:
-  P(kW) = f0 + f1 × v + f2 × v²
+### Identificação do veículo:
+- make: string (ex: "Renault")
+- model: string (ex: "Clio")
+- year: number (1990-2027)
+- displacement: number em litros (0.5-8.0)
+- fuelType: "gasoline" | "diesel" | "ethanol" | "flex" (NÃO use outros valores)
+- euroNorm: "Euro 1" | "Euro 2" | "Euro 3" | "Euro 4" | "Euro 5" | "Euro 6" | "Euro 6d" | "Euro 7"
+- segment: "mini" | "small" | "medium" | "large" | "suv" | "pickup"
 
-Valores típicos (em kW para f0, kW/(m/s) para f1, kW/(m/s)² para f2):
-- f0: 0.1 a 0.4 (consumo em marcha lenta/fricção)
-- f1: 0.002 a 0.008 (perdas mecânicas)
-- f2: 0.0002 a 0.0005 (arrasto aerodinâmico)
+### Parâmetros físicos:
+- mass: number em kg (600-3500)
+- grossWeight: number em kg (800-6000, deve ser > mass)
+- frontalArea: number em m² (1.5-4.0)
+- dragCoefficient: number (0.20-0.60)
 
-⚠️ ATENÇÃO: Valores muito maiores são COMPLETAMENTE ERRADOS.
-   - f0 deve ser MENOR que 0.5
-   - f1 deve ser MENOR que 0.01
-   - f2 deve ser MENOR que 0.001
-   - Valores como f0=120, f1=0.8, f2=0.035 são IMPOSSÍVEIS
+### Parâmetros COPERT (resistência ao rolamento):
+- f0: number em kW (0.08-0.40) - resistência constante
+- f1: number (0.002-0.015) - resistência velocidade
+- f2: number (0.0001-0.0006) - resistência velocidade²
+- crr: number (0.005-0.040) - coeficiente de rolamento
 
-=== TRANSMISSÃO ===
-A resposta DEVE incluir o campo "transmission" com:
-- type: "Manual", "Automatic" ou "CVT"
-- gearRatios: array com 5-6 relações de marcha (ex: [3.5, 2.1, 1.4, 1.0, 0.8])
-- finalDrive: razão do diferencial (ex: 4.1)
-- tireRadiusM: raio do pneu em metros (ex: 0.31)
-- redlineRpm: rotação máxima do motor (ex: 6500)
-- idleRpm: rotação de marcha lenta (ex: 800)
-- rpmAt100Kmh: rotação do motor a 100 km/h em 4a ou 5a marcha (ex: 3000)
+### Dados do motor:
+- peakPowerKw: number (30-500 kW)
+- peakTorqueNm: number (50-800 Nm)
+- idleLph: number em L/h (0.3-2.5)
+- baseBsfc: number em g/kWh (180-400)
+- fuelConversionFactor: number conforme tipo:
+  - gasoline/flex: 8.0-9.5
+  - ethanol: 5.0-7.0
+  - diesel: 9.0-13.0
 
-=== EXEMPLO de resposta CORRETA ===
-{
-  "make": "Renault",
-  "model": "Clio 1.6 16V",
-  "year": 2008,
-  "displacement": 1598,
-  "fuelType": "flex",
-  "euroNorm": "Euro 4",
-  "segment": "small",
-  "urbanKmpl": 8.5,
-  "highwayKmpl": 13.2,
-  "combinedKmpl": 10.5,
-  "mass": 1050,
-  "grossWeight": 1500,
-  "frontalArea": 2.05,
-  "dragCoefficient": 0.32,
-  "f0": 0.15,
-  "f1": 0.008,
-  "f2": 0.00035,
-  "fuelConversionFactor": 8.5,
-  "peakPowerKw": 82,
-  "peakTorqueNm": 148,
-  "co2_gkm": 145,
-  "nox_mgkm": 40,
-  "confidence": "high",
-  "inmetroCityKmpl": 9.2,
-  "inmetroHighwayKmpl": 13.8,
-  "userAvgCityKmpl": 8.5,
-  "userAvgHighwayKmpl": 12.5,
-  "crr": 0.015,
-  "idleLph": 0.8,
-  "baseBsfc": 280,
-  "transmission": {
-    "type": "Manual",
-    "gearRatios": [3.5, 2.1, 1.4, 1.0, 0.8],
-    "finalDrive": 4.1,
-    "tireRadiusM": 0.31,
-    "redlineRpm": 6500,
-    "idleRpm": 800,
-    "rpmAt100Kmh": 3200
-  }
-}
+### Consumo do veículo (urbano < combinado < rodovia):
+- urbanKmpl: km/L (3-35)
+- combinedKmpl: km/L (5-40)
+- highwayKmpl: km/L (8-45)
+- inmetroCityKmpl: km/L (5-30)
+- inmetroHighwayKmpl: km/L (8-40)
+- userAvgCityKmpl: km/L (pode variar ±50% do inmetro)
+- userAvgHighwayKmpl: km/L (pode variar ±50% do inmetro)
 
-${JSON_SCHEMA}`;
+### Para veículos flex (obrigatório):
+- inmetroEthanolCityKmpl: km/L (3-20)
+- inmetroEthanolHighwayKmpl: km/L (5-25)
+- userAvgEthanolCityKmpl: km/L
+- userAvgEthanolHighwayKmpl: km/L
 
-const VERIFY_PROMPT = (
-  vehicle: string,
-  data: object,
-) => `Você é um verificador independente de dados COPERT.
+### Pesos para média (valores entre 0 e 1):
+- weightInmetro: 0.3-0.9
+- weightUser: 0.1-0.7
 
-Dados recebidos para: ${vehicle}
-${JSON.stringify(data, null, 2)}
+### Confiança:
+- confidence: "high" | "medium" | "low" (obrigatório, sempre inclua)
 
-VERIFIQUE CADA CAMPO CRITICO:
+### Emissões (opcionais):
+- co2_gkm: number
+- nox_mgkm: number
 
-1. Consumo (urbano < combinado < rodoviário):
-   - urbano deve ser o MENOR (mais consumo em cidade)
-   - rodoviário deve ser o MAIOR (menos consumo na estrada)
+### Transmissão (OPCIONAL - só inclua se tiver TODOS):
+- transmission.type: "Manual" | "Automatic" | "CVT"
+- transmission.gearRatios: array de 5 números (2.0-5.5)
+- transmission.finalDrive: number (2.0-5.5)
+- transmission.redlineRpm: number (4000-9000)
+- transmission.idleRpm: number (500-1200)
 
-2. Parâmetros f0, f1, f2 DEVEM ser muito pequenos:
-   - f0: 0.05 a 0.5 (NUNCA maior que 1.0)
-   - f1: 0.0005 a 0.01 (NUNCA maior que 0.1)
-   - f2: 0.0001 a 0.001 (NUNCA maior que 0.01)
+## REGRAS DE VALIDAÇÃO (aplique antes de retornar):
+1. mass < grossWeight (sempre)
+2. urbanKmpl < combinedKmpl < highwayKmpl
+3. Se fuelType="flex": inclua campos de etanol
+4. confidence DEVE ser "high", "medium" ou "low"
+5. fuelConversionFactor DEVE ter valor numérico
+6. NÃO retorne undefined, null ou campos vazios
 
-3. fuelConversionFactor: 7.0 a 10.0 para gasolina/flex
+## SAÍDA:
+Retorne APENAS o JSON válido, sem texto adicional.
 
-4. rpmAt100Kmh: deve ser uma rotação realista (2000-4000 rpm)
+Exemplo de estrutura:
+{"make":"Renault","model":"Clio","year":2008,"fuelType":"flex","segment":"small","mass":1050,"grossWeight":1480,"urbanKmpl":12.5,"combinedKmpl":14.5,"highwayKmpl":17.0,"inmetroCityKmpl":14.2,"inmetroHighwayKmpl":18.1,"userAvgCityKmpl":12.0,"userAvgHighwayKmpl":16.5,"inmetroEthanolCityKmpl":9.5,"inmetroEthanolHighwayKmpl":12.0,"f0":0.15,"f1":0.006,"f2":0.0003,"crr":0.015,"peakPowerKw":65,"peakTorqueNm":135,"fuelConversionFactor":8.5,"confidence":"medium"}`;
 
-5. Se algum valor estiver ERRADO, CORRIJA.
+const USER_PROMPT = (vehicle: string) =>
+  `Para o veículo "${vehicle}", retorne UM JSON completo com todos os campos de calibração técnica listados no sistema.
 
-Retorne JSON válido:
-${JSON_SCHEMA}`;
+Campos obrigatórios: make, model, year, displacement, fuelType, euroNorm, segment, mass, grossWeight, frontalArea, dragCoefficient, f0, f1, f2, crr, peakPowerKw, peakTorqueNm, idleLph, baseBsfc, fuelConversionFactor, urbanKmpl, combinedKmpl, highwayKmpl, inmetroCityKmpl, inmetroHighwayKmpl, userAvgCityKmpl, userAvgHighwayKmpl, weightInmetro, weightUser, confidence.
 
-const INFER_PROMPT = (
-  vehicle: string,
-  data: object,
-) => `Você é um engenheiro automotivo criativo calculando parâmetros COPERT.
+Se flex: adicione inmetroEthanolCityKmpl, inmetroEthanolHighwayKmpl, userAvgEthanolCityKmpl, userAvgEthanolHighwayKmpl.
 
-Veículo: ${vehicle}
-Dados conhecidos:
-${JSON.stringify(data, null, 2)}
+Confirme que urbanKmpl < combinedKmpl < highwayKmpl.
 
-Os dados acima podem ter valores incorretos. SUA TAREFA:
-
-1. Mantenha TODOS os campos EXCETO f0, f1, f2, fuelConversionFactor
-2. Para f0, f1, f2 e fuelConversionFactor: use sua intuição de engenharia
-
-=== GUIA DE ENGENHARIA ===
-Use sua experiência como engenheiro automotivo:
-
-f0 (kW) - Resistência básica:
-- Hatchback pequeno (1.0-1.6L): 0.10-0.18 kW
-- Sedan médio (1.6-2.0L): 0.15-0.25 kW
-- SUV/Caminhonete: 0.20-0.40 kW
-
-f1 (kW/(m/s)) - Fricção mecânica:
-- Motor 1.0-1.6L: 0.005-0.010
-- Motor 1.6-2.0L: 0.007-0.012
-- Motor >2.0L turbo: 0.010-0.020
-
-f2 (kW/(m/s)²) - Arrasto aerodinâmico:
-- Hatchback (Cd~0.30): 0.00025-0.00040
-- Sedan (Cd~0.28): 0.00020-0.00035
-- SUV (Cd~0.35): 0.00035-0.00055
-
-fuelConversionFactor:
-- Gasolina pura: 8.5-9.0
-- Etanol: 5.5-6.5
-- Flex (gasolina): 8.0-8.8
-- Flex (etanol): 5.5-6.2
-- Diesel: 10.0-12.0
-
-rpmAt100Kmh (rotação a 100 km/h):
-- Motor 1.0-1.6L: 2800-3500 rpm
-- Motor 1.6-2.0L: 2500-3200 rpm
-
-Seja criativo! Pense como um engenheiro real escolheria valores
-que funcionam bem em simulações de consumo urbano e rodoviário.
-
-Retorne JSON com valores calculados:
-${JSON_SCHEMA}`;
-
-const USER_PROMPT = (vehicle: string) => `Veículo: ${vehicle}`;
+Retorne apenas JSON válido.`;
 
 async function chat(
   messages: ChatMessage[],
@@ -301,7 +199,6 @@ function parseJson(content: string): {
         zodResult.error.issues,
       );
       if (Array.isArray(parsed) && parsed.length > 0) {
-        console.log("[Calibration] AI returned array, trying first element");
         const firstItem = parsed[0];
         const retryResult = vehicleCalibrationSchema.safeParse(firstItem);
         if (retryResult.success) {
@@ -320,11 +217,45 @@ function parseJson(content: string): {
 }
 
 function isValid(data: z.infer<typeof vehicleCalibrationSchema>): boolean {
-  const validation = validateBasic(data as any);
-  return validation.valid && data.confidence !== "low";
+  const basicValidation = validateBasic(data as any);
+  const fullValidation = validateFull(data as any);
+  return (
+    basicValidation.valid && fullValidation.valid && data.confidence !== "low"
+  );
 }
 
-function withTelemetryDefaults<T extends Record<string, unknown>>(
+function getValidationErrors(
+  data: z.infer<typeof vehicleCalibrationSchema>,
+): string[] {
+  const fullValidation = validateFull(data as any);
+  const basicValidation = validateBasic(data as any);
+  return [...fullValidation.errors, ...basicValidation.errors];
+}
+
+async function retryWithFeedback(
+  systemMessage: ChatMessage,
+  userPrompt: string,
+  model: string,
+  isO1: boolean,
+  errors: string[],
+  onProgress?: (status: string) => void,
+): Promise<string | null> {
+  const errorFeedback = `\n\nATENÇÃO - corrija os seguintes erros na próxima resposta:\n${errors.join("\n")}`;
+
+  const retryMessage: ChatMessage = {
+    role: "system",
+    content: systemMessage.content + errorFeedback,
+  };
+
+  onProgress?.("Corrigindo dados...");
+
+  return chat([retryMessage, { role: "user", content: userPrompt }], {
+    temperature: isO1 ? undefined : 0.1,
+    model,
+  });
+}
+
+function withDefaults<T extends Record<string, unknown>>(
   data: T,
 ): T & {
   weightInmetro: number;
@@ -332,9 +263,13 @@ function withTelemetryDefaults<T extends Record<string, unknown>>(
   isHybrid: boolean;
   gnvCylinderWeightKg: number;
   gnvEfficiencyFactor: number;
+  confidence: "high" | "medium" | "low";
+  fuelConversionFactor: number;
 } {
   const result = {
     ...data,
+    confidence: (data as any).confidence ?? "medium",
+    fuelConversionFactor: (data as any).fuelConversionFactor ?? 8.5,
     weightInmetro: (data as any).weightInmetro ?? 0.6,
     weightUser: (data as any).weightUser ?? 0.4,
     isHybrid: (data as any).isHybrid ?? false,
@@ -346,58 +281,49 @@ function withTelemetryDefaults<T extends Record<string, unknown>>(
     isHybrid: boolean;
     gnvCylinderWeightKg: number;
     gnvEfficiencyFactor: number;
+    confidence: "high" | "medium" | "low";
+    fuelConversionFactor: number;
   };
 
   const trans = (data as any).transmission;
-  if (trans) {
-    if (
-      trans.gearRatios &&
-      trans.finalDrive &&
-      trans.rpmAt100Kmh &&
-      trans.gearRatios.length > 0
-    ) {
-      const calculatedRadius = calculateTireRadiusM(
-        trans.gearRatios,
-        trans.finalDrive,
-        trans.rpmAt100Kmh,
-      );
-      trans.tireRadiusM = calculatedRadius;
-      console.log(
-        `[Calibration] Calculated tireRadiusM=${calculatedRadius}m from gearRatios=${trans.gearRatios}, finalDrive=${trans.finalDrive}, rpmAt100Kmh=${trans.rpmAt100Kmh}`,
-      );
-    }
-
-    console.log(
-      "[Calibration] Transmission data received from AI:",
-      JSON.stringify({
-        type: trans.type,
-        gearRatios: trans.gearRatios,
-        finalDrive: trans.finalDrive,
-        tireRadiusM: trans.tireRadiusM,
-        redlineRpm: trans.redlineRpm,
-        idleRpm: trans.idleRpm,
-        rpmAt100Kmh: trans.rpmAt100Kmh,
-        torqueCurveKeys: trans.torqueCurve
-          ? Object.keys(trans.torqueCurve).length
-          : 0,
-      }),
+  if (
+    trans?.gearRatios &&
+    trans?.finalDrive &&
+    trans?.rpmAt100Kmh &&
+    trans.gearRatios.length > 0
+  ) {
+    trans.tireRadiusM = calculateTireRadiusM(
+      trans.gearRatios,
+      trans.finalDrive,
+      trans.rpmAt100Kmh,
     );
-  } else {
-    console.log("[Calibration] No transmission data from AI");
   }
 
   return result;
 }
 
-function getModelForStep(
-  step: number,
-  providerType: string,
-): string | undefined {
+function getModel(providerType: string): string {
   if (providerType === "openai") {
-    return step <= 2 ? "gpt-4o" : "gpt-4o";
+    return "o1";
   }
-  return step <= 2 ? "deepseek-chat" : "deepseek-reasoner";
+  return "deepseek-chat";
 }
+
+const DEFAULT_VALUES: Record<string, number> = {
+  f0: 0.15,
+  f1: 0.006,
+  f2: 0.0003,
+  fuelConversionFactor: 8.5,
+  crr: 0.015,
+  idleLph: 0.8,
+  baseBsfc: 280,
+  mass: 1100,
+  grossWeight: 1500,
+  frontalArea: 2.0,
+  dragCoefficient: 0.3,
+  peakPowerKw: 80,
+  peakTorqueNm: 140,
+};
 
 export async function calibrateVehicle(
   vehicle: string,
@@ -411,25 +337,14 @@ export async function calibrateVehicle(
   let dataSource: "web" | "ai_inferred" | undefined = undefined;
 
   if (webSearchEnabled) {
-    onProgress?.("Buscando dados na web...");
+    onProgress?.("Buscando na web...");
 
     const searchResult = await chat(
       [
-        {
-          role: "system",
-          content:
-            "Você é um especialista em dados de veículos e emissões. Responda apenas com JSON válido.",
-        },
-        {
-          role: "user",
-          content: `Busque dados tecnicos do veiculo: ${vehicle}`,
-        },
+        { role: "system", content: "Responda apenas com JSON válido." },
+        { role: "user", content: `Dados técnicos: ${vehicle}` },
       ],
-      {
-        temperature: 0.1,
-        model: "gpt-4o-search-preview",
-        enableWebSearch: true,
-      },
+      { model: "gpt-4o" },
     );
 
     if (searchResult) {
@@ -438,143 +353,118 @@ export async function calibrateVehicle(
         if (jsonMatch) {
           searchData = JSON.parse(jsonMatch[0]);
           dataSource = "web";
-          onProgress?.("Dados da web encontrados");
+          onProgress?.("Dados encontrados");
         }
       } catch {
-        onProgress?.("Dados da web não puderam ser processados");
+        onProgress?.("Usando geração padrão");
       }
     }
   }
 
-  onProgress?.(`Gerando parâmetros do veículo (${providerType})...`);
+  onProgress?.("Gerando parâmetros...");
 
   const systemMessage: ChatMessage = {
     role: "system",
     content: searchData
-      ? `${SYSTEM_PROMPT}\n\nDADOS ENCONTRADOS NA WEB (use estes valores preferencialmente):\n${JSON.stringify(searchData, null, 2)}`
+      ? `${SYSTEM_PROMPT}\n\nDADOS WEB:\n${JSON.stringify(searchData)}`
       : SYSTEM_PROMPT,
   };
-  const userMessage: ChatMessage = {
-    role: "user",
-    content: USER_PROMPT(vehicle),
-  };
 
-  let result = await chat([systemMessage, userMessage], {
-    temperature: 0.1,
-    model: getModelForStep(1, providerType),
-  });
+  const model = getModel(providerType);
+  const isO1 = model === "o1";
+
+  let result = await chat(
+    [systemMessage, { role: "user", content: USER_PROMPT(vehicle) }],
+    {
+      temperature: isO1 ? undefined : 0.1,
+      model,
+    },
+  );
 
   if (!result) {
     onProgress?.("Tentando novamente...");
-    result = await chat([systemMessage, userMessage], {
-      temperature: 0.1,
-      model: getModelForStep(1, providerType),
-    });
+    result = await chat(
+      [systemMessage, { role: "user", content: USER_PROMPT(vehicle) }],
+      {
+        temperature: isO1 ? undefined : 0.1,
+        model,
+      },
+    );
   }
 
   if (!result) {
-    onProgress?.("Tentando com modelo avançado...");
-    result = await chat([systemMessage, userMessage], {
-      temperature: 0.1,
-      model: getModelForStep(2, providerType),
-    });
-  }
-
-  if (!result) {
-    onProgress?.("Não foi possível encontrar dados");
+    onProgress?.("Não foi possível");
     return null;
   }
 
   let parsed = parseJson(result);
+
   if (!parsed.data) {
-    const retry = await chat([systemMessage, userMessage], {
-      temperature: 0.1,
-      model: getModelForStep(2, providerType),
-    });
-    if (retry) {
-      const retryParsed = parseJson(retry);
-      if (retryParsed.data) {
-        parsed = retryParsed;
-      }
-    }
-    if (!parsed.data) {
-      onProgress?.("Não foi possível encontrar dados");
-      return null;
-    }
+    onProgress?.("Não foi possível processar");
+    return null;
   }
 
-  if (isValid(parsed.data!)) {
-    onProgress?.("Dados encontrados");
+  if (isValid(parsed.data)) {
+    onProgress?.("Concluído");
     return {
-      data: withTelemetryDefaults(parsed.data!),
-      confidence: parsed.data!.confidence,
+      data: withDefaults(parsed.data),
+      confidence: parsed.data.confidence,
       similarUsed: false,
       dataSource,
     };
   }
 
-  onProgress?.("Verificando dados...");
-  const verified = await chat(
-    [
-      { role: "system", content: VERIFY_PROMPT(vehicle, parsed.data!) },
-      { role: "user", content: "Retorne o JSON com os dados corrigidos." },
-    ],
-    { temperature: 0.1, model: getModelForStep(2, providerType) },
+  const errors = getValidationErrors(parsed.data);
+  onProgress?.("Dados inválidos, corrigindo...");
+
+  const retryResult = await retryWithFeedback(
+    systemMessage,
+    USER_PROMPT(vehicle),
+    model,
+    isO1,
+    errors,
+    onProgress,
   );
 
-  if (verified) {
-    const verifiedParsed = parseJson(verified);
-    if (verifiedParsed.data) {
-      parsed.data = verifiedParsed.data;
-    }
-  }
-
-  if (isValid(parsed.data!)) {
-    onProgress?.("Dados encontrados");
-    return {
-      data: withTelemetryDefaults(parsed.data!),
-      confidence: "medium",
-      similarUsed: false,
-      dataSource,
-    };
-  }
-
-  onProgress?.("Calculando parâmetros...");
-  const inferred = await chat(
-    [
-      { role: "system", content: INFER_PROMPT(vehicle, parsed.data!) },
-      {
-        role: "user",
-        content:
-          "Calcule f0, f1, f2 e fuelConversionFactor usando sua intuição de engenharia.",
-      },
-    ],
-    {
-      temperature: 0.5,
-      model: providerType === "openai" ? "gpt-4o" : undefined,
-    },
-  );
-
-  if (inferred) {
-    const inferredParsed = parseJson(inferred);
-    if (inferredParsed.data) {
-      dataSource = "ai_inferred";
-      onProgress?.("Dados encontrados");
+  if (retryResult) {
+    const retryParsed = parseJson(retryResult);
+    if (retryParsed.data && isValid(retryParsed.data)) {
+      onProgress?.("Concluído");
       return {
-        data: withTelemetryDefaults(inferredParsed.data),
-        confidence: inferredParsed.data.confidence,
+        data: withDefaults(retryParsed.data),
+        confidence: retryParsed.data.confidence,
         similarUsed: false,
         dataSource,
       };
     }
   }
 
-  parsed.data!.confidence = "low";
-  dataSource = "ai_inferred";
-  onProgress?.("Dados parciais");
+  const data = parsed.data;
+  const correctedData = { ...data };
+
+  if (data.f0 > 1 || data.f1 > 0.1 || data.f2 > 0.01) {
+    correctedData.f0 = data.f0 > 1 ? DEFAULT_VALUES.f0 : data.f0;
+    correctedData.f1 = data.f1 > 0.1 ? DEFAULT_VALUES.f1 : data.f1;
+    correctedData.f2 = data.f2 > 0.01 ? DEFAULT_VALUES.f2 : data.f2;
+  }
+
+  if (data.fuelConversionFactor < 5 || data.fuelConversionFactor > 15) {
+    correctedData.fuelConversionFactor = DEFAULT_VALUES.fuelConversionFactor;
+  }
+
+  if (data.urbanKmpl > data.highwayKmpl) {
+    const temp = correctedData.urbanKmpl;
+    correctedData.urbanKmpl = correctedData.highwayKmpl;
+    correctedData.highwayKmpl = temp;
+  }
+
+  correctedData.confidence = "medium";
+  dataSource = dataSource || "ai_inferred";
+
+  onProgress?.("Concluído");
   return {
-    data: withTelemetryDefaults(parsed.data!),
-    confidence: "low",
+    data: withDefaults(correctedData),
+    confidence: "medium",
     similarUsed: false,
     dataSource,
   };

@@ -1,9 +1,14 @@
 interface FuelBarProps {
   currentFuel: number;
   fuelCapacity: number;
+  className?: string;
 }
 
-export function FuelBar({ currentFuel, fuelCapacity }: FuelBarProps) {
+export function FuelBar({
+  currentFuel,
+  fuelCapacity,
+  className = "",
+}: FuelBarProps) {
   const percentage = Math.min(
     100,
     Math.max(0, (currentFuel / fuelCapacity) * 100),
@@ -16,7 +21,7 @@ export function FuelBar({ currentFuel, fuelCapacity }: FuelBarProps) {
   };
 
   return (
-    <div className="fixed left-0 right-0 top-0 z-50 h-[5px] w-full bg-slate-300/50">
+    <div className={`h-[5px] w-full bg-slate-300/50 ${className}`}>
       <div
         className="h-full transition-all duration-300"
         style={{

@@ -13,10 +13,12 @@ import {
   clearInclinationCalibration,
   updateVehicleFuel,
   unlinkVehicleRefuels,
-  db,
+  getAllTrips,
+  saveTrip,
 } from "@/lib/db";
 import { calibrateVehicle } from "@/lib/vehicle-calibration-service";
 import { generateId } from "@/lib/utils";
+import type { VehicleCalibration, DataSource } from "@/types";
 
 interface CalibrationState {
   isCalibrating: boolean;
@@ -36,7 +38,8 @@ interface VehicleStore {
   setActiveVehicle: (vehicleId: string) => Promise<void>;
   createVehicle: (
     name: string,
-    data: Parameters<typeof calibrateVehicle>[0],
+    vehicleInput: Parameters<typeof calibrateVehicle>[0],
+    preCalibratedData?: VehicleCalibration & { dataSource?: DataSource },
   ) => Promise<Vehicle | null>;
   updateVehicle: (vehicle: Vehicle) => Promise<void>;
   deleteVehicle: (vehicleId: string) => Promise<{ hasTrips: boolean }>;
@@ -117,7 +120,11 @@ export const useVehicleStore = create<VehicleStore>((set, get) => ({
     });
   },
 
-  createVehicle: async (name, vehicleInput) => {
+  createVehicle: async (
+    name: string,
+    data: Parameters<typeof calibrateVehicle>[0],
+    preCalibratedData?: VehicleCalibration & { dataSource?: DataSource },
+  ) => {
     set({
       calibrationState: {
         isCalibrating: true,
@@ -126,15 +133,29 @@ export const useVehicleStore = create<VehicleStore>((set, get) => ({
       },
     });
 
+    let result: {
+      data: VehicleCalibration;
+      confidence: "high" | "medium" | "low";
+      dataSource?: DataSource;
+    } | null = null;
+
     try {
-      const result = await calibrateVehicle(vehicleInput, (progress) => {
-        set((state) => ({
-          calibrationState: {
-            ...state.calibrationState,
-            progress,
-          },
-        }));
-      });
+      if (preCalibratedData) {
+        result = {
+          data: preCalibratedData,
+          confidence: preCalibratedData.confidence,
+          dataSource: preCalibratedData.dataSource,
+        };
+      } else {
+        result = await calibrateVehicle(data, (progress) => {
+          set((state) => ({
+            calibrationState: {
+              ...state.calibrationState,
+              progress,
+            },
+          }));
+        });
+      }
 
       if (!result) {
         set({
@@ -174,7 +195,9 @@ export const useVehicleStore = create<VehicleStore>((set, get) => ({
         co2_gkm: result.data.co2_gkm,
         nox_mgkm: result.data.nox_mgkm,
         confidence: result.confidence,
-        calibrationInput: vehicleInput,
+        calibrationInput: preCalibratedData
+          ? (data as string)
+          : (data as string),
         calibratedAt: now,
         createdAt: now,
         fuelCapacity: 50,
@@ -256,13 +279,12 @@ export const useVehicleStore = create<VehicleStore>((set, get) => ({
     await unlinkVehicleRefuels(vehicleId);
 
     // Desvincular viagens (atualiza vehicleSnapshot e limpa vehicleId)
-    const trips = await db
-      .table("trips")
-      .filter((t: { vehicleId: string }) => t.vehicleId === vehicleId)
-      .toArray();
+    const allTrips = await getAllTrips();
+    const vehicleTrips = allTrips.filter((t) => t.vehicleId === vehicleId);
 
-    for (const trip of trips) {
-      await db.table("trips").update(trip.id, {
+    for (const trip of vehicleTrips) {
+      await saveTrip({
+        ...trip,
         vehicleId: "",
         vehicleSnapshot: vehicle
           ? {

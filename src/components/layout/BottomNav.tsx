@@ -24,14 +24,14 @@ export function BottomNav() {
     }`;
 
   const getLabelClassName = (isActive: boolean) =>
-    `text-[10px] ${isActive ? "font-semibold text-emerald-700" : "font-medium text-slate-600"}`;
+    `text-[9px] ${isActive ? "font-semibold text-emerald-700" : "font-medium text-slate-500"}`;
 
   return (
-    <div className="pointer-events-none fixed bottom-0 left-0 right-0 z-50 px-3 pb-1.5">
-      <nav className="pointer-events-auto mx-auto flex w-full max-w-md items-center justify-around rounded-[22px] border border-white/70 bg-[#e4ecef]/88 px-1.5 py-1 shadow-[0_16px_34px_rgba(15,23,42,0.15)] backdrop-blur-xl">
+    <div className="pointer-events-none fixed bottom-0 left-0 right-0 z-40 px-4">
+      <nav className="pointer-events-auto mx-auto flex w-full max-w-md items-center justify-between rounded-[24px] border border-white/70 bg-[#e4ecef]/88 px-3 py-1.5 shadow-[0_16px_34px_rgba(15,23,42,0.15)] backdrop-blur-xl">
         <NavLink to="/tracker">
           {({ isActive }) => (
-            <div className="flex min-w-[72px] flex-col items-center gap-0.5 px-1.5 py-0.5">
+            <div className="flex flex-col items-center gap-0.5 px-2 py-1">
               <div className={getIconContainerClassName(isActive)}>
                 <svg
                   className={iconClassName}
@@ -54,7 +54,7 @@ export function BottomNav() {
 
         <NavLink to="/history">
           {() => (
-            <div className="flex min-w-[72px] flex-col items-center gap-0.5 px-1.5 py-0.5">
+            <div className="flex flex-col items-center gap-0.5 px-2 py-1">
               <div className={getIconContainerClassName(isHistoryTab)}>
                 <svg
                   className={iconClassName}
@@ -77,7 +77,7 @@ export function BottomNav() {
 
         <NavLink to="/history?tab=report">
           {() => (
-            <div className="flex min-w-[72px] flex-col items-center gap-0.5 px-1.5 py-0.5">
+            <div className="flex flex-col items-center gap-0.5 px-2 py-1">
               <div className={getIconContainerClassName(isReportTab)}>
                 <svg
                   className={iconClassName}
@@ -100,7 +100,7 @@ export function BottomNav() {
 
         <NavLink to="/refuel">
           {() => (
-            <div className="flex min-w-[72px] flex-col items-center gap-0.5 px-1.5 py-0.5">
+            <div className="flex flex-col items-center gap-0.5 px-2 py-1">
               <div className={getIconContainerClassName(isRefuelRoute)}>
                 <svg
                   className={iconClassName}
@@ -125,7 +125,7 @@ export function BottomNav() {
 
         <NavLink to="/settings">
           {({ isActive }) => (
-            <div className="flex min-w-[72px] flex-col items-center gap-0.5 px-1.5 py-0.5">
+            <div className="flex flex-col items-center gap-0.5 px-2 py-1">
               <div className={getIconContainerClassName(isActive)}>
                 <svg
                   className={iconClassName}

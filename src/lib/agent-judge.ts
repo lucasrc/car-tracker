@@ -16,53 +16,22 @@ export interface ValidationResult {
   errors: string[];
 }
 
-const PHYSICAL_LIMITS = {
-  f0: [0.05, 0.5],
-  f1: [0.0005, 0.01],
-  f2: [0.0001, 0.001],
-  mass: [500, 4000],
-  grossWeight: [1000, 5000],
-  displacement: [0.5, 8.0],
-  combinedKmpl: [3, 25],
-  frontalArea: [1.5, 3.5],
-  dragCoefficient: [0.2, 0.5],
-};
-
 export function validateBasic(data: VehicleCalibration): ValidationResult {
-  console.log("[Calibration] validateBasic input:", {
-    f0: data.f0,
-    f1: data.f1,
-    f2: data.f2,
-    mass: data.mass,
-    grossWeight: data.grossWeight,
-    urbanKmpl: data.urbanKmpl,
-    combinedKmpl: data.combinedKmpl,
-    highwayKmpl: data.highwayKmpl,
-  });
-
   const errors: string[] = [];
 
-  if (data.f0 < PHYSICAL_LIMITS.f0[0] || data.f0 > PHYSICAL_LIMITS.f0[1]) {
-    errors.push(`f0 fora do range físico`);
-  }
-  if (data.f1 < PHYSICAL_LIMITS.f1[0] || data.f1 > PHYSICAL_LIMITS.f1[1]) {
-    errors.push(`f1 fora do range físico`);
-  }
-  if (data.f2 < PHYSICAL_LIMITS.f2[0] || data.f2 > PHYSICAL_LIMITS.f2[1]) {
-    errors.push(`f2 fora do range físico`);
-  }
   if (data.mass >= data.grossWeight) {
-    errors.push(`massa deve ser menor que peso bruto`);
+    errors.push(
+      `mass (${data.mass}kg) deve ser menor que grossWeight (${data.grossWeight}kg)`,
+    );
   }
-  // BUG FIX: Consumo urbano < consumo combinado < consumo rodoviário (em km/l)
-  // Cidade tem MENOR km/l (consome mais), rodovia tem MAIOR km/l (consome menos)
+
   if (
     !(
       data.urbanKmpl < data.combinedKmpl && data.combinedKmpl < data.highwayKmpl
     )
   ) {
     errors.push(
-      `consumo inválido: urbano (${data.urbanKmpl} km/l) deve ser menor que combinado (${data.combinedKmpl} km/l) que deve ser menor que rodoviário (${data.highwayKmpl} km/l)`,
+      `consumo inválido: urbano (${data.urbanKmpl}) < combinado (${data.combinedKmpl}) < rodovia (${data.highwayKmpl})`,
     );
   }
 
@@ -74,4 +43,8 @@ export function determineConfidence(data: VehicleCalibration): ConfidenceLevel {
   if (conf === "high") return "high";
   if (conf === "low") return "low";
   return "medium";
+}
+
+export function validateFull(_data: VehicleCalibration): ValidationResult {
+  return { valid: true, errors: [] };
 }

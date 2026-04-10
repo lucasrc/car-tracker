@@ -454,7 +454,7 @@ export async function getTripsInPeriod(
 }
 
 export async function getVehicles(): Promise<Vehicle[]> {
-  return await db.vehicles.orderBy("createdAt").toArray();
+  return await db.vehicles.orderBy("createdAt").reverse().toArray();
 }
 
 export async function getVehicle(id: string): Promise<Vehicle | undefined> {

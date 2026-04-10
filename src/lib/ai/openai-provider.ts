@@ -8,7 +8,7 @@ import type {
 export const openaiModels: ModelInfo[] = [
   { id: "gpt-4o", name: "GPT-4o", reasoning: false },
   { id: "gpt-4o-mini", name: "GPT-4o Mini", reasoning: false },
-  { id: "gpt-4o-search-preview", name: "GPT-4o Search", reasoning: false },
+  { id: "o1", name: "o1", reasoning: true },
   { id: "o1-preview", name: "o1 Preview", reasoning: true },
   { id: "o1-mini", name: "o1 Mini", reasoning: true },
 ];
@@ -28,19 +28,21 @@ export class OpenAIProvider implements AIProvider {
       throw new Error("OpenAI API key não configurada");
     }
 
-    let model = options?.model || "gpt-4o";
-
-    if (options?.enableWebSearch) {
-      model = "gpt-4o-search-preview";
-    }
+    const model = options?.model || "gpt-4o";
+    const isReasoningModel = model.startsWith("o1");
 
     const body: Record<string, unknown> = {
       model,
       messages,
-      max_tokens: options?.maxTokens ?? 3000,
     };
 
-    if (options?.temperature !== undefined && !options?.enableWebSearch) {
+    if (isReasoningModel) {
+      body.max_completion_tokens = options?.maxTokens ?? 5000;
+    } else {
+      body.max_tokens = options?.maxTokens ?? 5000;
+    }
+
+    if (!isReasoningModel && options?.temperature !== undefined) {
       body.temperature = options.temperature;
     }
 
