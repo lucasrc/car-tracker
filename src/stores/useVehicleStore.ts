@@ -18,6 +18,7 @@ import {
 } from "@/lib/db";
 import { calibrateVehicle } from "@/lib/vehicle-calibration-service";
 import { generateId } from "@/lib/utils";
+import { useFuelInventoryStore } from "@/stores/useFuelInventoryStore";
 import type { VehicleCalibration, DataSource } from "@/types";
 
 interface CalibrationState {
@@ -73,8 +74,34 @@ export const useVehicleStore = create<VehicleStore>((set, get) => ({
 
     await migrateLegacyCalibration();
 
-    const vehicles = await getVehicles();
+    let vehicles = await getVehicles();
     const settings = await getSettings();
+
+    for (const v of vehicles) {
+      let needsUpdate = false;
+      let updatedVehicle = { ...v };
+
+      if (updatedVehicle.fuelCapacity <= 0) {
+        updatedVehicle.fuelCapacity = 50;
+        needsUpdate = true;
+      }
+
+      if (updatedVehicle.currentFuel < 0) {
+        updatedVehicle.currentFuel = 0;
+        needsUpdate = true;
+      }
+
+      if (updatedVehicle.currentFuel > updatedVehicle.fuelCapacity) {
+        updatedVehicle.currentFuel = updatedVehicle.fuelCapacity;
+        needsUpdate = true;
+      }
+
+      if (needsUpdate) {
+        await saveVehicle(updatedVehicle);
+      }
+    }
+
+    vehicles = await getVehicles();
 
     let activeVehicle: Vehicle | null = null;
     if (settings.activeVehicleId) {
@@ -118,6 +145,9 @@ export const useVehicleStore = create<VehicleStore>((set, get) => ({
       activeVehicle: vehicle,
       inclinationCalibration,
     });
+
+    const { loadBatches } = useFuelInventoryStore.getState();
+    await loadBatches(vehicleId);
   },
 
   createVehicle: async (
@@ -319,7 +349,7 @@ export const useVehicleStore = create<VehicleStore>((set, get) => ({
       activeVehicle: newActiveVehicle,
     });
 
-    return { hasTrips: trips.length > 0 };
+    return { hasTrips: vehicleTrips.length > 0 };
   },
 
   calibrateVehicle: async (vehicleId, vehicleInput, onProgress) => {

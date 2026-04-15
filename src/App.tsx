@@ -12,6 +12,7 @@ import { RefuelPage } from "@/pages/Refuel";
 import { useEffect, useState } from "react";
 import { useTripStore } from "@/stores/useTripStore";
 import { useVehicleStore } from "@/stores/useVehicleStore";
+import { useFuelInventoryStore } from "@/stores/useFuelInventoryStore";
 
 export function App() {
   const [isReady, setIsReady] = useState(false);
@@ -32,6 +33,11 @@ export function App() {
         "hasTrip=",
         !!currentTrip,
       );
+
+      if (currentStatus === "recording" || currentStatus === "paused") {
+        console.log("[App] Incomplete trip detected, replaying WAL...");
+        await useFuelInventoryStore.getState().replayWal();
+      }
 
       setIsReady(true);
     }

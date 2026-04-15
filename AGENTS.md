@@ -187,7 +187,7 @@ src/
 │   ├── ui/                # Reusable UI components (Button, Input, ConfirmDialog)
 │   ├── tracker/           # Tracker-specific components (Dashboard, MapTracker, Speedometer, TripCard)
 │   └── history/           # History-specific components (FuelCharts, UsagePatterns, SpeedAnalysis)
-├── hooks/                 # Custom React hooks (useGeolocation, useWakeLock, useSimulation)
+├── hooks/                 # Custom React hooks (useGeolocation, useWakeLock, useLocationProvider)
 ├── lib/                   # Utilities (query-client, db, utils, distance)
 ├── pages/                 # Page components (Home, Tracker, History, Settings, About)
 ├── schemas/               # Zod schemas (userSchema)
@@ -235,7 +235,7 @@ src/
 | `useTripConsumptionTracker` | Fuel calculation (estimado) |
 | `useConsumptionModel`       | Consumption math (COPERT)   |
 | `useFuelInventory`          | FIFO fuel batch management  |
-| `useSimulation`             | Demo mode                   |
+| `useLocationProvider`       | Unified real/sim GPS source |
 
 ### DB Operations (`lib/db.ts`)
 
@@ -271,8 +271,10 @@ src/
 - **Sempre que mudar lógica, atualize a documentação** — doc desatualizado é pior que nenhum doc
 
 ## Active Technologies
+
 - TypeScript ~5.9.3 + React 19, Zustand 5.x, TanStack React Query, Dexie 4.x (IndexedDB), Leaflet + react-leaflet (001-fuel-tracking)
 - Dexie (IndexedDB) - local device storage, no cloud sync (001-fuel-tracking)
 
 ## Recent Changes
+
 - 001-fuel-tracking: Added TypeScript ~5.9.3 + React 19, Zustand 5.x, TanStack React Query, Dexie 4.x (IndexedDB), Leaflet + react-leaflet

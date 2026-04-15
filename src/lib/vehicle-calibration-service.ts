@@ -3,9 +3,11 @@ import {
   validateBasic,
   validateFull,
   type CalibrationResult,
+  type VehicleCalibration,
 } from "./agent-judge";
 import { createAIProvider, getProviderType } from "./ai";
 import type { ChatMessage } from "./ai/providers";
+import type { TransmissionData } from "@/types";
 
 export function extractJsonFromResponse(raw: string): string {
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
@@ -70,12 +72,12 @@ const vehicleCalibrationSchema = z.object({
   baseBsfc: z.number().positive(),
   transmission: z
     .object({
-      type: z.enum(["Manual", "Automatic", "CVT"]),
-      gearRatios: z.array(z.number()),
-      finalDrive: z.number(),
-      tireRadiusM: z.number(),
-      redlineRpm: z.number(),
-      idleRpm: z.number(),
+      type: z.enum(["Manual", "Automatic", "CVT"]).optional(),
+      gearRatios: z.array(z.number()).optional(),
+      finalDrive: z.number().optional(),
+      tireRadiusM: z.number().optional(),
+      redlineRpm: z.number().optional(),
+      idleRpm: z.number().optional(),
       torqueCurve: z.record(z.number(), z.number()).optional(),
       rpmAt100Kmh: z.number().optional(),
     })
@@ -151,6 +153,7 @@ Retorne UM JSON válido com todos os campos abaixo.
 - transmission.finalDrive: number (2.0-5.5)
 - transmission.redlineRpm: number (4000-9000)
 - transmission.idleRpm: number (500-1200)
+- transmission.rpmAt100Kmh: number (2000-4000) - RPM do motor a 100 km/h em cruising (marcha mais alta)
 
 ## REGRAS DE VALIDAÇÃO (aplique antes de retornar):
 1. mass < grossWeight (sempre)
@@ -171,6 +174,8 @@ const USER_PROMPT = (vehicle: string) =>
 
 Campos obrigatórios: make, model, year, displacement, fuelType, euroNorm, segment, mass, grossWeight, frontalArea, dragCoefficient, f0, f1, f2, crr, peakPowerKw, peakTorqueNm, idleLph, baseBsfc, fuelConversionFactor, urbanKmpl, combinedKmpl, highwayKmpl, inmetroCityKmpl, inmetroHighwayKmpl, userAvgCityKmpl, userAvgHighwayKmpl, weightInmetro, weightUser, confidence.
 
+Se tiver dados de transmissão: inclua transmission.rpmAt100Kmh (RPM a 100 km/h).
+
 Se flex: adicione inmetroEthanolCityKmpl, inmetroEthanolHighwayKmpl, userAvgEthanolCityKmpl, userAvgEthanolHighwayKmpl.
 
 Confirme que urbanKmpl < combinedKmpl < highwayKmpl.
@@ -186,7 +191,7 @@ async function chat(
 }
 
 function parseJson(content: string): {
-  data?: z.infer<typeof vehicleCalibrationSchema>;
+  data?: VehicleCalibration;
   error?: string;
 } {
   try {
@@ -202,33 +207,51 @@ function parseJson(content: string): {
         const firstItem = parsed[0];
         const retryResult = vehicleCalibrationSchema.safeParse(firstItem);
         if (retryResult.success) {
-          return { data: retryResult.data };
+          return { data: addMissingDefaults(retryResult.data) };
         }
       }
       return {
         error: `Dados inválidos: ${zodResult.error.issues[0]?.message}`,
       };
     }
-    return { data: zodResult.data };
+    return { data: addMissingDefaults(zodResult.data) };
   } catch (e) {
     console.log("[Calibration] Parse error:", e);
     return { error: "Erro ao processar resposta" };
   }
 }
 
-function isValid(data: z.infer<typeof vehicleCalibrationSchema>): boolean {
-  const basicValidation = validateBasic(data as any);
-  const fullValidation = validateFull(data as any);
+function addMissingDefaults(
+  data: z.input<typeof vehicleCalibrationSchema>,
+): VehicleCalibration {
+  const { transmission, ...rest } = data;
+
+  if (transmission) {
+    const cleaned = Object.fromEntries(
+      Object.entries(transmission).filter(([, v]) => v !== undefined),
+    );
+    return {
+      ...rest,
+      ...(Object.keys(cleaned).length > 0 && {
+        transmission: cleaned as TransmissionData,
+      }),
+    } as VehicleCalibration;
+  }
+
+  return rest as VehicleCalibration;
+}
+
+function isValid(data: VehicleCalibration): boolean {
+  const basicValidation = validateBasic(data);
+  const fullValidation = validateFull(data);
   return (
     basicValidation.valid && fullValidation.valid && data.confidence !== "low"
   );
 }
 
-function getValidationErrors(
-  data: z.infer<typeof vehicleCalibrationSchema>,
-): string[] {
-  const fullValidation = validateFull(data as any);
-  const basicValidation = validateBasic(data as any);
+function getValidationErrors(data: VehicleCalibration): string[] {
+  const fullValidation = validateFull(data);
+  const basicValidation = validateBasic(data);
   return [...fullValidation.errors, ...basicValidation.errors];
 }
 
@@ -255,37 +278,19 @@ async function retryWithFeedback(
   });
 }
 
-function withDefaults<T extends Record<string, unknown>>(
-  data: T,
-): T & {
-  weightInmetro: number;
-  weightUser: number;
-  isHybrid: boolean;
-  gnvCylinderWeightKg: number;
-  gnvEfficiencyFactor: number;
-  confidence: "high" | "medium" | "low";
-  fuelConversionFactor: number;
-} {
-  const result = {
+function withDefaults(data: VehicleCalibration): VehicleCalibration {
+  const result: VehicleCalibration = {
     ...data,
-    confidence: (data as any).confidence ?? "medium",
-    fuelConversionFactor: (data as any).fuelConversionFactor ?? 8.5,
-    weightInmetro: (data as any).weightInmetro ?? 0.6,
-    weightUser: (data as any).weightUser ?? 0.4,
-    isHybrid: (data as any).isHybrid ?? false,
-    gnvCylinderWeightKg: (data as any).gnvCylinderWeightKg ?? 80,
-    gnvEfficiencyFactor: (data as any).gnvEfficiencyFactor ?? 1.32,
-  } as T & {
-    weightInmetro: number;
-    weightUser: number;
-    isHybrid: boolean;
-    gnvCylinderWeightKg: number;
-    gnvEfficiencyFactor: number;
-    confidence: "high" | "medium" | "low";
-    fuelConversionFactor: number;
+    confidence: data.confidence ?? "medium",
+    fuelConversionFactor: data.fuelConversionFactor ?? 8.5,
+    weightInmetro: data.weightInmetro ?? 0.6,
+    weightUser: data.weightUser ?? 0.4,
+    isHybrid: data.isHybrid ?? false,
+    gnvCylinderWeightKg: data.gnvCylinderWeightKg ?? 80,
+    gnvEfficiencyFactor: data.gnvEfficiencyFactor ?? 1.32,
   };
 
-  const trans = (data as any).transmission;
+  const trans = data.transmission;
   if (
     trans?.gearRatios &&
     trans?.finalDrive &&

@@ -323,3 +323,31 @@ export interface TripTelemetryData {
   maxRpm?: number;
   hasTransmissionData?: boolean;
 }
+
+export interface BatchAllocation {
+  batchId: string;
+  amountFromBatch: number;
+  batchPricePerLiter: number;
+  batchFuelType: FuelType;
+}
+
+export interface FuelConsumptionEvent {
+  id: string;
+  tripId: string;
+  vehicleId: string;
+  timestamp: string;
+  sequenceNumber: number;
+  position: { lat: number; lng: number; altitude?: number };
+  fuelLiters: number;
+  cumulativeFuelUsed: number;
+  tankLevelBefore: number;
+  tankLevelAfter: number;
+  speedKmh: number;
+  driveMode: DriveMode;
+  gradePercent: number;
+  instantConsumption: number;
+  avgConsumptionSoFar: number;
+  batchAllocations: BatchAllocation[];
+  eventCost: number;
+  source: "gps" | "simulation";
+}

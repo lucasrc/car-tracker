@@ -1,12 +1,15 @@
 const BASE_URL = import.meta.env.VITE_API_URL ?? "/api";
 
-interface RequestOptions extends RequestInit {
+interface RequestOptions {
   params?: Record<string, string | number | boolean>;
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string | FormData | URLSearchParams;
 }
 
 export async function apiClient<T>(
   endpoint: string,
-  { params, ...options }: RequestOptions = {}
+  { params, ...options }: RequestOptions = {},
 ): Promise<T> {
   const url = new URL(`${BASE_URL}${endpoint}`);
 
@@ -32,12 +35,13 @@ export async function apiClient<T>(
 }
 
 export const api = {
-  get: <T>(endpoint: string, params?: Record<string, string | number | boolean>) =>
-    apiClient<T>(endpoint, { params }),
+  get: <T>(
+    endpoint: string,
+    params?: Record<string, string | number | boolean>,
+  ) => apiClient<T>(endpoint, { params }),
   post: <T>(endpoint: string, body: unknown) =>
     apiClient<T>(endpoint, { method: "POST", body: JSON.stringify(body) }),
   put: <T>(endpoint: string, body: unknown) =>
     apiClient<T>(endpoint, { method: "PUT", body: JSON.stringify(body) }),
-  delete: <T>(endpoint: string) =>
-    apiClient<T>(endpoint, { method: "DELETE" }),
+  delete: <T>(endpoint: string) => apiClient<T>(endpoint, { method: "DELETE" }),
 };

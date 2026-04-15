@@ -6,6 +6,7 @@ import type {
   FuelType,
   Vehicle,
   InclinationCalibration,
+  FuelConsumptionEvent,
 } from "@/types";
 import { generateId } from "@/lib/utils";
 
@@ -34,6 +35,7 @@ const db = new Dexie("CarTelemetryDB") as Dexie & {
   refuels: EntityTable<Refuel, "id">;
   vehicles: EntityTable<Vehicle, "id">;
   inclinationCalibrations: EntityTable<InclinationCalibration, "vehicleId">;
+  fuelEvents: EntityTable<FuelConsumptionEvent, "id">;
 };
 
 db.version(4)
@@ -218,6 +220,61 @@ db.version(12)
       });
   });
 
+db.version(13).stores({
+  trips: "id, startTime, endTime, status, vehicleId",
+  currentTrip: "id, vehicleId",
+  settings: "id",
+  refuels: "id, timestamp, vehicleId",
+  vehicles: "id, createdAt",
+  inclinationCalibrations: "vehicleId",
+  fuelEvents: "id, tripId, timestamp",
+});
+
+db.version(14)
+  .stores({
+    trips: "id, startTime, endTime, status, vehicleId",
+    currentTrip: "id, vehicleId",
+    settings: "id",
+    refuels: "id, timestamp, vehicleId",
+    vehicles: "id, createdAt",
+    inclinationCalibrations: "vehicleId",
+    fuelEvents: "id, tripId, timestamp",
+  })
+  .upgrade(async (tx) => {
+    const settings = await tx.table("settings").get("default");
+    const activeVehicleId = settings?.activeVehicleId;
+
+    if (activeVehicleId) {
+      const vehicle = await tx.table("vehicles").get(activeVehicleId);
+      if (vehicle) {
+        const fuelCapacity = settings?.fuelCapacity || 50;
+        const currentFuel = settings?.currentFuel || 0;
+        await tx.table("vehicles").update(activeVehicleId, {
+          fuelCapacity,
+          currentFuel: Math.min(currentFuel, fuelCapacity),
+        });
+      }
+    }
+
+    await tx
+      .table("vehicles")
+      .toCollection()
+      .modify((v) => {
+        if (typeof v.fuelCapacity === "undefined") {
+          v.fuelCapacity = 50;
+        }
+        if (typeof v.currentFuel === "undefined") {
+          v.currentFuel = 0;
+        }
+        if (v.currentFuel > v.fuelCapacity) {
+          v.currentFuel = v.fuelCapacity;
+        }
+        if (v.currentFuel < 0) {
+          v.currentFuel = 0;
+        }
+      });
+  });
+
 export async function getSettings(): Promise<Settings> {
   try {
     const settings = await db.settings.get("default");
@@ -340,7 +397,7 @@ export async function getTripById(id: string): Promise<Trip | undefined> {
 }
 
 export async function deleteTrip(id: string): Promise<void> {
-  await db.trips.delete(id);
+  await Promise.all([db.trips.delete(id), deleteFuelEventsByTrip(id)]);
 }
 
 export async function addRefuel(
@@ -485,6 +542,35 @@ export async function clearInclinationCalibration(
   vehicleId: string,
 ): Promise<void> {
   await db.inclinationCalibrations.delete(vehicleId);
+}
+
+export async function addFuelEvent(event: FuelConsumptionEvent): Promise<void> {
+  await db.fuelEvents.put(event);
+}
+
+export async function addFuelEvents(
+  events: FuelConsumptionEvent[],
+): Promise<void> {
+  await db.fuelEvents.bulkPut(events);
+}
+
+export async function getFuelEventsByTrip(
+  tripId: string,
+): Promise<FuelConsumptionEvent[]> {
+  return await db.fuelEvents.where("tripId").equals(tripId).toArray();
+}
+
+export async function deleteFuelEventsByTrip(tripId: string): Promise<void> {
+  await db.fuelEvents.where("tripId").equals(tripId).delete();
+}
+
+export async function deleteFuelEventsByBatch(batchId: string): Promise<void> {
+  const events = await db.fuelEvents.toArray();
+  const toDelete = events.filter((e) =>
+    e.batchAllocations.some((a) => a.batchId === batchId),
+  );
+  const ids = toDelete.map((e) => e.id);
+  await db.fuelEvents.bulkDelete(ids);
 }
 
 export async function migrateLegacyCalibration(): Promise<void> {

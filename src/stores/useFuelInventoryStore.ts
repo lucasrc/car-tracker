@@ -4,8 +4,19 @@ import {
   addRefuel as dbAddRefuel,
   deleteRefuel as dbDeleteRefuel,
   updateRefuelConsumed as dbUpdateRefuelConsumed,
+  addFuelEvents as dbAddFuelEvents,
+  deleteFuelEventsByBatch,
 } from "@/lib/db";
-import type { FuelType } from "@/types";
+import type {
+  FuelType,
+  FuelConsumptionEvent,
+  DriveMode,
+  BatchAllocation,
+} from "@/types";
+import { generateId } from "@/lib/utils";
+
+const WAL_KEY = "fuel-event-wal";
+const EVENT_FLUSH_THRESHOLD_LITERS = 0.1;
 
 export interface FuelBatch {
   id: string;
@@ -31,6 +42,8 @@ interface FuelInventoryState {
   vehicleId: string | null;
   isLoading: boolean;
   isLoaded: boolean;
+  eventQueue: FuelConsumptionEvent[];
+  accumulatedFuelForFlush: number;
   loadBatches: (vehicleId: string) => Promise<void>;
   addBatch: (
     amount: number,
@@ -43,6 +56,23 @@ interface FuelInventoryState {
     filterFuelType?: FuelType,
     vehicleId?: string,
   ) => Promise<ConsumptionResult>;
+  emitFuelEvent: (
+    tripId: string,
+    fuelLiters: number,
+    cumulativeFuelUsed: number,
+    tankLevelBefore: number,
+    tankLevelAfter: number,
+    position: { lat: number; lng: number; altitude?: number },
+    speedKmh: number,
+    driveMode: DriveMode,
+    gradePercent: number,
+    instantConsumption: number,
+    avgConsumptionSoFar: number,
+    source: "gps" | "simulation",
+  ) => void;
+  flushEventsToDb: () => Promise<void>;
+  replayWal: () => Promise<void>;
+  clearWal: () => void;
   deleteBatch: (id: string) => Promise<void>;
   getTotalLiters: (filterFuelType?: FuelType) => number;
   getWeightedAveragePrice: (filterFuelType?: FuelType) => number;
@@ -77,11 +107,31 @@ function calculateWeightedAverage(
   return totalCost / totalLiters;
 }
 
+function loadWal(): FuelConsumptionEvent[] {
+  try {
+    const raw = localStorage.getItem(WAL_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw) as FuelConsumptionEvent[];
+  } catch {
+    return [];
+  }
+}
+
+function saveWal(events: FuelConsumptionEvent[]): void {
+  try {
+    localStorage.setItem(WAL_KEY, JSON.stringify(events));
+  } catch (e) {
+    console.warn("[FUEL] Failed to save WAL:", e);
+  }
+}
+
 export const useFuelInventoryStore = create<FuelInventoryState>((set, get) => ({
   batches: [],
   vehicleId: null,
   isLoading: false,
   isLoaded: false,
+  eventQueue: [],
+  accumulatedFuelForFlush: 0,
 
   loadBatches: async (vehicleId: string) => {
     console.log(`[FUEL] loadBatches called for vehicleId: ${vehicleId}`);
@@ -205,23 +255,136 @@ export const useFuelInventoryStore = create<FuelInventoryState>((set, get) => ({
       );
     }
 
-    // Update state with new batch objects
+    // Update state with new batch objects and await DB updates
+    const updatePromises: Promise<void>[] = [];
     const updatedBatches = batches.map((batch) => {
       const consumed = consumptionById.get(batch.id);
       if (consumed !== undefined) {
         const newConsumed = batch.consumedAmount + consumed;
-        dbUpdateRefuelConsumed(batch.id, newConsumed);
+        updatePromises.push(
+          dbUpdateRefuelConsumed(batch.id, newConsumed).catch((err) => {
+            console.error(`[FUEL] Failed to update batch ${batch.id}:`, err);
+          }),
+        );
         return { ...batch, consumedAmount: newConsumed };
       }
       return batch;
     });
 
+    await Promise.all(updatePromises);
     set({ batches: updatedBatches });
     return { cost: totalCost, batches: consumedBatchDetails };
   },
 
+  emitFuelEvent: (
+    tripId,
+    fuelLiters,
+    cumulativeFuelUsed,
+    tankLevelBefore,
+    tankLevelAfter,
+    position,
+    speedKmh,
+    driveMode,
+    gradePercent,
+    instantConsumption,
+    avgConsumptionSoFar,
+    source,
+  ) => {
+    const state = get();
+    const batchAllocations: BatchAllocation[] = state.batches
+      .filter((b) => b.consumedAmount > 0 || b.amount > 0)
+      .sort(
+        (a, b) =>
+          new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+      )
+      .slice(0, 3)
+      .map((b) => ({
+        batchId: b.id,
+        amountFromBatch: 0,
+        batchPricePerLiter: b.fuelPrice,
+        batchFuelType: b.fuelType,
+      }));
+
+    const lastSequence =
+      state.eventQueue.length > 0
+        ? state.eventQueue[state.eventQueue.length - 1].sequenceNumber
+        : 0;
+
+    const event: FuelConsumptionEvent = {
+      id: generateId(),
+      tripId,
+      vehicleId: state.vehicleId || "",
+      timestamp: new Date().toISOString(),
+      sequenceNumber: lastSequence + 1,
+      position,
+      fuelLiters,
+      cumulativeFuelUsed,
+      tankLevelBefore,
+      tankLevelAfter,
+      speedKmh,
+      driveMode,
+      gradePercent,
+      instantConsumption,
+      avgConsumptionSoFar,
+      batchAllocations,
+      eventCost: 0,
+      source,
+    };
+
+    const newQueue = [...state.eventQueue, event];
+    const newAccumulated = state.accumulatedFuelForFlush + fuelLiters;
+
+    saveWal(newQueue);
+    set({
+      eventQueue: newQueue,
+      accumulatedFuelForFlush: newAccumulated,
+    });
+
+    if (newAccumulated >= EVENT_FLUSH_THRESHOLD_LITERS) {
+      get().flushEventsToDb();
+    }
+  },
+
+  flushEventsToDb: async () => {
+    const { eventQueue } = get();
+    if (eventQueue.length === 0) return;
+
+    try {
+      await dbAddFuelEvents(eventQueue);
+      saveWal([]);
+      set({ eventQueue: [], accumulatedFuelForFlush: 0 });
+      console.log(`[FUEL] Flushed ${eventQueue.length} events to DB`);
+    } catch (err) {
+      console.error("[FUEL] Failed to flush events:", err);
+    }
+  },
+
+  replayWal: async () => {
+    const walEvents = loadWal();
+    if (walEvents.length === 0) return;
+
+    const lastEvent = walEvents[walEvents.length - 1];
+    const tripId = lastEvent.tripId;
+
+    console.log(
+      `[FUEL] Replaying ${walEvents.length} events from WAL for trip ${tripId}`,
+    );
+    set({
+      eventQueue: walEvents,
+      accumulatedFuelForFlush: walEvents.reduce(
+        (sum, e) => sum + e.fuelLiters,
+        0,
+      ),
+    });
+  },
+
+  clearWal: () => {
+    localStorage.removeItem(WAL_KEY);
+    set({ eventQueue: [], accumulatedFuelForFlush: 0 });
+  },
+
   deleteBatch: async (id: string) => {
-    await dbDeleteRefuel(id);
+    await Promise.all([dbDeleteRefuel(id), deleteFuelEventsByBatch(id)]);
     set((state) => ({
       batches: state.batches.filter((b) => b.id !== id),
     }));
@@ -241,6 +404,13 @@ export const useFuelInventoryStore = create<FuelInventoryState>((set, get) => ({
   },
 
   reset: () => {
-    set({ batches: [], vehicleId: null, isLoaded: false, isLoading: false });
+    set({
+      batches: [],
+      vehicleId: null,
+      isLoaded: false,
+      isLoading: false,
+      eventQueue: [],
+      accumulatedFuelForFlush: 0,
+    });
   },
 }));

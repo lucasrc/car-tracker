@@ -11,24 +11,16 @@ import { EngineLoadBar } from "@/components/tracker/EngineLoadBar";
 import { LocationButton } from "@/components/tracker/LocationButton";
 import { useTripStore } from "@/stores/useTripStore";
 import { useRadarStore } from "@/stores/useRadarStore";
-import { useGeolocation } from "@/hooks/useGeolocation";
 import { useLocationProvider } from "@/hooks/useLocationProvider";
 import { useWakeLock } from "@/hooks/useWakeLock";
 import { useSpeedFilter } from "@/hooks/useSpeedFilter";
 import { useTelemetryEngine } from "@/hooks/useTelemetryEngine";
 import { useInclination } from "@/hooks/useInclination";
-import { useSimulation } from "@/hooks/useSimulation";
-import { useAutoTracker } from "@/hooks/useAutoTracker";
 import { useFuelInventoryStore } from "@/stores/useFuelInventoryStore";
 import { useVehicleStore } from "@/stores/useVehicleStore";
 import { useAppStore } from "@/stores/useAppStore";
-import { isAndroid } from "@/lib/platform";
 import { speedToKmh } from "@/lib/utils";
-import {
-  isValidSpeedForDistance,
-  vincentyDistance,
-  calculateTotalDistance,
-} from "@/lib/distance";
+import { isValidSpeedForDistance, vincentyDistance } from "@/lib/distance";
 import { calculateDistanceKm } from "@/lib/radar-api";
 import L from "leaflet";
 
@@ -63,43 +55,34 @@ export function Tracker() {
     loadCurrentTrip,
   } = useTripStore();
 
-  const {
-    isWatching,
-    startWatching,
-    stopWatching,
-    battery,
-    getCurrentPosition,
-    deviceOrientation,
-    filteredHeading,
-    filteredPitch,
-  } = useGeolocation();
   const { request: requestWakeLock, release: releaseWakeLock } = useWakeLock();
   const { addSpeedReading, reset: resetSpeedFilter } = useSpeedFilter();
-  const {
-    isSimulating,
-    currentPosition: simulatedPosition,
-    speed: simulatedSpeed,
-    simulatedPath,
-    elapsedTime: simulatedElapsedTime,
-  } = useSimulation();
-  const {
-    isTracking: isAutoTracking,
-    points: autoTrackerPoints,
-    initialize: initAutoTracker,
-    startMonitoring: startAutoMonitoring,
-    stop: stopAutoTracker,
-    setOnTripComplete,
-  } = useAutoTracker();
   const { activeVehicle, updateVehicleFuelLevel } = useVehicleStore();
   const fuelInventoryIsLoaded = useFuelInventoryStore((s) => s.isLoaded);
-  const { loadBatches, consumeFuel, getTotalLiters, getWeightedAveragePrice } =
-    useFuelInventoryStore();
+  const {
+    loadBatches,
+    consumeFuel,
+    getTotalLiters,
+    getWeightedAveragePrice,
+    emitFuelEvent,
+    flushEventsToDb,
+  } = useFuelInventoryStore();
   const { nearestRadar, currentSpeedingEvent } = useRadarStore();
   const inclination = useInclination({ enabled: status === "recording" });
   const location = useLocationProvider();
   const debugModeEnabled = useAppStore((s) => s.debugModeEnabled);
   const debugModeShowRadars = useAppStore((s) => s.debugModeShowRadars);
   const pos = location.position;
+  const {
+    isWatching,
+    startWatching,
+    stopWatching,
+    getCurrentPosition,
+    battery,
+    deviceOrientation,
+    filteredHeading,
+    filteredPitch,
+  } = location;
 
   const accumulatedFuelRef = useRef(0);
   const lastFuelUpdateRef = useRef(0);
@@ -115,13 +98,6 @@ export function Tracker() {
     if (dist > 0.15) return undefined;
     return nearestRadar.maxSpeed;
   })();
-  const selectedCarBluetoothAddress = useAppStore(
-    (s) => s.selectedCarBluetoothAddress,
-  );
-  const selectedCarBluetoothName = useAppStore(
-    (s) => s.selectedCarBluetoothName,
-  );
-  const autoTrackingEnabled = useAppStore((s) => s.autoTrackingEnabled);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastValidPositionRef = useRef<{
     lat: number;
@@ -167,6 +143,11 @@ export function Tracker() {
   }, [pos?.altitude, pos?.lat, pos?.lng, inclination]);
 
   useEffect(() => {
+    if (!activeVehicle || storeTotalFuelUsed <= 0) {
+      setRealtimeCost(0);
+      return;
+    }
+
     const vehicleFuelType = activeVehicle
       ? activeVehicle.fuelType === "diesel"
         ? "gasolina"
@@ -180,60 +161,27 @@ export function Tracker() {
     const totalLiters = getTotalLiters(
       vehicleFuelType as "gasolina" | "etanol" | "flex" | "gnv",
     );
-    const weightedPrice =
-      totalLiters > 0
-        ? getWeightedAveragePrice(
-            vehicleFuelType as "gasolina" | "etanol" | "flex" | "gnv",
-          )
-        : 0;
 
-    if (totalLiters === 0 && storeTotalFuelUsed > 0) {
-      const fallbackPrice = 5.5;
-      setRealtimeCost(storeTotalFuelUsed * fallbackPrice);
-    } else {
-      setRealtimeCost(storeTotalFuelUsed * weightedPrice);
+    if (totalLiters <= 0) {
+      setRealtimeCost(0);
+      return;
     }
-  }, [storeTotalFuelUsed, activeVehicle]);
 
-  useEffect(() => {
-    if (autoTrackingEnabled && selectedCarBluetoothAddress) {
-      setOnTripComplete((tripId: string) => {
-        if (tripId) {
-          navigate(`/history/${tripId}`);
-        }
-      });
+    const weightedPrice = getWeightedAveragePrice(
+      vehicleFuelType as "gasolina" | "etanol" | "flex" | "gnv",
+    );
+
+    if (weightedPrice <= 0) {
+      setRealtimeCost(0);
+      return;
     }
+
+    setRealtimeCost(storeTotalFuelUsed * weightedPrice);
   }, [
-    autoTrackingEnabled,
-    selectedCarBluetoothAddress,
-    selectedCarBluetoothName,
-    navigate,
-    setOnTripComplete,
-  ]);
-
-  useEffect(() => {
-    if (!isAndroid) return;
-    if (autoTrackingEnabled && !isAutoTracking && selectedCarBluetoothAddress) {
-      initAutoTracker(selectedCarBluetoothAddress)
-        .then(() =>
-          startAutoMonitoring(
-            selectedCarBluetoothAddress,
-            selectedCarBluetoothName ?? undefined,
-          ),
-        )
-        .catch(() => {});
-    }
-    if (!autoTrackingEnabled && isAutoTracking) {
-      stopAutoTracker();
-    }
-  }, [
-    autoTrackingEnabled,
-    initAutoTracker,
-    startAutoMonitoring,
-    stopAutoTracker,
-    isAutoTracking,
-    selectedCarBluetoothAddress,
-    selectedCarBluetoothName,
+    storeTotalFuelUsed,
+    activeVehicle,
+    getTotalLiters,
+    getWeightedAveragePrice,
   ]);
 
   const {
@@ -252,6 +200,7 @@ export function Tracker() {
     currentEngineLoad,
     hasTransmissionData,
     drivingStyle,
+    driveMode,
   } = useTelemetryEngine(
     stats.distanceMeters,
     activeVehicle?.currentFuel ?? 0,
@@ -340,11 +289,19 @@ export function Tracker() {
   }, [stopWatching, releaseWakeLock]);
 
   const consumeFuelFromVehicle = useCallback(
-    async (fuelLiters: number, currentFuelLevel: number) => {
-      if (!activeVehicle || fuelLiters <= 0) return;
+    async (
+      fuelLiters: number,
+      currentFuelLevel: number,
+      isTripEnding = false,
+    ) => {
+      if (!activeVehicle) return;
 
       const newAccumulated = accumulatedFuelRef.current + fuelLiters;
       accumulatedFuelRef.current = newAccumulated;
+
+      if (isTripEnding && newAccumulated <= 0) {
+        return;
+      }
 
       const now = Date.now();
       const timeSinceLastUpdate = now - lastFuelUpdateRef.current;
@@ -352,6 +309,7 @@ export function Tracker() {
       const MIN_FUEL_TO_CONSUME = 0.05;
 
       if (
+        !isTripEnding &&
         timeSinceLastUpdate < MIN_UPDATE_INTERVAL_MS &&
         newAccumulated < MIN_FUEL_TO_CONSUME
       ) {
@@ -367,6 +325,9 @@ export function Tracker() {
       accumulatedFuelRef.current = 0;
       lastFuelUpdateRef.current = now;
 
+      const tankLevelBefore = currentFuelLevel;
+      const tankLevelAfter = Math.max(0, currentFuelLevel - fuelToConsume);
+
       console.log(
         `[FUEL] Consuming ${fuelToConsume.toFixed(3)}L from vehicle ${activeVehicle.id} (current: ${currentFuelLevel.toFixed(2)}L)`,
       );
@@ -380,6 +341,8 @@ export function Tracker() {
               ? "flex"
               : "gasolina";
 
+      const position = lastValidPositionRef.current || { lat: 0, lng: 0 };
+
       try {
         console.log(
           `[FUEL] Calling consumeFuel with ${fuelToConsume}L, type=${vehicleFuelType}, vehicleId=${activeVehicle.id}`,
@@ -392,17 +355,49 @@ export function Tracker() {
         console.log(
           `[FUEL] Batch consumption result: cost=${result.cost.toFixed(2)}, batches=${result.batches.length}`,
         );
+
+        const newFuelLevel = Math.max(0, currentFuelLevel - fuelToConsume);
+        await updateVehicleFuelLevel(activeVehicle.id, newFuelLevel);
+
+        const cumulativeFuelUsed = storeTotalFuelUsed + fuelToConsume;
+        emitFuelEvent(
+          trip?.id || "",
+          fuelToConsume,
+          cumulativeFuelUsed,
+          tankLevelBefore,
+          tankLevelAfter,
+          position,
+          currentSpeed,
+          driveMode,
+          location.grade || 0,
+          getInstantConsumption(),
+          getAverageConsumption(),
+          debugModeEnabled ? "simulation" : "gps",
+        );
       } catch (err) {
         console.warn("[FUEL] Failed to consume from batch:", err);
       }
 
-      const newFuelLevel = Math.max(0, currentFuelLevel - fuelToConsume);
-      await updateVehicleFuelLevel(activeVehicle.id, newFuelLevel);
       console.log(
-        `[FUEL] Vehicle fuel updated: ${currentFuelLevel.toFixed(2)}L -> ${newFuelLevel.toFixed(2)}L`,
+        `[FUEL] Vehicle fuel updated: ${currentFuelLevel.toFixed(2)}L -> ${tankLevelAfter.toFixed(2)}L`,
       );
     },
-    [activeVehicle, updateVehicleFuelLevel],
+    [
+      activeVehicle,
+      updateVehicleFuelLevel,
+      trip,
+      currentSpeed,
+      driveMode,
+      location.grade,
+      getInstantConsumption,
+      getAverageConsumption,
+      debugModeEnabled,
+      storeTotalFuelUsed,
+      consumeFuel,
+      emitFuelEvent,
+      fuelInventoryIsLoaded,
+      loadBatches,
+    ],
   );
 
   const handleConfirmStop = useCallback(async () => {
@@ -414,8 +409,12 @@ export function Tracker() {
       console.log(
         `[FUEL] Trip ending - consuming remaining ${accumulatedFuelRef.current.toFixed(3)}L`,
       );
-      await consumeFuelFromVehicle(0, activeVehicle?.currentFuel ?? 0);
+      await consumeFuelFromVehicle(0, activeVehicle?.currentFuel ?? 0, true);
     }
+
+    await flushEventsToDb();
+    const { clearWal } = useFuelInventoryStore.getState();
+    clearWal();
 
     const telemetryData = getTelemetryData();
     const tripFuelUsed = localFuelUsed;
@@ -440,6 +439,7 @@ export function Tracker() {
     getTelemetryData,
     navigate,
     consumeFuelFromVehicle,
+    flushEventsToDb,
   ]);
 
   const handleCancelStop = useCallback(() => {
@@ -497,7 +497,7 @@ export function Tracker() {
   // ---------- Debug/Simulation: process simulated positions ----------
   useEffect(() => {
     if (!debugModeEnabled || status !== "recording") return;
-    const simPos = location.simPosition;
+    const simPos = location.position;
     if (!simPos) return;
 
     const speedKmh = location.speed;
@@ -553,7 +553,7 @@ export function Tracker() {
     };
   }, [
     debugModeEnabled,
-    location.simPosition,
+    location.position,
     location.speed,
     location.grade,
     status,
@@ -684,10 +684,17 @@ export function Tracker() {
 
   // Auto-start GPS watching only in non-debug mode
   useEffect(() => {
+    console.log("[TRACKER] GPS auto-start effect:", {
+      debugModeEnabled,
+      status,
+      isWatching,
+    });
     if (debugModeEnabled) return; // simulation handles its own position
     if (status === "recording" && !isWatching) {
+      console.log("[TRACKER] Calling startWatching for recording");
       startWatching();
     } else if (status === "idle" && !isWatching) {
+      console.log("[TRACKER] Calling startWatching for idle");
       startWatching();
     } else if (status === "paused" && isWatching) {
       stopWatching();
@@ -695,29 +702,11 @@ export function Tracker() {
   }, [debugModeEnabled, status, isWatching, startWatching, stopWatching]);
 
   // Determine effective position/path/speed for the UI
-  const effectivePosition = debugModeEnabled
-    ? location.simPosition
-    : isSimulating
-      ? simulatedPosition
-      : isAutoTracking
-        ? (autoTrackerPoints[autoTrackerPoints.length - 1] ?? null)
-        : pos;
-  const effectivePath = debugModeEnabled
-    ? trip?.path || []
-    : isSimulating
-      ? simulatedPath
-      : isAutoTracking
-        ? autoTrackerPoints
-        : trip?.path || [];
-  const displaySpeed = debugModeEnabled
-    ? location.speed
-    : isSimulating
-      ? simulatedSpeed * 3.6
-      : currentSpeed;
-  const simulatedDistance = isSimulating
-    ? calculateTotalDistance(simulatedPath)
-    : 0;
-  const isRecordingOrSimulating = isSimulating || status === "recording";
+  // All position/speed/grade come from useLocationProvider (single source)
+  const effectivePosition = location.position;
+  const effectivePath = trip?.path || [];
+  const displaySpeed = location.speed;
+  const isRecordingOrSimulating = debugModeEnabled || status === "recording";
 
   const displayedFuel = activeVehicle?.currentFuel ?? 0;
 
@@ -749,6 +738,8 @@ export function Tracker() {
           deviceOrientation={deviceOrientation}
           filteredHeading={filteredHeading}
           isSimulation={debugModeEnabled}
+          fixState={location.fixState}
+          gpsPermissionDenied={location.gpsPermissionDenied}
         />
       </div>
 
@@ -758,8 +749,8 @@ export function Tracker() {
         <div className="pointer-events-auto pt-0">
           <DrivingPanel
             currentSpeed={displaySpeed}
-            distance={isSimulating ? simulatedDistance : stats.distanceMeters}
-            elapsedTime={isSimulating ? simulatedElapsedTime : elapsedTime}
+            distance={stats.distanceMeters}
+            elapsedTime={debugModeEnabled ? location.elapsedTime : elapsedTime}
             fuelUsed={isRecordingOrSimulating ? localFuelUsed : 0}
             cost={realtimeCost}
             currentFuelLiters={displayedFuel}

@@ -8,9 +8,11 @@ import {
 } from "react-leaflet";
 import L from "leaflet";
 import type { Coordinates, SpeedingEvent } from "@/types";
+import { DEFAULT_CENTER } from "@/lib/constants";
 import { calculateHeading } from "@/lib/utils";
 import { useRadarStore } from "@/stores/useRadarStore";
 import { useTripStore } from "@/stores/useTripStore";
+import type { FixState } from "@/hooks/useLocationProvider";
 import { RadarMarker } from "./RadarMarker";
 
 const ARROW_INTERVAL = 5;
@@ -26,9 +28,9 @@ interface MapTrackerProps {
   deviceOrientation?: number | null;
   filteredHeading?: number | null;
   isSimulation?: boolean;
+  fixState?: FixState;
+  gpsPermissionDenied?: boolean;
 }
-
-const defaultCenter: [number, number] = [-23.5505, -46.6333];
 
 function createDirectionArrowIcon(heading: number) {
   return new L.DivIcon({
@@ -99,7 +101,6 @@ function MapUpdater({
 
   useEffect(() => {
     if (position) {
-      // Pan to position but never change zoom
       map.panTo([position.lat, position.lng], { animate: true, duration: 0.5 });
     } else if (center) {
       map.panTo(center);
@@ -120,6 +121,8 @@ export function MapTracker({
   deviceOrientation,
   filteredHeading,
   isSimulation = false,
+  fixState = "no-fix",
+  gpsPermissionDenied = false,
 }: MapTrackerProps) {
   const mapRef = useRef<L.Map | null>(null);
   const { radars, currentSpeedingEvent, fetchRadars, checkSpeeding } =
@@ -217,7 +220,10 @@ export function MapTracker({
   }, [currentSpeedingEvent, trip?.status, registerSpeedingEvent]);
 
   const mapCenter: [number, number] =
-    currentPosition || center || defaultCenter;
+    currentPosition || center || DEFAULT_CENTER;
+
+  const showNoGpsOverlay = fixState === "no-fix" && !isSimulation;
+  const showStaleIndicator = fixState === "fix-stale" && !isSimulation;
 
   return (
     <div className="relative h-full w-full">
@@ -226,6 +232,50 @@ export function MapTracker({
           isSpeeding ? "border-red-500 animate-pulse" : "border-transparent"
         }`}
       />
+      {showNoGpsOverlay && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/30 pointer-events-none">
+          <div className="bg-white/95 dark:bg-gray-800/95 rounded-xl px-5 py-3 shadow-lg flex items-center gap-3">
+            <svg
+              className="animate-spin h-5 w-5 text-blue-500"
+              viewBox="0 0 24 24"
+              fill="none"
+            >
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+              />
+            </svg>
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
+              {gpsPermissionDenied
+                ? "Ative o GPS nas configurações do dispositivo"
+                : "Aguardando sinal GPS..."}
+            </span>
+          </div>
+        </div>
+      )}
+      {showStaleIndicator && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
+          <div className="bg-amber-500/90 text-white text-xs font-medium px-3 py-1.5 rounded-full shadow-lg flex items-center gap-1.5">
+            <svg
+              className="h-3.5 w-3.5"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+            >
+              <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z" />
+            </svg>
+            Sinal GPS perdido
+          </div>
+        </div>
+      )}
       <MapContainer
         ref={mapRef}
         center={mapCenter}
@@ -241,7 +291,7 @@ export function MapTracker({
         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
         <MapUpdater
           position={position}
-          center={center}
+          center={center ?? DEFAULT_CENTER}
           onMapReady={onMapReady}
         />
         {pathPositions.length > 0 && (

@@ -7,6 +7,8 @@ import tseslintPlugin from "@typescript-eslint/eslint-plugin";
 import { defineConfig, globalIgnores } from "eslint/config";
 import eslintConfigPrettier from "eslint-config-prettier";
 
+const testFiles = ["**/*.test.ts", "**/*.test.tsx"];
+
 export default defineConfig([
   globalIgnores(["dist", "node_modules", "coverage", "android", "**/*.js"]),
   {
@@ -18,6 +20,14 @@ export default defineConfig([
     },
     rules: {
       "react-hooks/set-state-in-effect": "off",
+    },
+  },
+  {
+    files: testFiles,
+    languageOptions: {
+      ecmaVersion: 2020,
+      globals: { ...globals.browser, ...globals.vitest },
+      parser: tseslintParser,
     },
   },
   {

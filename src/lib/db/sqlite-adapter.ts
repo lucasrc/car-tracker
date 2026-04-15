@@ -625,6 +625,18 @@ class SqliteAdapter implements DbAdapter {
     await this.save();
   }
 
+  async updateRefuelConsumed(
+    id: string,
+    consumedAmount: number,
+  ): Promise<void> {
+    await this.init();
+    this.db!.run("UPDATE refuels SET consumedAmount = ? WHERE id = ?", [
+      consumedAmount,
+      id,
+    ]);
+    await this.save();
+  }
+
   async getTripsInPeriod(
     startDate: Date,
     endDate: Date,

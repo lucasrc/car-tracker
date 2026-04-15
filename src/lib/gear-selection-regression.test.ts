@@ -1,8 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  selectOptimalGear,
-  calculateEngineLoadForAllGears,
-} from "./transmission-calculator";
+import { selectOptimalGear } from "./transmission-calculator";
 import type { Vehicle, TransmissionData } from "@/types";
 
 // Dados do Renault Clio do usuário

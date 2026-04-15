@@ -36,6 +36,7 @@ export interface DbAdapter {
     startDate?: Date,
     endDate?: Date,
   ): Promise<Refuel[]>;
+  updateRefuelConsumed(id: string, consumedAmount: number): Promise<void>;
   deleteRefuel(id: string): Promise<void>;
 
   saveCurrentTrip(trip: Trip): Promise<void>;

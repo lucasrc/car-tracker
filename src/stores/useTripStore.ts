@@ -69,6 +69,7 @@ const getEmptyStats = (): TripStats => ({
 const STOP_MIN_MILLISECONDS = 5000;
 const MIN_TRIP_DISTANCE_METERS = 30;
 const MIN_TRIP_DURATION_SECONDS = 30;
+const MAX_PATH_POINTS = 5000;
 
 function buildTripWithStop(
   trip: Trip,
@@ -329,7 +330,14 @@ export const useTripStore = create<TripStore>((set, get) => ({
     const { trip, stats, status } = get();
     if (!trip || status !== "recording") return;
 
-    const newPath = [...trip.path, coords];
+    let newPath: Coordinates[];
+    if (trip.path.length >= MAX_PATH_POINTS) {
+      const excess = trip.path.length - MAX_PATH_POINTS + 1;
+      newPath = [...trip.path.slice(excess), coords];
+    } else {
+      newPath = [...trip.path, coords];
+    }
+
     const newDistance = calculateTotalDistance(newPath);
 
     const newMaxSpeed = Math.max(

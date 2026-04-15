@@ -98,6 +98,13 @@ export async function deleteRefuel(id: string): Promise<void> {
   return withDb((db) => db.deleteRefuel(id));
 }
 
+export async function updateRefuelConsumed(
+  id: string,
+  consumedAmount: number,
+): Promise<void> {
+  return withDb((db) => db.updateRefuelConsumed(id, consumedAmount));
+}
+
 export async function getTripsInPeriod(
   startDate: Date,
   endDate: Date,

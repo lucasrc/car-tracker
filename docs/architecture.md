@@ -49,7 +49,7 @@ Aplicativo de rastreamento veicular 100% offline. roda no navegador/celular via 
 ┌──────────────────────────▼──────────────────────────────────┐
 │                   COLETA DE DADOS                            │
 │  useGeolocation → navigator.geolocation.watchPosition      │
-│  useSimulation → modo demo para testes                      │
+│  useLocationProvider → unified real/sim location source    │
 │  useOBD2 → Bluetooth LE para OBD2 (futuro)                 │
 └──────────────────────────┬──────────────────────────────────┘
                            │
