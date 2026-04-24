@@ -8,7 +8,6 @@ interface DashboardProps {
   radarMaxSpeed?: number;
   isSpeeding?: boolean;
   gradePercent?: number;
-  inclinationConfidence?: number;
 }
 
 export function Dashboard({
@@ -19,7 +18,6 @@ export function Dashboard({
   radarMaxSpeed,
   isSpeeding = false,
   gradePercent = 0,
-  inclinationConfidence = 0,
 }: DashboardProps) {
   const speedPercent = Math.min(currentSpeed / 200, 1);
   const strokeDasharray = 2 * Math.PI * 45;
@@ -104,23 +102,21 @@ export function Dashboard({
             km/h
           </span>
         </div>
-        {inclinationConfidence > 0.1 && (
-          <div className="flex flex-col items-center">
-            <span className="text-xs text-gray-400">Inclinação</span>
-            <span
-              className={`font-semibold ${
-                gradePercent > 0
+        <div className="flex flex-col items-center">
+          <span className="text-xs text-gray-400">Inclinação</span>
+          <span
+            className={`font-semibold ${
+              Math.abs(gradePercent) < 0.3
+                ? "text-gray-300"
+                : gradePercent > 0
                   ? "text-green-400"
-                  : gradePercent < 0
-                    ? "text-red-400"
-                    : "text-gray-300"
-              }`}
-            >
-              {gradePercent >= 0 ? "↗" : "↘"}{" "}
-              {Math.abs(gradePercent).toFixed(1)}%
-            </span>
-          </div>
-        )}
+                  : "text-red-400"
+            }`}
+          >
+            {Math.abs(gradePercent) < 0.3 ? "→" : gradePercent >= 0 ? "↗" : "↘"}{" "}
+            {Math.abs(gradePercent).toFixed(1)}%
+          </span>
+        </div>
         {isSpeeding && (
           <div className="flex flex-col items-center">
             <span className="text-xs text-red-400">INFRAÇÃO</span>

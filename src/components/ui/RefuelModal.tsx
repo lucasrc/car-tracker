@@ -103,7 +103,8 @@ export function RefuelModal({
             >
               <option value="gasolina">Gasolina</option>
               <option value="etanol">Etanol</option>
-              <option value="flex">Flex</option>
+              <option value="diesel">Diesel</option>
+              <option value="gnv">GNV</option>
             </select>
           </div>
 

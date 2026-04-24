@@ -23,7 +23,9 @@ export function RefuelPage() {
 
   const loadRefuels = useCallback(async (vehicleId: string) => {
     try {
+      console.log(`[REFUEL] loadRefuels called with vehicleId: ${vehicleId}`);
       const data = await getRefuelsByVehicle(vehicleId);
+      console.log(`[REFUEL] loadRefuels got ${data.length} refuels`);
       setRefuels(data);
     } catch (err) {
       console.error("Error loading refuels:", err);
@@ -53,12 +55,13 @@ export function RefuelPage() {
     }
   };
 
-  const { loadBatches, addBatch } = useFuelInventoryStore();
+  const { loadBatches, addBatch, getTotalLiters } = useFuelInventoryStore();
 
   useEffect(() => {
     if (selectedVehicleId) {
       loadBatches(selectedVehicleId);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedVehicleId]);
 
   const handleRefuel = async (
@@ -71,13 +74,20 @@ export function RefuelPage() {
     setShowModal(false);
 
     try {
-      const newFuel = Math.min(
-        currentVehicleFuel + liters,
-        selectedVehicle.fuelCapacity,
+      console.log(
+        `[REFUEL] handleRefuel: adding ${liters}L at R$${pricePerLiter}/L for vehicle ${selectedVehicle.id}`,
       );
-      await updateVehicleFuelLevel(selectedVehicle.id, newFuel);
       await addBatch(liters, pricePerLiter, fuelType, selectedVehicle.id);
+      const totalRemaining = getTotalLiters();
+      const newFuel = Math.min(totalRemaining, selectedVehicle.fuelCapacity);
+      await updateVehicleFuelLevel(selectedVehicle.id, newFuel);
+      console.log(
+        `[REFUEL] handleRefuel: calling loadRefuels for ${selectedVehicle.id}`,
+      );
       await loadRefuels(selectedVehicle.id);
+      console.log(
+        `[FUEL] Refuel sync: added ${liters}L, total remaining=${totalRemaining.toFixed(2)}L, vehicle.currentFuel=${newFuel.toFixed(2)}L`,
+      );
     } catch (err) {
       console.error("Error refueling:", err);
       alert("Erro ao registrar abastecimento. Tente novamente.");

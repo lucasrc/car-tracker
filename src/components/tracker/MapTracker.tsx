@@ -233,10 +233,10 @@ export function MapTracker({
         }`}
       />
       {showNoGpsOverlay && (
-        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/30 pointer-events-none">
-          <div className="bg-white/95 dark:bg-gray-800/95 rounded-xl px-5 py-3 shadow-lg flex items-center gap-3">
+        <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
+          <div className="bg-white/95 dark:bg-gray-800/95 rounded-full px-4 py-2 shadow-lg flex items-center gap-2">
             <svg
-              className="animate-spin h-5 w-5 text-blue-500"
+              className="animate-spin h-4 w-4 text-blue-500"
               viewBox="0 0 24 24"
               fill="none"
             >
@@ -254,10 +254,8 @@ export function MapTracker({
                 d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
               />
             </svg>
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
-              {gpsPermissionDenied
-                ? "Ative o GPS nas configurações do dispositivo"
-                : "Aguardando sinal GPS..."}
+            <span className="text-xs font-medium text-gray-700 dark:text-gray-200">
+              {gpsPermissionDenied ? "Ative o GPS" : "Aguardando GPS..."}
             </span>
           </div>
         </div>

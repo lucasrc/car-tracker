@@ -11,48 +11,62 @@ declare global {
   }
 }
 
-async function requestLocationPermission(): Promise<boolean> {
+const MAX_ALLOWED_ACCURACY_METERS = 100;
+const MAX_POSITION_AGE_MS = 60_000;
+
+function isValidPosition(coords: Coordinates): boolean {
+  const now = Date.now();
+
+  if (!coords) return false;
+  if (coords.accuracy && coords.accuracy > MAX_ALLOWED_ACCURACY_METERS) {
+    console.warn("[GPS] Position rejected: accuracy too high", coords.accuracy);
+    return false;
+  }
+  if (coords.timestamp) {
+    const age = now - coords.timestamp;
+    if (age > MAX_POSITION_AGE_MS) {
+      console.warn("[GPS] Position rejected: too old", age / 1000, "s");
+      return false;
+    }
+    if (coords.timestamp > now + 5000) {
+      console.warn("[GPS] Position rejected: timestamp in future");
+      return false;
+    }
+  }
+  return true;
+}
+
+async function requestLocationPermission(
+  triggerUserAction: boolean = false,
+): Promise<boolean> {
   if (!Capacitor.isNativePlatform()) {
     if (typeof navigator === "undefined") return false;
 
-    if (
-      typeof (
-        navigator as unknown as {
-          permissions?: {
-            query: (params: { name: string }) => Promise<{ state: string }>;
-          };
-        }
-      ).permissions !== "undefined"
-    ) {
-      try {
-        const result = await (
-          navigator as unknown as {
-            permissions: {
-              query: (params: { name: string }) => Promise<{ state: string }>;
-            };
-          }
-        ).permissions.query({
-          name: "geolocation",
-        });
-        if (result.state === "granted") return true;
-        if (result.state === "denied") return false;
-      } catch {
-        // API não suportada, continuar
-      }
+    if (!triggerUserAction) {
+      const permResult = await navigator.permissions?.query({
+        name: "geolocation",
+      });
+      if (permResult?.state === "granted") return true;
+      if (permResult?.state === "denied") return false;
+      return false;
     }
 
     return new Promise((resolve) => {
       if (!navigator.geolocation) {
+        console.log("[GPS] Browser geolocation not available");
         resolve(false);
         return;
       }
       navigator.geolocation.getCurrentPosition(
-        () => resolve(true),
+        () => {
+          console.log("[GPS] Permission granted via getCurrentPosition");
+          resolve(true);
+        },
         (err) => {
-          console.warn("Geolocation permission error:", err.code, err.message);
+          console.warn("[GPS] Permission error:", err.code, err.message);
           resolve(err.code !== 1);
         },
-        { maximumAge: Infinity, timeout: 0 },
+        { maximumAge: 0, timeout: 30000 },
       );
     });
   }
@@ -156,7 +170,7 @@ export function useGeolocation(): UseGeolocationReturn {
       Capacitor.isNativePlatform(),
     );
     if (Capacitor.isNativePlatform()) {
-      requestLocationPermission().then(async (granted) => {
+      requestLocationPermission(true).then(async (granted) => {
         setHasPermission(granted);
 
         if (!granted) {
@@ -201,6 +215,9 @@ export function useGeolocation(): UseGeolocationReturn {
                 altitude: pos.coords.altitude ?? undefined,
                 altitudeAccuracy: pos.coords.altitudeAccuracy ?? undefined,
               };
+              if (!isValidPosition(coords)) {
+                return;
+              }
               setPosition(coords);
               setError(null);
               console.log("[GPS] Position updated:", JSON.stringify(coords));
@@ -227,7 +244,7 @@ export function useGeolocation(): UseGeolocationReturn {
       return;
     }
 
-    requestLocationPermission().then((granted) => {
+    requestLocationPermission(true).then((granted) => {
       setHasPermission(granted);
 
       if (!granted) {
@@ -245,8 +262,20 @@ export function useGeolocation(): UseGeolocationReturn {
         return;
       }
 
+      console.log("[GPS] Starting watchPosition with options:", {
+        enableHighAccuracy: options?.enableHighAccuracy ?? true,
+        maximumAge: options?.maximumAge ?? 0,
+        timeout: options?.timeout ?? 10000,
+      });
       watchId.current = navigator.geolocation.watchPosition(
         (pos) => {
+          console.log(
+            "[GPS] Position received:",
+            pos.coords.latitude,
+            pos.coords.longitude,
+            "accuracy:",
+            pos.coords.accuracy,
+          );
           const coords: Coordinates = {
             lat: pos.coords.latitude,
             lng: pos.coords.longitude,
@@ -260,10 +289,14 @@ export function useGeolocation(): UseGeolocationReturn {
             altitude: pos.coords.altitude ?? undefined,
             altitudeAccuracy: pos.coords.altitudeAccuracy ?? undefined,
           };
+          if (!isValidPosition(coords)) {
+            return;
+          }
           setPosition(coords);
           setError(null);
         },
         (err) => {
+          console.warn("[GPS] Watch error:", err.code, err.message);
           setError(err);
         },
         {
@@ -293,7 +326,7 @@ export function useGeolocation(): UseGeolocationReturn {
 
   const getCurrentPosition = useCallback(
     async (options?: GeolocationOptions): Promise<Coordinates | null> => {
-      const hasPerm = await requestLocationPermission();
+      const hasPerm = await requestLocationPermission(true);
       setHasPermission(hasPerm);
 
       if (!hasPerm) {
@@ -344,6 +377,17 @@ export function useGeolocation(): UseGeolocationReturn {
               accuracy: pos.coords.accuracy ?? undefined,
               speed: pos.coords.speed ?? undefined,
             };
+            if (!isValidPosition(coords)) {
+              setError({
+                code: 2,
+                message: "Position accuracy too poor",
+                PERMISSION_DENIED: 1,
+                POSITION_UNAVAILABLE: 2,
+                TIMEOUT: 3,
+              } as GeolocationPositionError);
+              resolve(null);
+              return;
+            }
             setPosition(coords);
             resolve(coords);
           },

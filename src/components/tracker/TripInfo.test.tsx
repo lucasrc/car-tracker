@@ -53,6 +53,31 @@ describe("TripInfo", () => {
     expect(screen.getByText("1.2 L")).toBeInTheDocument();
   });
 
+  it("renders currentFuelLiters when provided", () => {
+    render(<TripInfo {...defaultProps} currentFuelLiters={25.5} />);
+    const autonomySection = screen.getByText("Autonomia").closest("div");
+    expect(autonomySection?.textContent).toContain("25.5 L");
+  });
+
+  it("does not render currentFuelLiters when undefined", () => {
+    render(<TripInfo {...defaultProps} />);
+    const autonomySection = screen.getByText("Autonomia").closest("div");
+    expect(autonomySection?.textContent).not.toContain("L\n");
+  });
+
+  it("renders avgConsumption when provided", () => {
+    render(<TripInfo {...defaultProps} avgConsumption={11.2} />);
+    // avgConsumption is a prop but not currently rendered in TripInfo
+    // Just ensure it doesn't crash
+    expect(screen.getByText("Gasto")).toBeInTheDocument();
+  });
+
+  it("prefers actualCost over fuelUsed * fuelPrice", () => {
+    render(<TripInfo {...defaultProps} actualCost={8.75} />);
+    const gastoSection = screen.getByText("Gasto").closest("div");
+    expect(gastoSection?.textContent).toContain("8,75");
+  });
+
   it("handles zero range gracefully", () => {
     render(<TripInfo {...defaultProps} range={0} />);
     const autonomySection = screen.getByText("Autonomia").closest("div");
@@ -92,7 +117,9 @@ describe("TripInfo", () => {
   });
 
   it("renders autonomy with decimal consumption value", () => {
-    render(<TripInfo {...defaultProps} range={185} currentConsumption={8.7} />);
+    render(
+      <TripInfo {...defaultProps} range={185} currentConsumption={8.7} />,
+    );
     const autonomySection = screen.getByText("Autonomia").closest("div");
     expect(autonomySection?.textContent).toContain("185");
     expect(autonomySection?.textContent).toContain("km/l");

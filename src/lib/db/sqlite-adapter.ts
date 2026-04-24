@@ -1,4 +1,4 @@
-import initSqlJs, { type Database } from "sql.js";
+import initSqlJs, { type Database, type SqlValue } from "sql.js";
 import type { DbAdapter } from "./adapter";
 import type {
   Trip,
@@ -332,9 +332,11 @@ class SqliteAdapter implements DbAdapter {
       totalCost: row[14],
       actualCost: row[15] ?? 0,
       elapsedTime: row[16],
-      totalFuelUsed: row[17],
-      stops: row[18] ? JSON.parse(row[18]) : undefined,
-      consumptionBreakdown: row[19] ? JSON.parse(row[19]) : undefined,
+      movingTime: row[18] ?? 0,
+      stopTime: row[19] ?? 0,
+      totalFuelUsed: row[20],
+      stops: row[21] ? JSON.parse(row[21]) : undefined,
+      consumptionBreakdown: row[22] ? JSON.parse(row[22]) : undefined,
     };
   }
 
@@ -369,13 +371,14 @@ class SqliteAdapter implements DbAdapter {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private refuelFromRow(row: any[]): Refuel {
     return {
-      id: String(row[0]),
-      timestamp: String(row[1]),
-      amount: Number(row[2]),
-      fuelPrice: Number(row[3]),
-      fuelType: (row[4] || "gasolina") as FuelType,
-      totalCost: Number(row[5]),
-      consumedAmount: Number(row[6] || 0),
+      id: String(row[1]),
+      vehicleId: String(row[0]),
+      timestamp: String(row[2]),
+      amount: Number(row[3]),
+      fuelPrice: Number(row[4]),
+      fuelType: (row[5] || "gasolina") as FuelType,
+      totalCost: Number(row[6]),
+      consumedAmount: Number(row[7] || 0),
     };
   }
 
@@ -686,7 +689,6 @@ class SqliteAdapter implements DbAdapter {
       return undefined;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return this.vehicleFromRow(result[0].values[0]);
   }
 
@@ -697,7 +699,7 @@ class SqliteAdapter implements DbAdapter {
 
     this.db!.run(
       `INSERT OR REPLACE INTO vehicles (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`,
-      row,
+      row as SqlValue[],
     );
     await this.save();
   }
@@ -740,7 +742,6 @@ class SqliteAdapter implements DbAdapter {
       return undefined;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const row = result[0].values[0];
     return {
       vehicleId: String(row[0]),

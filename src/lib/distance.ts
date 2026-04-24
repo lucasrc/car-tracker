@@ -124,7 +124,9 @@ export function calculateTotalDistance(
 
   for (let i = 0; i < coordinates.length; i++) {
     const curr = coordinates[i];
-    if (curr.accuracy !== undefined && curr.accuracy > 30) continue;
+    const isValid = curr.accuracy === undefined || curr.accuracy <= 30;
+
+    if (!isValid) continue;
 
     if (lastValidIndex >= 0) {
       const prev = coordinates[lastValidIndex];
@@ -137,7 +139,24 @@ export function calculateTotalDistance(
   return total;
 }
 
+const ACCURACY_THRESHOLD = 30;
 const MAX_SPEED_MS = 180 / 3.6;
+
+export function isPointValid(coords: { accuracy?: number }): boolean {
+  return coords.accuracy === undefined || coords.accuracy <= ACCURACY_THRESHOLD;
+}
+
+export function calculateSegmentDistance(
+  prev: { lat: number; lng: number; accuracy?: number; timestamp: number },
+  curr: { lat: number; lng: number; accuracy?: number; timestamp: number },
+): number {
+  if (!isPointValid(prev) || !isPointValid(curr)) return 0;
+
+  const d = vincentyDistance(prev.lat, prev.lng, curr.lat, curr.lng);
+  if (d <= 0) return 0;
+
+  return d;
+}
 
 export function isValidSpeedForDistance(
   prevCoords: { lat: number; lng: number; timestamp: number },

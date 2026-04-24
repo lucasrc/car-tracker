@@ -10,7 +10,7 @@ const makeVehicle = (): Vehicle => ({
   model: "320i",
   year: 2018,
   displacement: 2.0,
-  fuelType: "gasoline",
+  fuelType: "gasolina",
   euroNorm: "Euro 5",
   segment: "medium",
   mass: 1500,
@@ -457,7 +457,7 @@ describe("useTelemetryEngine", () => {
     it("should handle gasoline fuel type", () => {
       const gasVehicle: Vehicle = {
         ...makeVehicle(),
-        fuelType: "gasoline" as const,
+        fuelType: "gasolina",
       };
 
       const { result } = renderHook(() =>
@@ -471,7 +471,7 @@ describe("useTelemetryEngine", () => {
     it("should handle ethanol fuel type", () => {
       const ethanolVehicle: Vehicle = {
         ...makeVehicle(),
-        fuelType: "ethanol",
+        fuelType: "etanol",
       };
 
       const { result } = renderHook(() =>

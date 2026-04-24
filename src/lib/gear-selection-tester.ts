@@ -197,30 +197,42 @@ function calculateRPM(
 function findIdealGear(
   speed: number,
   transmission: TransmissionData,
+  aspiration: "NA" | "turbo" | "turbo-diesel" = "NA",
 ): { gear: number; rpm: number } {
   const {
     gearRatios,
     finalDrive,
     tireRadiusM,
-    idleRpm,
     redlineRpm,
-    rpmAt100Kmh,
   } = transmission;
-  const refRpm = rpmAt100Kmh ?? 2500;
-  const targetRpm = refRpm * (speed / 100);
 
-  let bestGear = 0;
-  let bestDiff = Infinity;
+  const minRpm = aspiration === "turbo-diesel" ? 1000 : aspiration === "turbo" ? 1100 : 1300;
+  const maxRpm = redlineRpm * 0.95;
+
+  let bestGear = -1;
+  let bestScore = -Infinity;
 
   for (let g = 0; g < gearRatios.length; g++) {
     const rpm = calculateRPM(speed, gearRatios[g], finalDrive, tireRadiusM);
-    if (rpm < idleRpm || rpm > redlineRpm) continue;
+    if (rpm < minRpm || rpm > maxRpm) continue;
 
-    const diff = Math.abs(rpm - targetRpm);
-    if (diff < bestDiff) {
-      bestDiff = diff;
+    let score = 0;
+    if (speed < 20) {
+      score = g === 0 ? 1 : (g === 1 ? 0.8 : 0);
+    } else {
+      const rpmDeviation = Math.abs(rpm - 2500);
+      score = 1000 - rpmDeviation;
+      if (rpm < minRpm + 200) score -= 500;
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
       bestGear = g;
     }
+  }
+
+  if (bestGear === -1) {
+    bestGear = 0;
   }
 
   const rpm = calculateRPM(
@@ -235,14 +247,17 @@ function findIdealGear(
 function findRpmZone(
   speed: number,
   transmission: TransmissionData,
+  aspiration: "NA" | "turbo" | "turbo-diesel" = "NA",
 ): { min: number; max: number } {
-  const { rpmAt100Kmh } = transmission;
+  const { rpmAt100Kmh, redlineRpm } = transmission;
+  const minRpm = aspiration === "turbo-diesel" ? 1000 : aspiration === "turbo" ? 1100 : 1300;
+  const maxRpm = redlineRpm * 0.95;
   const refRpm = rpmAt100Kmh ?? 2500;
   const targetRpm = refRpm * (speed / 100);
 
   return {
-    min: targetRpm * 0.65,
-    max: targetRpm * 1.15,
+    min: Math.max(minRpm, targetRpm * 0.65),
+    max: Math.min(maxRpm, targetRpm * 1.35),
   };
 }
 
@@ -602,8 +617,8 @@ export function runTest(
     batterySocPct: 100,
   });
 
-  const ideal = findIdealGear(scenario.speed, vehicle.transmission);
-  const zone = findRpmZone(scenario.speed, vehicle.transmission);
+  const ideal = findIdealGear(scenario.speed, vehicle.transmission, "NA");
+  const zone = findRpmZone(scenario.speed, vehicle.transmission, "NA");
 
   let accuracyScore = 1.0;
   let reason = "";

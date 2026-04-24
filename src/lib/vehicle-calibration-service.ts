@@ -3,11 +3,10 @@ import {
   validateBasic,
   validateFull,
   type CalibrationResult,
-  type VehicleCalibration,
 } from "./agent-judge";
+import type { VehicleCalibration, TransmissionData } from "@/types";
 import { createAIProvider, getProviderType } from "./ai";
 import type { ChatMessage } from "./ai/providers";
-import type { TransmissionData } from "@/types";
 
 export function extractJsonFromResponse(raw: string): string {
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
@@ -233,7 +232,7 @@ function addMissingDefaults(
     return {
       ...rest,
       ...(Object.keys(cleaned).length > 0 && {
-        transmission: cleaned as TransmissionData,
+        transmission: cleaned as unknown as TransmissionData,
       }),
     } as VehicleCalibration;
   }
@@ -447,13 +446,23 @@ export async function calibrateVehicle(
   const data = parsed.data;
   const correctedData = { ...data };
 
-  if (data.f0 > 1 || data.f1 > 0.1 || data.f2 > 0.01) {
-    correctedData.f0 = data.f0 > 1 ? DEFAULT_VALUES.f0 : data.f0;
-    correctedData.f1 = data.f1 > 0.1 ? DEFAULT_VALUES.f1 : data.f1;
-    correctedData.f2 = data.f2 > 0.01 ? DEFAULT_VALUES.f2 : data.f2;
+  if (
+    (data.f0 !== undefined && data.f0 > 1) ||
+    (data.f1 !== undefined && data.f1 > 0.1) ||
+    (data.f2 !== undefined && data.f2 > 0.01)
+  ) {
+    correctedData.f0 =
+      data.f0 !== undefined && data.f0 > 1 ? DEFAULT_VALUES.f0 : data.f0;
+    correctedData.f1 =
+      data.f1 !== undefined && data.f1 > 0.1 ? DEFAULT_VALUES.f1 : data.f1;
+    correctedData.f2 =
+      data.f2 !== undefined && data.f2 > 0.01 ? DEFAULT_VALUES.f2 : data.f2;
   }
 
-  if (data.fuelConversionFactor < 5 || data.fuelConversionFactor > 15) {
+  if (
+    data.fuelConversionFactor !== undefined &&
+    (data.fuelConversionFactor < 5 || data.fuelConversionFactor > 15)
+  ) {
     correctedData.fuelConversionFactor = DEFAULT_VALUES.fuelConversionFactor;
   }
 

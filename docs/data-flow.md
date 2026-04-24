@@ -51,6 +51,94 @@ Como um dado entra no app e vira informação na tela.
 ```typescript
 // speed do GPS ou calculado por delta posição
 { speed: 15.2, timestamp: 1700000000000 }  // m/s
+
+// Novos campos opcionais (Abril 2026)
+{
+  altitudeM?: number,    // altitude em metros (padrão: 0)
+  temperatureC?: number  // temperatura em °C (padrão: 25)
+}
+```
+
+### Pipeline (Modelos Revisados)
+
+```
+1. useTelemetryEngine.addPosition(position)
+   ├── Calcula aceleração: (speed - lastSpeed) / deltaTime
+   ├── Determina modo: city (< 40 km/h), highway (>= 60 km/h), mixed
+   └── Chama TelemetryEngine.simulate()
+
+2. TelemetryEngine.simulate(vehicle, input)
+    ├── Calcula densidade do ar: ρ = calculateAirDensity(altitudeM, temperatureC)
+    │   └── Importante para cidades em altitude (Brasília, Bogotá)
+    ├── Verifica se vehicle.transmission existe
+    │
+    ├── SE transmission disponível:
+    │   ├── selectOptimalGear(vehicle, speed, accel, slope, currentGear?)
+    │   │   ├── FASE 1: filterViableGears() → filtra marchas com RPM viável
+    │   │   │   ├── Calcula RPM para cada marcha: calculateRpm(speed, gear, transmission)
+    │   │   │   ├── Abaixo de clutchEngagementSpeed: só marcha 1 com modelo clutch-slip
+    │   │   │   └── Descarta marchas com RPM < MIN_OPERATING_RPM ou > redline × 0.95
+    │   │   │
+    │   │   ├── FASE 2: scoreViableGear() → scoring multi-critério Gaussiano
+    │   │   │   ├── fuelScore = gaussianScore(BSFC, bsfcOptimal, σ_fuel)
+    │   │   │   ├── driveScore = asymmetricScore(RPM, rpmTarget, σ_low, σ_high)
+    │   │   │   ├── powerScore = gaussianScore(load, 0.65, σ_load)
+    │   │   │   ├── safetyScore = hardCutoff(RPM > redline × 0.95)
+    │   │   │   ├── Pesos adaptativos via sigmoid(slope, accel)
+    │   │   │   └── Seleciona marcha com maior score total
+    │   │   │
+    │   │   └── FASE 3: Histerese com margens assimétricas
+    │   │       ├── Upshift requer +15% de score vs marcha atual
+    │   │       ├── Downshift requer currentScore < bestScore - 10%
+    │   │       ├── Dwell mínimo de 1500ms entre trocas
+    │   │       └── Kickdown bypass para accel > 2.5 m/s²
+    │   │
+   │   ├── SE torqueCurve + bsfcMinGPerKwh disponíveis:
+   │   │   ├── getTorqueAtRpm(rpm, torqueCurve) → interpolação linear
+   │   │   ├── getEngineEfficiency(loadPercent) → eficiência por carga (0.16-0.32)
+   │   │   ├── getTransmissionEfficiency(type) → por tipo (0.86-0.93)
+   │   │   ├── getLoadFactor(loadPercent) → BSFC penalidade em cargas baixas
+   │   │   ├── calculatePhysicsConsumption()
+   │   │   └── kmpl = physicsKmpl (modelo físico puro)
+   │   │   └── confidence = 0.95
+   │   │
+   │   └── SENÃO (sem torqueCurve ou bsfc):
+   │       ├── estimateEngineLoadNoTransmission() → RPM estimado + carga
+   │       └── kmpl = fallback físico
+   │       └── confidence = 0.9
+   │
+   └── SENÃO (sem transmission):
+       └── Similar ao bloco acima com fallback
+   │
+   ├──getCalibratedBase(): pondera INMETRO vs user averages(com pesos)
+   │   base = inmetro * weightInmetro + userAvg * weightUser
+   │   └── Suporta gasolina, etanol, GNV
+   │
+   ├── Aplica fatores de correção:
+   │   ├── Crr dependente de velocidade: Crr_at_speed = Crr × (1 + 0.00006 × v²)
+   │   ├── Densidade do ar variável por altitude
+   │   ├── massPenalty: 1.0 + (extraMass / vehicleMass) * 0.4
+   │   ├── speedFactor: calibrado linear em torno do ponto de teste
+   │   ├── acFactor: 0.88 (motores <= 80kW) ou 0.92
+   │   ├── hybridImprovement: 1.4 (cidade) ou 1.1 (rodovia)
+   │   └── parasiticPower: 0.4 kW (alternador, auxiliares)
+   │
+   ├── Fuel cut: shouldFuelCut(slope, accel, speed, rpm, techEra)
+   │   ├── slope <= -3%
+   │   ├── slope <= -1.5 && accel < -0.3 && speed > 20
+   │   └── accel < -0.5 && speed > 50
+   ├── GNV: multiplica por gnvEfficiencyFactor (padrão 1.22)
+   └── Mínimo: 3.0 km/l
+
+3. Acumula consumo ponderado por tempo
+   └── averageConsumption = Σ(kmpl * durationMs) / Σ(durationMs)
+
+4. Acumula dados de marcha/RPM (se disponível)
+   ├── gearDistribution: contagem de tempo por marcha
+   ├── rpmReadings: últimas 300 leituras de RPM
+   └── Atualiza estado: currentGear, currentRpm, confidence
+
+5. Resultado: kmpl ajustado + gear + rpm + confidence + estado da bateria (híbridos)
 ```
 
 ### Pipeline

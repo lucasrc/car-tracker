@@ -12,9 +12,10 @@ vi.mock("@/lib/db", () => ({
     fuelType,
     totalCost: amount * fuelPrice,
     consumedAmount: 0,
+    remainingAmount: amount,
   })),
   deleteRefuel: vi.fn(),
-  updateRefuelConsumed: vi.fn(),
+  updateRefuelConsumed: vi.fn(() => Promise.resolve()),
 }));
 
 describe("useFuelInventoryStore", () => {
@@ -156,6 +157,85 @@ describe("useFuelInventoryStore", () => {
       store.reset();
 
       expect(getStore().batches).toHaveLength(0);
+    });
+  });
+
+  describe("cumulativeFifoCost", () => {
+    it("deve rastrear custo FIFO acumulado após consumo", async () => {
+      const store = getStore();
+      await store.addBatch(20, 5.0, "gasolina", "vehicle-123");
+      await store.consumeFuel(10, "gasolina");
+
+      expect(getStore().getCumulativeFifoCost()).toBe(50);
+    });
+
+    it("deve acumular custos FIFO em múltiplos consumos", async () => {
+      const store = getStore();
+      await store.addBatch(20, 5.0, "gasolina", "vehicle-123");
+
+      await store.consumeFuel(5, "gasolina");
+      expect(getStore().getCumulativeFifoCost()).toBe(25);
+
+      await store.consumeFuel(5, "gasolina");
+      expect(getStore().getCumulativeFifoCost()).toBe(50);
+    });
+
+    it("deve calcular custo FIFO correto com múltiplos batches", async () => {
+      const store = getStore();
+      await store.addBatch(10, 5.0, "gasolina", "vehicle-123");
+      await store.addBatch(20, 5.5, "gasolina", "vehicle-123");
+
+      const s = getStore();
+      s.batches[0].timestamp = "2024-01-01T10:00:00Z";
+      s.batches[1].timestamp = "2024-01-02T10:00:00Z";
+
+      await store.consumeFuel(15, "gasolina");
+
+      expect(getStore().getCumulativeFifoCost()).toBe(77.5);
+    });
+
+    it("deve resetar cumulativeFifoCost ao carregar batches", async () => {
+      const store = getStore();
+      await store.addBatch(20, 5.0, "gasolina", "vehicle-123");
+      await store.consumeFuel(10, "gasolina");
+
+      expect(getStore().getCumulativeFifoCost()).toBe(50);
+
+      vi.mocked(db.getRefuelsByVehicle).mockResolvedValue([]);
+      await store.loadBatches("vehicle-456");
+
+      expect(getStore().getCumulativeFifoCost()).toBe(0);
+    });
+
+    it("deve resetar cumulativeFifoCost ao chamar reset()", async () => {
+      const store = getStore();
+      await store.addBatch(20, 5.0, "gasolina", "vehicle-123");
+      await store.consumeFuel(10, "gasolina");
+
+      expect(getStore().getCumulativeFifoCost()).toBe(50);
+
+      store.reset();
+
+      expect(getStore().getCumulativeFifoCost()).toBe(0);
+    });
+
+    it("deve retornar 0 quando não há consumo", async () => {
+      const store = getStore();
+      await store.addBatch(20, 5.0, "gasolina", "vehicle-123");
+
+      expect(getStore().getCumulativeFifoCost()).toBe(0);
+    });
+
+    it("deve acumular custos de múltiplos tipos de combustível separadamente", async () => {
+      const store = getStore();
+      await store.addBatch(20, 5.0, "gasolina", "vehicle-123");
+      await store.addBatch(10, 3.5, "etanol", "vehicle-123");
+
+      await store.consumeFuel(10, "gasolina");
+      expect(getStore().getCumulativeFifoCost()).toBe(50);
+
+      await store.consumeFuel(5, "etanol");
+      expect(getStore().getCumulativeFifoCost()).toBe(67.5);
     });
   });
 });

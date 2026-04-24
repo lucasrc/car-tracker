@@ -22,6 +22,8 @@ describe("TripCard", () => {
     fuelPrice: 5.5,
     totalCost: 13.75,
     elapsedTime: 3600,
+    movingTime: 3000,
+    stopTime: 600,
     totalFuelUsed: 2.5,
   };
 

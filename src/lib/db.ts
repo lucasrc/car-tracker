@@ -499,15 +499,20 @@ export async function unlinkVehicleRefuels(vehicleId: string): Promise<void> {
 export async function getTripsInPeriod(
   startDate: Date,
   endDate: Date,
+  vehicleId?: string,
 ): Promise<Trip[]> {
   const start = startDate.toISOString();
   const end = endDate.toISOString();
-  return await db.trips
+  let query = db.trips
     .where("startTime")
     .between(start, end)
-    .filter((t) => t.status === "completed")
-    .reverse()
-    .toArray();
+    .filter((t) => t.status === "completed");
+
+  if (vehicleId) {
+    query = query.filter((t) => t.vehicleId === vehicleId);
+  }
+
+  return await query.reverse().toArray();
 }
 
 export async function getVehicles(): Promise<Vehicle[]> {

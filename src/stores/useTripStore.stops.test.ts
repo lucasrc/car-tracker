@@ -628,11 +628,9 @@ describe("useTripStore - Stops", () => {
         });
       });
 
-      // Advance elapsed time to meet minimum threshold
+      // Advance elapsed time to meet minimum threshold (30s)
       act(() => {
-        for (let i = 0; i < 30; i++) {
-          useTripStore.getState().tick();
-        }
+        vi.setSystemTime(startTime + 35000);
       });
 
       // Verify the stop state is correct before stopping
@@ -662,6 +660,8 @@ describe("useTripStore - Stops", () => {
           },
         ],
       });
+      expect(lastCall.movingTime).toBeGreaterThan(0);
+      expect(lastCall.stopTime).toBe(6);
     });
 
     it("should clear pendingStopStart and pendingStopLastTimestamp in completed trip", async () => {
@@ -695,9 +695,7 @@ describe("useTripStore - Stops", () => {
       });
 
       act(() => {
-        for (let i = 0; i < 30; i++) {
-          useTripStore.getState().tick();
-        }
+        vi.setSystemTime(Date.now() + 35000);
       });
 
       await act(async () => {
@@ -731,9 +729,7 @@ describe("useTripStore - Stops", () => {
       });
 
       act(() => {
-        for (let i = 0; i < 30; i++) {
-          useTripStore.getState().tick();
-        }
+        vi.setSystemTime(Date.now() + 35000);
       });
 
       const tripId = await act(async () => {
@@ -763,9 +759,7 @@ describe("useTripStore - Stops", () => {
       });
 
       act(() => {
-        for (let i = 0; i < 30; i++) {
-          useTripStore.getState().tick();
-        }
+        vi.setSystemTime(Date.now() + 35000);
       });
 
       const tripId = await act(async () => {
@@ -797,9 +791,7 @@ describe("useTripStore - Stops", () => {
       });
 
       act(() => {
-        for (let i = 0; i < 10; i++) {
-          useTripStore.getState().tick();
-        }
+        vi.setSystemTime(Date.now() + 10000);
       });
 
       const tripId = await act(async () => {
@@ -831,9 +823,7 @@ describe("useTripStore - Stops", () => {
       });
 
       act(() => {
-        for (let i = 0; i < 30; i++) {
-          useTripStore.getState().tick();
-        }
+        vi.setSystemTime(Date.now() + 35000);
       });
 
       const tripId = await act(async () => {

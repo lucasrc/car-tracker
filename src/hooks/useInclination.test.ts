@@ -23,68 +23,103 @@ describe("useInclination", () => {
     });
   });
 
-  describe("addPitchReading", () => {
-    it("converges toward constant pitch reading", () => {
+  describe("addGpsReading", () => {
+    it("ignores short distances (< 10m)", () => {
       const { result } = renderHook(() => useInclination());
 
       act(() => {
-        for (let i = 0; i < 50; i++) {
-          result.current.addPitchReading(5, i * 50);
-        }
+        result.current.addGpsReading(100, 3);
+        result.current.addGpsReading(105, 3);
       });
 
-      expect(result.current.angleDegrees).toBeCloseTo(5, 0);
-      expect(result.current.gradePercent).toBeGreaterThan(0);
+      expect(result.current.gradePercent).toBe(0);
     });
 
-    it("smooths noisy pitch readings", () => {
+    it("computes grade from altitude delta over distance", () => {
       const { result } = renderHook(() => useInclination());
 
       act(() => {
-        for (let i = 0; i < 30; i++) {
-          const noisy = 3 + (Math.random() - 0.5) * 2;
-          result.current.addPitchReading(noisy, i * 50);
-        }
+        result.current.addGpsReading(100, 50);
+        result.current.addGpsReading(105, 50);
       });
 
-      expect(Math.abs(result.current.angleDegrees - 3)).toBeLessThan(1);
+      expect(result.current.gradePercent).not.toBe(0);
     });
 
-    it("produces positive grade for uphill (positive pitch)", () => {
+    it("returns positive grade when climbing", () => {
       const { result } = renderHook(() => useInclination());
 
       act(() => {
-        for (let i = 0; i < 50; i++) {
-          result.current.addPitchReading(5, i * 50);
-        }
+        result.current.addGpsReading(100, 50);
+        result.current.addGpsReading(110, 100);
       });
 
       expect(result.current.gradePercent).toBeGreaterThan(0);
     });
 
-    it("produces negative grade for downhill (negative pitch)", () => {
+    it("returns negative grade when descending", () => {
       const { result } = renderHook(() => useInclination());
 
       act(() => {
-        for (let i = 0; i < 50; i++) {
-          result.current.addPitchReading(-5, i * 50);
-        }
+        result.current.addGpsReading(110, 50);
+        result.current.addGpsReading(100, 100);
       });
 
       expect(result.current.gradePercent).toBeLessThan(0);
     });
 
-    it("increases confidence as more readings arrive", () => {
+    it("filters out extreme altitude jumps", () => {
       const { result } = renderHook(() => useInclination());
 
       act(() => {
-        result.current.addPitchReading(3, 0);
+        result.current.addGpsReading(100, 50);
+        result.current.addGpsReading(150, 100);
+      });
+
+      const afterJump = result.current.gradePercent;
+
+      act(() => {
+        result.current.addGpsReading(102, 50);
+      });
+
+      expect(Math.abs(result.current.gradePercent)).toBeLessThanOrEqual(
+        Math.abs(afterJump) + 1,
+      );
+    });
+
+    it("smooths grade changes with low-pass filter", () => {
+      const { result } = renderHook(() => useInclination());
+
+      act(() => {
+        for (let i = 0; i < 10; i++) {
+          result.current.addGpsReading(100 + i * 2, 50);
+        }
+      });
+
+      const grade1 = result.current.gradePercent;
+
+      act(() => {
+        for (let i = 0; i < 10; i++) {
+          result.current.addGpsReading(120 - i * 2, 50);
+        }
+      });
+
+      const grade2 = result.current.gradePercent;
+
+      expect(Math.abs(grade2)).toBeLessThan(Math.abs(grade1) + 5);
+    });
+
+    it("increases confidence as more samples arrive", () => {
+      const { result } = renderHook(() => useInclination());
+
+      act(() => {
+        result.current.addGpsReading(100, 50);
       });
       const conf1 = result.current.confidence;
 
       act(() => {
-        for (let i = 1; i < 50; i++) {
-          result.current.addPitchReading(3, i * 50);
+        for (let i = 1; i < 15; i++) {
+          result.current.addGpsReading(100 + i, 50);
         }
       });
       const conf2 = result.current.confidence;
@@ -96,57 +131,31 @@ describe("useInclination", () => {
       const { result } = renderHook(() => useInclination({ enabled: false }));
 
       act(() => {
-        for (let i = 0; i < 50; i++) {
-          result.current.addPitchReading(10, i * 50);
+        for (let i = 0; i < 20; i++) {
+          result.current.addGpsReading(100 + i * 2, 50);
         }
       });
 
-      expect(result.current.angleDegrees).toBe(0);
+      expect(result.current.gradePercent).toBe(0);
     });
-  });
 
-  describe("addGpsReading", () => {
-    it("ignores undefined altitude", () => {
+    it("maintains a sliding window of recent samples", () => {
       const { result } = renderHook(() => useInclination());
 
       act(() => {
-        result.current.addGpsReading(undefined, 100);
+        result.current.addGpsReading(100, 50);
+        result.current.addGpsReading(105, 50);
       });
 
-      expect(result.current.angleDegrees).toBe(0);
-    });
-
-    it("ignores short distances (< 5m)", () => {
-      const { result } = renderHook(() => useInclination());
+      const firstGrade = result.current.gradePercent;
 
       act(() => {
-        result.current.addGpsReading(100, 3);
-        result.current.addGpsReading(105, 3);
+        for (let i = 0; i < 30; i++) {
+          result.current.addGpsReading(105 + i * 0.5, 50);
+        }
       });
 
-      expect(result.current.angleDegrees).toBe(0);
-    });
-
-    it("computes grade from altitude delta over distance", () => {
-      const { result } = renderHook(() => useInclination());
-
-      act(() => {
-        result.current.addGpsReading(100, 100);
-        result.current.addGpsReading(105, 100);
-      });
-
-      expect(result.current.angleDegrees).toBeGreaterThan(0);
-    });
-
-    it("ignores extreme grade (> 30 degrees)", () => {
-      const { result } = renderHook(() => useInclination());
-
-      act(() => {
-        result.current.addGpsReading(100, 100);
-        result.current.addGpsReading(200, 10);
-      });
-
-      expect(result.current.angleDegrees).toBe(0);
+      expect(result.current.gradePercent).not.toBe(firstGrade);
     });
   });
 
@@ -156,13 +165,12 @@ describe("useInclination", () => {
 
       act(() => {
         result.current.calibrate();
-        for (let i = 0; i < 60; i++) {
-          result.current.addPitchReading(2.5, i * 50);
+        for (let i = 0; i < 30; i++) {
+          result.current.addGpsReading(100, 50);
         }
       });
 
       expect(result.current.isCalibrated).toBe(true);
-      expect(result.current.angleDegrees).toBeCloseTo(0, 1);
     });
 
     it("saves calibration to localStorage", () => {
@@ -170,15 +178,16 @@ describe("useInclination", () => {
 
       act(() => {
         result.current.calibrate();
-        for (let i = 0; i < 60; i++) {
-          result.current.addPitchReading(3, i * 50);
+        for (let i = 0; i < 30; i++) {
+          result.current.addGpsReading(100, 50);
         }
       });
 
       const saved = localStorage.getItem(STORAGE_KEY);
       expect(saved).not.toBeNull();
       const data = JSON.parse(saved!);
-      expect(data.offsetDegrees).toBeCloseTo(3, 1);
+      expect(data.offsetDegrees).not.toBeUndefined();
+      expect(data.calibratedAt).toBeDefined();
     });
 
     it("loads saved calibration on mount", () => {
@@ -196,8 +205,8 @@ describe("useInclination", () => {
 
       act(() => {
         result.current.calibrate();
-        for (let i = 0; i < 60; i++) {
-          result.current.addPitchReading(2, i * 50);
+        for (let i = 0; i < 30; i++) {
+          result.current.addGpsReading(100, 50);
         }
       });
       expect(result.current.isCalibrated).toBe(true);
@@ -211,17 +220,30 @@ describe("useInclination", () => {
   });
 
   describe("gradePercent computation", () => {
-    it("converts angle to percentage correctly", () => {
+    it("returns positive grade for climbing", () => {
       const { result } = renderHook(() => useInclination());
 
       act(() => {
-        for (let i = 0; i < 50; i++) {
-          result.current.addPitchReading(5.71, i * 50);
+        result.current.addGpsReading(100, 20);
+        for (let i = 0; i < 10; i++) {
+          result.current.addGpsReading(100 + (i + 1) * 0.5, 20);
         }
       });
 
-      expect(Math.abs(result.current.gradePercent)).toBeGreaterThan(8);
-      expect(Math.abs(result.current.gradePercent)).toBeLessThan(12);
+      expect(result.current.gradePercent).toBeGreaterThan(0);
+      expect(result.current.angleDegrees).toBeGreaterThan(0);
+    });
+
+    it("returns approximately 0% on flat terrain", () => {
+      const { result } = renderHook(() => useInclination());
+
+      act(() => {
+        for (let i = 0; i < 10; i++) {
+          result.current.addGpsReading(100, 50);
+        }
+      });
+
+      expect(Math.abs(result.current.gradePercent)).toBeLessThan(1);
     });
   });
 });

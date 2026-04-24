@@ -18,6 +18,7 @@ import {
 } from "@/lib/db";
 import { calibrateVehicle } from "@/lib/vehicle-calibration-service";
 import { generateId } from "@/lib/utils";
+import { debugLog } from "@/lib/debug";
 import { useFuelInventoryStore } from "@/stores/useFuelInventoryStore";
 import type { VehicleCalibration, DataSource } from "@/types";
 
@@ -495,11 +496,20 @@ export const useVehicleStore = create<VehicleStore>((set, get) => ({
   },
 
   updateVehicleFuelLevel: async (vehicleId: string, currentFuel: number) => {
+    debugLog(
+      `[VEHICLE] updateVehicleFuelLevel called: vehicleId=${vehicleId}, currentFuel=${currentFuel.toFixed(2)}`,
+    );
     await updateVehicleFuel(vehicleId, currentFuel);
 
     // Atualizar estado local se for o veículo ativo
     const { activeVehicle, vehicles } = get();
+    debugLog(
+      `[VEHICLE] Current activeVehicle: ${activeVehicle?.id}, currentFuel: ${activeVehicle?.currentFuel}`,
+    );
     if (activeVehicle?.id === vehicleId) {
+      debugLog(
+        `[VEHICLE] Updating activeVehicle.currentFuel to ${currentFuel.toFixed(2)}`,
+      );
       set({
         activeVehicle: { ...activeVehicle, currentFuel },
       });
@@ -509,6 +519,10 @@ export const useVehicleStore = create<VehicleStore>((set, get) => ({
     const updatedVehicles = vehicles.map((v) =>
       v.id === vehicleId ? { ...v, currentFuel } : v,
     );
+    debugLog(
+      `[VEHICLE] Updated ${updatedVehicles.filter((v) => v.id === vehicleId).length} vehicle(s) in list`,
+    );
     set({ vehicles: updatedVehicles });
+    debugLog(`[VEHICLE] Store update complete`);
   },
 }));

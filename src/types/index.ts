@@ -23,23 +23,29 @@ export interface TripStop {
 }
 
 export interface TripConsumptionBreakdown {
-  speedPenaltyPct: number;
-  aggressionPenaltyPct: number;
-  idlePenaltyPct: number;
-  stabilityPenaltyPct: number;
-  totalPenaltyPct: number;
-  speedBonusPct: number;
-  accelerationBonusPct: number;
-  coastingBonusPct: number;
-  stabilityBonusPct: number;
-  idleBonusPct: number;
-  totalBonusPct: number;
-  isEcoDriving: boolean;
   baseFuelUsed: number;
   extraFuelUsed: number;
   savedFuel: number;
+  rollingResistanceFuel: number;
+  aeroDragFuel: number;
+  slopeFuel: number;
+  accelerationFuel: number;
+  acFuel: number;
+  idleFuel: number;
   extraCost: number;
   savedCost: number;
+  totalCost: number;
+  totalPenaltyPct?: number;
+  speedPenaltyPct?: number;
+  aggressionPenaltyPct?: number;
+  idlePenaltyPct?: number;
+  stabilityPenaltyPct?: number;
+  totalBonusPct?: number;
+  speedBonusPct?: number;
+  accelerationBonusPct?: number;
+  coastingBonusPct?: number;
+  stabilityBonusPct?: number;
+  idleBonusPct?: number;
 }
 
 export interface Trip {
@@ -60,6 +66,8 @@ export interface Trip {
   fuelPrice?: number;
   totalCost?: number;
   elapsedTime: number;
+  movingTime: number;
+  stopTime: number;
   totalFuelUsed: number;
   stops?: TripStop[];
   consumptionBreakdown?: TripConsumptionBreakdown;
@@ -78,7 +86,7 @@ export interface Trip {
   telemetryData?: TripTelemetryData;
 }
 
-export type FuelType = "gasolina" | "etanol" | "flex" | "gnv";
+export type FuelType = "gasolina" | "etanol" | "flex" | "gnv" | "diesel";
 
 export interface Settings {
   id: string;
@@ -153,7 +161,7 @@ export type VehicleSegment =
   | "suv"
   | "pickup";
 
-export type VehicleFuelType = "gasoline" | "diesel" | "ethanol" | "flex";
+export type VehicleFuelType = "gasolina" | "etanol" | "diesel" | "flex" | "gnv";
 
 export type VehicleConfidence = "high" | "medium" | "low";
 
@@ -196,33 +204,15 @@ export interface VehicleCalibration {
   grossWeight: number;
   frontalArea: number;
   dragCoefficient: number;
-  f0: number;
-  f1: number;
-  f2: number;
-  fuelConversionFactor: number;
   peakPowerKw: number;
   peakTorqueNm: number;
   co2_gkm?: number;
   nox_mgkm?: number;
   confidence: VehicleConfidence;
   dataSource?: DataSource;
-  inmetroCityKmpl: number;
-  inmetroHighwayKmpl: number;
-  userAvgCityKmpl: number;
-  userAvgHighwayKmpl: number;
-  inmetroEthanolCityKmpl?: number;
-  inmetroEthanolHighwayKmpl?: number;
-  userAvgEthanolCityKmpl?: number;
-  userAvgEthanolHighwayKmpl?: number;
-  inmetroGnvCityKmpl?: number;
-  inmetroGnvHighwayKmpl?: number;
-  userAvgGnvCityKmpl?: number;
-  userAvgGnvHighwayKmpl?: number;
   crr: number;
   idleLph: number;
   baseBsfc: number;
-  weightInmetro: number;
-  weightUser: number;
   isHybrid: boolean;
   gnvCylinderWeightKg: number;
   gnvEfficiencyFactor: number;
@@ -230,6 +220,20 @@ export interface VehicleCalibration {
   techEra?: TechEra;
   idleFuelRateLph?: number;
   bsfcMinGPerKwh?: number;
+  f0?: number;
+  f1?: number;
+  f2?: number;
+  fuelConversionFactor?: number;
+  inmetroCityKmpl?: number;
+  inmetroHighwayKmpl?: number;
+  inmetroEthanolCityKmpl?: number;
+  inmetroEthanolHighwayKmpl?: number;
+  userAvgCityKmpl?: number;
+  userAvgHighwayKmpl?: number;
+  userAvgEthanolCityKmpl?: number;
+  userAvgEthanolHighwayKmpl?: number;
+  weightInmetro?: number;
+  weightUser?: number;
 }
 
 export interface VehicleCalibrationRecord extends VehicleCalibration {
@@ -254,10 +258,6 @@ export interface Vehicle {
   grossWeight: number;
   frontalArea: number;
   dragCoefficient: number;
-  f0: number;
-  f1: number;
-  f2: number;
-  fuelConversionFactor: number;
   peakPowerKw: number;
   peakTorqueNm: number;
   co2_gkm?: number;
@@ -269,23 +269,9 @@ export interface Vehicle {
   fuelCapacity: number;
   currentFuel: number;
   dataSource?: DataSource;
-  inmetroCityKmpl: number;
-  inmetroHighwayKmpl: number;
-  userAvgCityKmpl: number;
-  userAvgHighwayKmpl: number;
-  inmetroEthanolCityKmpl?: number;
-  inmetroEthanolHighwayKmpl?: number;
-  userAvgEthanolCityKmpl?: number;
-  userAvgEthanolHighwayKmpl?: number;
-  inmetroGnvCityKmpl?: number;
-  inmetroGnvHighwayKmpl?: number;
-  userAvgGnvCityKmpl?: number;
-  userAvgGnvHighwayKmpl?: number;
   crr: number;
   idleLph: number;
   baseBsfc: number;
-  weightInmetro: number;
-  weightUser: number;
   isHybrid: boolean;
   gnvCylinderWeightKg: number;
   gnvEfficiencyFactor: number;
@@ -293,6 +279,28 @@ export interface Vehicle {
   techEra?: TechEra;
   idleFuelRateLph?: number;
   bsfcMinGPerKwh?: number;
+  f0?: number;
+  f1?: number;
+  f2?: number;
+  fuelConversionFactor?: number;
+  inmetroCityKmpl?: number;
+  inmetroHighwayKmpl?: number;
+  inmetroEthanolCityKmpl?: number;
+  inmetroEthanolHighwayKmpl?: number;
+  userAvgCityKmpl?: number;
+  userAvgHighwayKmpl?: number;
+  userAvgEthanolCityKmpl?: number;
+  userAvgEthanolHighwayKmpl?: number;
+  weightInmetro?: number;
+  weightUser?: number;
+  rpmAt100Kmh?: number;
+  cda?: number;
+  rollingResistance?: number;
+  inmetroGnvCityKmpl?: number;
+  inmetroGnvHighwayKmpl?: number;
+  userAvgGnvCityKmpl?: number;
+  userAvgGnvHighwayKmpl?: number;
+  hasHydraulicSteering?: boolean;
 }
 
 export interface InclinationCalibration {
@@ -309,7 +317,7 @@ export interface TripTelemetryData {
   avgSlope: number;
   maxSlope: number;
   acUsagePct: number;
-  massPenaltyAvg: number;
+  avgPowerKw?: number;
   idleTimeSeconds: number;
   avgAcceleration: number;
   maxAcceleration: number;
@@ -322,6 +330,9 @@ export interface TripTelemetryData {
   avgRpm?: number;
   maxRpm?: number;
   hasTransmissionData?: boolean;
+  massPenaltyAvg?: number;
+  dynamicFactorAvg?: number;
+  speedFactorAvg?: number;
 }
 
 export interface BatchAllocation {

@@ -12,6 +12,7 @@ const fuelTypeLabels: Record<Refuel["fuelType"], string> = {
   etanol: "Etanol",
   flex: "Flex",
   gnv: "GNV",
+  diesel: "Diesel",
 };
 
 const fuelTypeColors: Record<Refuel["fuelType"], string> = {
@@ -19,6 +20,7 @@ const fuelTypeColors: Record<Refuel["fuelType"], string> = {
   etanol: "bg-green-100 text-green-700",
   flex: "bg-purple-100 text-purple-700",
   gnv: "bg-orange-100 text-orange-700",
+  diesel: "bg-gray-100 text-gray-700",
 };
 
 export function RefuelCard({ refuel, vehicleName, onDelete }: RefuelCardProps) {

@@ -25,6 +25,18 @@ export function validateBasic(data: VehicleCalibration): ValidationResult {
     );
   }
 
+  if (data.f0 !== undefined && (data.f0 < 0.05 || data.f0 > 0.5)) {
+    errors.push(`f0 (${data.f0}) deve estar entre 0.05 e 0.5`);
+  }
+
+  if (data.f1 !== undefined && (data.f1 < 0.0005 || data.f1 > 0.01)) {
+    errors.push(`f1 (${data.f1}) deve estar entre 0.0005 e 0.01`);
+  }
+
+  if (data.f2 !== undefined && (data.f2 < 0.0001 || data.f2 > 0.001)) {
+    errors.push(`f2 (${data.f2}) deve estar entre 0.0001 e 0.001`);
+  }
+
   if (
     !(
       data.urbanKmpl < data.combinedKmpl && data.combinedKmpl < data.highwayKmpl

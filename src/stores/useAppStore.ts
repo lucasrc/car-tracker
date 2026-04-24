@@ -9,6 +9,7 @@ interface AppState {
   autoTrackingEnabled: boolean;
   debugModeEnabled: boolean;
   debugModeShowRadars: boolean;
+  gpsMode: "gps-only" | "sensor-only" | "hybrid";
 }
 
 interface AppActions {
@@ -22,6 +23,7 @@ interface AppActions {
   setAutoTrackingEnabled: (enabled: boolean) => void;
   setDebugModeEnabled: (enabled: boolean) => void;
   setDebugModeShowRadars: (enabled: boolean) => void;
+  setGpsMode: (mode: AppState["gpsMode"]) => void;
 }
 
 export const useAppStore = create<AppState & AppActions>()(
@@ -35,6 +37,7 @@ export const useAppStore = create<AppState & AppActions>()(
         autoTrackingEnabled: false,
         debugModeEnabled: false,
         debugModeShowRadars: false,
+        gpsMode: "hybrid",
         setTheme: (theme) => set({ theme }),
         toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
         setSidebarOpen: (open) => set({ sidebarOpen: open }),
@@ -48,6 +51,7 @@ export const useAppStore = create<AppState & AppActions>()(
         setDebugModeEnabled: (enabled) => set({ debugModeEnabled: enabled }),
         setDebugModeShowRadars: (enabled) =>
           set({ debugModeShowRadars: enabled }),
+        setGpsMode: (mode) => set({ gpsMode: mode }),
       }),
       { name: "app-store" },
     ),

@@ -82,6 +82,8 @@ describe("TripSummary - calculateSummary", () => {
     actualCost: 50,
     fuelPrice: 5,
     elapsedTime: 3600,
+    movingTime: 3000,
+    stopTime: 600,
     totalFuelUsed: 10,
     ...overrides,
   });
@@ -320,9 +322,9 @@ describe("TripSummary - calculateSummary", () => {
       const trips = [
         {
           ...createTrip(),
-          fuelUsed: undefined,
-          actualCost: undefined,
-          distanceMeters: undefined,
+          fuelUsed: 0,
+          actualCost: 0,
+          distanceMeters: 0,
         },
       ];
       const summary = calculateSummary(trips, []);

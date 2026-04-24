@@ -32,7 +32,7 @@ export function ImportDetailsModal({
   onConfirm,
   onCancel,
 }: ImportDetailsModalProps) {
-  const isFlex = data.fuelType === "flex" || data.fuelType === "ethanol";
+  const isFlex = data.fuelType === "flex" || data.fuelType === "etanol";
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
@@ -78,25 +78,25 @@ export function ImportDetailsModal({
                   <div className="rounded-lg bg-white p-2.5">
                     <p className="text-xs text-gray-400">Cidade</p>
                     <p className="text-base font-bold text-gray-900">
-                      {data.userAvgCityKmpl.toFixed(1)}{" "}
+                      {(data.userAvgCityKmpl ?? 0).toFixed(1)}{" "}
                       <span className="text-xs font-normal text-gray-400">
                         km/l
                       </span>
                     </p>
                     <p className="mt-0.5 text-xs text-gray-400">
-                      INMETRO: {data.inmetroCityKmpl.toFixed(1)}
+                      INMETRO: {(data.inmetroCityKmpl ?? 0).toFixed(1)}
                     </p>
                   </div>
                   <div className="rounded-lg bg-white p-2.5">
                     <p className="text-xs text-gray-400">Estrada</p>
                     <p className="text-base font-bold text-gray-900">
-                      {data.userAvgHighwayKmpl.toFixed(1)}{" "}
+                      {(data.userAvgHighwayKmpl ?? 0).toFixed(1)}{" "}
                       <span className="text-xs font-normal text-gray-400">
                         km/l
                       </span>
                     </p>
                     <p className="mt-0.5 text-xs text-gray-400">
-                      INMETRO: {data.inmetroHighwayKmpl.toFixed(1)}
+                      INMETRO: {(data.inmetroHighwayKmpl ?? 0).toFixed(1)}
                     </p>
                   </div>
                 </div>

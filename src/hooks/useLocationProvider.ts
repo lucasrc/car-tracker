@@ -3,20 +3,31 @@ import { useAppStore } from "@/stores/useAppStore";
 import { useGeolocation } from "@/hooks/useGeolocation";
 import { useInclination } from "@/hooks/useInclination";
 import { useAutoTracker } from "@/hooks/useAutoTracker";
+import { useDeviceMotion } from "@/hooks/useDeviceMotion";
 import { DEFAULT_POSITION } from "@/lib/constants";
 import type { Coordinates, BatteryState } from "@/types";
 
-export type FixState = "no-fix" | "fix-acquired" | "fix-stale" | "simulating";
+export type FixState =
+  | "no-fix"
+  | "fix-acquired"
+  | "fix-stale"
+  | "simulating"
+  | "sensor-only";
 
 const DEFAULT_LAT = DEFAULT_POSITION.lat;
 const DEFAULT_LNG = DEFAULT_POSITION.lng;
 const GPS_STALE_TIMEOUT_MS = 10_000;
+const GPS_DEGRADED_TIMEOUT_MS = 10_000;
+const SENSOR_ONLY_WARNING_MS = 30_000;
+const SENSOR_ONLY_UPDATE_MS = 100;
+const DEGRADED_ACCURACY_THRESHOLD_METERS = 50;
 
 function isDefaultPosition(pos: Coordinates | null): boolean {
   if (!pos) return true;
   return (
-    Math.abs(pos.lat - DEFAULT_LAT) < 0.001 &&
-    Math.abs(pos.lng - DEFAULT_LNG) < 0.001
+    pos.lat === DEFAULT_LAT &&
+    pos.lng === DEFAULT_LNG &&
+    (!pos.timestamp || pos.timestamp === 0)
   );
 }
 
@@ -84,6 +95,7 @@ export interface UseLocationProviderReturn {
   gpsPosition: Coordinates | null;
   speed: number;
   grade: number;
+  gradeConfidence: number;
   elapsedTime: number;
   setSpeed: (speed: number) => void;
   setGrade: (grade: number) => void;
@@ -104,11 +116,14 @@ export interface UseLocationProviderReturn {
   deviceOrientation: number | null;
   filteredHeading: number | null;
   filteredPitch: number | null;
+  sensorOnlyWarning: boolean;
+  gpsMode: "gps-only" | "sensor-only" | "hybrid";
 }
 
 export function useLocationProvider(): UseLocationProviderReturn {
   const debugModeEnabled = useAppStore((s) => s.debugModeEnabled);
   const autoTrackingEnabled = useAppStore((s) => s.autoTrackingEnabled);
+  const gpsMode = useAppStore((s) => s.gpsMode);
   const selectedCarBluetoothAddress = useAppStore(
     (s) => s.selectedCarBluetoothAddress,
   );
@@ -129,6 +144,7 @@ export function useLocationProvider(): UseLocationProviderReturn {
     getCurrentPosition,
   } = useGeolocation();
   const inclination = useInclination({ enabled: isWatching });
+  const { motion, isAvailable: motionAvailable } = useDeviceMotion();
 
   const {
     isTracking: isAutoTracking,
@@ -153,6 +169,14 @@ export function useLocationProvider(): UseLocationProviderReturn {
 
   const lastGpsPositionRef = useRef<Coordinates | null>(null);
   const lastGpsTimeRef = useRef<number>(0);
+  const lastInclinationAltRef = useRef<number | null>(null);
+  const lastInclinationDistRef = useRef(0);
+  const degradedStartTimeRef = useRef<number>(0);
+  const sensorOnlyStartTimeRef = useRef<number>(0);
+  const sensorSpeedRef = useRef(0);
+  const sensorHeadingRef = useRef(0);
+  const lastAccelerationRef = useRef(0);
+  const sensorModeActive = useRef(false);
 
   useEffect(() => {
     simSpeedRef.current = simSpeed;
@@ -188,12 +212,136 @@ export function useLocationProvider(): UseLocationProviderReturn {
   ]);
 
   // Track last real GPS position and timestamp for staleness detection
+  // Also feed altitude data to the inclination sensor
   useEffect(() => {
+    console.log(
+      "[LOCATION] gpsPosition updated:",
+      gpsPosition,
+      "isDefault:",
+      isDefaultPosition(gpsPosition),
+    );
     if (gpsPosition && !isDefaultPosition(gpsPosition)) {
       lastGpsPositionRef.current = gpsPosition;
       lastGpsTimeRef.current = Date.now();
+      console.log("[LOCATION] Stored valid GPS position:", gpsPosition);
+
+      if (gpsPosition.altitude !== undefined) {
+        let distFromLast = 0;
+        if (lastInclinationAltRef.current !== null) {
+          distFromLast = calculateSegmentDistance(
+            lastGpsPositionRef.current?.lat ?? gpsPosition.lat,
+            lastGpsPositionRef.current?.lng ?? gpsPosition.lng,
+            gpsPosition.lat,
+            gpsPosition.lng,
+          );
+          lastInclinationDistRef.current += distFromLast;
+        }
+        inclination.addGpsReading(
+          gpsPosition.altitude,
+          lastInclinationDistRef.current,
+        );
+        lastInclinationAltRef.current = gpsPosition.altitude;
+        if (distFromLast > 0) {
+          lastInclinationDistRef.current = 0;
+        }
+      }
     }
-  }, [gpsPosition]);
+  }, [gpsPosition, inclination]);
+
+  // Sensor-only mode: integrate acceleration to estimate speed
+  useEffect(() => {
+    if (!motionAvailable || !motion || gpsMode === "gps-only") return;
+
+    const accelMag = Math.sqrt(
+      (motion.accelerationIncludingGravity.x ?? 0) ** 2 +
+        (motion.accelerationIncludingGravity.y ?? 0) ** 2 +
+        (motion.accelerationIncludingGravity.z ?? 0) ** 2,
+    );
+    const isStationary = Math.abs(accelMag - 9.8) < 0.5;
+    const dt = SENSOR_ONLY_UPDATE_MS / 1000;
+
+    if (isStationary) {
+      sensorSpeedRef.current = 0;
+    } else {
+      const delta = Math.abs(accelMag - lastAccelerationRef.current);
+      if (delta > 0.1) {
+        sensorSpeedRef.current += delta * dt * 3.6;
+      }
+    }
+
+    if (filteredHeading !== null) {
+      sensorHeadingRef.current = filteredHeading;
+    }
+
+    lastAccelerationRef.current = accelMag;
+  }, [motion, motionAvailable, gpsMode, filteredHeading]);
+
+  // Track degraded GPS and auto-switch to sensor-only
+  useEffect(() => {
+    if (debugModeEnabled || gpsMode === "sensor-only") {
+      sensorModeActive.current = true;
+      if (gpsMode === "sensor-only") {
+        sensorOnlyStartTimeRef.current = Date.now();
+      }
+      return;
+    }
+
+    if (gpsMode === "gps-only") {
+      sensorModeActive.current = false;
+      return;
+    }
+
+    if (!gpsPosition || isDefaultPosition(gpsPosition)) {
+      if (degradedStartTimeRef.current === 0) {
+        degradedStartTimeRef.current = Date.now();
+      } else if (
+        Date.now() - degradedStartTimeRef.current >
+        GPS_DEGRADED_TIMEOUT_MS
+      ) {
+        sensorModeActive.current = true;
+        sensorOnlyStartTimeRef.current = Date.now();
+      }
+      return;
+    }
+
+    if (
+      gpsPosition.accuracy &&
+      gpsPosition.accuracy > DEGRADED_ACCURACY_THRESHOLD_METERS
+    ) {
+      if (degradedStartTimeRef.current === 0) {
+        degradedStartTimeRef.current = Date.now();
+      } else if (
+        Date.now() - degradedStartTimeRef.current >
+        GPS_DEGRADED_TIMEOUT_MS
+      ) {
+        sensorModeActive.current = true;
+        sensorOnlyStartTimeRef.current = Date.now();
+      }
+    } else {
+      degradedStartTimeRef.current = 0;
+      sensorModeActive.current = false;
+    }
+  }, [gpsPosition, debugModeEnabled, gpsMode]);
+
+  // Debug: log the computed state
+  console.log("[LOCATION] Debug state:", {
+    gpsPosition: gpsPosition ? `${gpsPosition.lat},${gpsPosition.lng}` : null,
+    lastGpsPosition: lastGpsPositionRef.current
+      ? `${lastGpsPositionRef.current?.lat},${lastGpsPositionRef.current?.lng}`
+      : null,
+    lastGpsTime: lastGpsTimeRef.current
+      ? new Date(lastGpsTimeRef.current).toISOString()
+      : null,
+    isWatching,
+    gpsMode,
+    debugModeEnabled,
+  });
+
+  const isSensorOnlyMode =
+    gpsMode === "sensor-only" || sensorModeActive.current;
+  const sensorOnlyWarning =
+    sensorOnlyStartTimeRef.current > 0 &&
+    Date.now() - sensorOnlyStartTimeRef.current > SENSOR_ONLY_WARNING_MS;
 
   // When debug mode turns on: start simulation
   useEffect(() => {
@@ -367,16 +515,18 @@ export function useLocationProvider(): UseLocationProviderReturn {
 
   const fixState: FixState = debugModeEnabled
     ? "simulating"
-    : autoTrackerLatest
-      ? "fix-acquired"
-      : realGpsValid
+    : isSensorOnlyMode
+      ? "sensor-only"
+      : autoTrackerLatest
         ? "fix-acquired"
-        : lastGpsPositionRef.current &&
-            Date.now() - lastGpsTimeRef.current < GPS_STALE_TIMEOUT_MS
+        : realGpsValid
           ? "fix-acquired"
-          : lastGpsPositionRef.current
-            ? "fix-stale"
-            : "no-fix";
+          : lastGpsPositionRef.current &&
+              Date.now() - lastGpsTimeRef.current < GPS_STALE_TIMEOUT_MS
+            ? "fix-acquired"
+            : lastGpsPositionRef.current
+              ? "fix-stale"
+              : "no-fix";
 
   // Unified position
   const position: Coordinates | null = debugModeEnabled
@@ -387,6 +537,7 @@ export function useLocationProvider(): UseLocationProviderReturn {
   const speed = debugModeEnabled ? simSpeed : (realGpsValid?.speed ?? 0) * 3.6;
 
   const grade = debugModeEnabled ? simGrade : inclination.gradePercent;
+  const gradeConfidence = debugModeEnabled ? 0.5 : inclination.confidence;
 
   return {
     position,
@@ -394,6 +545,7 @@ export function useLocationProvider(): UseLocationProviderReturn {
     gpsPosition: realGpsValid,
     speed,
     grade,
+    gradeConfidence,
     elapsedTime: debugModeEnabled ? simElapsedTime : 0,
     setSpeed,
     setGrade,
@@ -406,5 +558,7 @@ export function useLocationProvider(): UseLocationProviderReturn {
     deviceOrientation,
     filteredHeading,
     filteredPitch,
+    sensorOnlyWarning,
+    gpsMode,
   };
 }

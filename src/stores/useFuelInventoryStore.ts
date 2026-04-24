@@ -44,6 +44,7 @@ interface FuelInventoryState {
   isLoaded: boolean;
   eventQueue: FuelConsumptionEvent[];
   accumulatedFuelForFlush: number;
+  cumulativeFifoCost: number;
   loadBatches: (vehicleId: string) => Promise<void>;
   addBatch: (
     amount: number,
@@ -76,6 +77,7 @@ interface FuelInventoryState {
   deleteBatch: (id: string) => Promise<void>;
   getTotalLiters: (filterFuelType?: FuelType) => number;
   getWeightedAveragePrice: (filterFuelType?: FuelType) => number;
+  getCumulativeFifoCost: () => number;
   reset: () => void;
 }
 
@@ -132,11 +134,19 @@ export const useFuelInventoryStore = create<FuelInventoryState>((set, get) => ({
   isLoaded: false,
   eventQueue: [],
   accumulatedFuelForFlush: 0,
+  cumulativeFifoCost: 0,
 
   loadBatches: async (vehicleId: string) => {
     console.log(`[FUEL] loadBatches called for vehicleId: ${vehicleId}`);
     // Reset inventory when switching vehicles
-    set({ batches: [], vehicleId: null, isLoading: true, isLoaded: false });
+    // Also reset FIFO cost tracker for new trip
+    set({
+      batches: [],
+      vehicleId: null,
+      isLoading: true,
+      isLoaded: false,
+      cumulativeFifoCost: 0,
+    });
 
     const refuels = await getRefuelsByVehicle(vehicleId);
     console.log(
@@ -272,7 +282,13 @@ export const useFuelInventoryStore = create<FuelInventoryState>((set, get) => ({
     });
 
     await Promise.all(updatePromises);
-    set({ batches: updatedBatches });
+    set((state) => ({
+      batches: updatedBatches,
+      cumulativeFifoCost: state.cumulativeFifoCost + totalCost,
+    }));
+    console.log(
+      `[FUEL] consumeFuel: totalCost=${totalCost.toFixed(2)}, cumulativeFifoCost=${state.cumulativeFifoCost + totalCost}`,
+    );
     return { cost: totalCost, batches: consumedBatchDetails };
   },
 
@@ -403,6 +419,10 @@ export const useFuelInventoryStore = create<FuelInventoryState>((set, get) => ({
     return calculateWeightedAverage(get().batches, filterFuelType);
   },
 
+  getCumulativeFifoCost: () => {
+    return get().cumulativeFifoCost;
+  },
+
   reset: () => {
     set({
       batches: [],
@@ -411,6 +431,7 @@ export const useFuelInventoryStore = create<FuelInventoryState>((set, get) => ({
       isLoading: false,
       eventQueue: [],
       accumulatedFuelForFlush: 0,
+      cumulativeFifoCost: 0,
     });
   },
 }));

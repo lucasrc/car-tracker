@@ -1,4 +1,5 @@
 import type { Vehicle, TransmissionData } from "@/types";
+import { debugLog } from "@/lib/debug";
 
 // ============================================================================
 // TIPOS E INTERFACES
@@ -9,7 +10,10 @@ export interface EngineLoadInput {
   speedKmh: number;
   accelerationMps2: number;
   slopePercent: number;
-  gearIndex: number; // 0-based index (0 = 1st gear)
+  gearIndex: number;
+  passengers?: number;
+  cargoKg?: number;
+  isGnv?: boolean;
 }
 
 export interface EngineLoadResult {
@@ -52,6 +56,93 @@ const MIN_OPERATING_RPM = {
   turbo: 1100,
   "turbo-diesel": 1000,
 } as const;
+
+// Parâmetros de scoring por tipo de aspiração
+export const SCORING_PARAMS = {
+  NA: {
+    minOperatingRpm: 1300,
+    rpmOptimal: 2500,
+    sigmaRpmLow: 900,
+    sigmaRpmHigh: 2000,
+    sigmaLoad: 0.25,
+    sigmaBsfc: 50,
+    clutchEngagementSpeedKmh: 10,
+  },
+  turbo: {
+    minOperatingRpm: 1100,
+    rpmOptimal: 2000,
+    sigmaRpmLow: 700,
+    sigmaRpmHigh: 1800,
+    sigmaLoad: 0.22,
+    sigmaBsfc: 45,
+    clutchEngagementSpeedKmh: 8,
+  },
+  "turbo-diesel": {
+    minOperatingRpm: 1000,
+    rpmOptimal: 1800,
+    sigmaRpmLow: 600,
+    sigmaRpmHigh: 1500,
+    sigmaLoad: 0.20,
+    sigmaBsfc: 40,
+    clutchEngagementSpeedKmh: 7,
+  },
+} as const;
+
+// Configuração de histerese para evitar gear hunting
+export const HYSTERESIS_CONFIG = {
+  upshiftMargin: 0.15,
+  downshiftMargin: 0.10,
+  minDwellMs: 1500,
+  kickdownAccelThreshold: 2.5,
+  lowSpeedBypassKmh: 10,
+} as const;
+
+// Pesos padrão para scoring multi-critério (modo cruzeiro)
+export const DEFAULT_SCORING_WEIGHTS = {
+  fuel: 0.40,
+  drive: 0.30,
+  power: 0.20,
+  safety: 0.10,
+} as const;
+
+// ============================================================================
+// FUNÇÕES ESTATÍSTICAS
+// ============================================================================
+
+export function gaussianScore(
+  value: number,
+  optimal: number,
+  sigma: number,
+): number {
+  if (sigma <= 0) return value === optimal ? 1 : 0;
+  const diff = (value - optimal) / sigma;
+  return Math.exp(-0.5 * diff * diff);
+}
+
+export function asymmetricScore(
+  value: number,
+  optimal: number,
+  sigmaLow: number,
+  sigmaHigh: number,
+): number {
+  const sigma = value < optimal ? sigmaLow : sigmaHigh;
+  if (sigma <= 0) return value === optimal ? 1 : 0;
+  const diff = (value - optimal) / sigma;
+  return Math.exp(-0.5 * diff * diff);
+}
+
+export function sigmoid(value: number, center: number, steepness: number): number {
+  if (steepness === 0) return 0.5;
+  const x = steepness * (value - center);
+  if (x > 20) return 1;
+  if (x < -20) return 0;
+  return 1 / (1 + Math.exp(-x));
+}
+
+export function smoothstep(edge0: number, edge1: number, x: number): number {
+  const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
 
 // ============================================================================
 // FUNÇÕES PRINCIPAIS DE CÁLCULO DE RPM
@@ -98,7 +189,7 @@ export function validateTransmission(
   const correctedTireRadiusM =
     (speedMs * topGearRatio * finalDrive * 60) / (2 * Math.PI * rpmAt100Kmh);
 
-  console.log(
+  debugLog(
     `[Transmission] Correcting transmission data: calculated RPM=${rpmCalculated}, ` +
       `expected RPM=${rpmAt100Kmh}, correcting tireRadiusM from ${tireRadiusM.toFixed(3)} to ${correctedTireRadiusM.toFixed(3)}`,
   );
@@ -110,43 +201,75 @@ export function validateTransmission(
 }
 
 /**
+ * Get the clutch engagement speed based on engine aspiration type.
+ * Below this speed, the clutch is slipping and RPM decouples from wheel speed.
+ */
+export function getClutchEngagementSpeed(
+  aspiration: "NA" | "turbo" | "turbo-diesel",
+): number {
+  return SCORING_PARAMS[aspiration].clutchEngagementSpeedKmh;
+}
+
+/**
  * Calculate RPM for a given speed, gear, and transmission.
  * Uses rpmAt100Kmh as source of truth when available.
+ * Below clutch engagement speed, uses a smoothstep clutch-slip model.
  */
 export function calculateRpm(
   speedKmh: number,
   gearIndex: number,
   transmission: TransmissionData,
+  aspiration: "NA" | "turbo" | "turbo-diesel" = "NA",
+  clampToIdle: boolean = true,
 ): number {
-  // Validate and correct transmission data if needed
   const correctedTransmission = validateTransmission(transmission);
+  const idleRpm = correctedTransmission.idleRpm;
+  const engagementSpeed = getClutchEngagementSpeed(aspiration);
 
-  // Calculate RPM proportionally based on speed
-  // If rpmAt100Kmh is available, use it as reference
-  if (
-    correctedTransmission.rpmAt100Kmh &&
-    correctedTransmission.rpmAt100Kmh > 0
-  ) {
-    const topGearIndex = correctedTransmission.gearRatios.length - 1;
-    const currentGearRatio = correctedTransmission.gearRatios[gearIndex];
-    const topGearRatio = correctedTransmission.gearRatios[topGearIndex];
+  if (speedKmh < 1) {
+    return idleRpm;
+  }
 
-    // RPM is proportional to speed and gear ratio
-    // RPM = rpmAt100Kmh * (speed / 100) * (currentGearRatio / topGearRatio)
-    const rpm = Math.round(
-      correctedTransmission.rpmAt100Kmh *
+  if (speedKmh < engagementSpeed) {
+    const engagementRpm = computeGearRpm(
+      engagementSpeed,
+      gearIndex,
+      correctedTransmission,
+    );
+    const factor = smoothstep(0, engagementSpeed, speedKmh);
+    const rpm = idleRpm + (engagementRpm - idleRpm) * factor;
+    return Math.round(rpm);
+  }
+
+  const rpm = computeGearRpm(speedKmh, gearIndex, correctedTransmission);
+
+  if (clampToIdle && rpm < idleRpm) {
+    return idleRpm;
+  }
+
+  return rpm;
+}
+
+function computeGearRpm(
+  speedKmh: number,
+  gearIndex: number,
+  transmission: TransmissionData,
+): number {
+  if (transmission.rpmAt100Kmh && transmission.rpmAt100Kmh > 0) {
+    const topGearIndex = transmission.gearRatios.length - 1;
+    const currentGearRatio = transmission.gearRatios[gearIndex];
+    const topGearRatio = transmission.gearRatios[topGearIndex];
+    return Math.round(
+      transmission.rpmAt100Kmh *
         (speedKmh / 100) *
         (currentGearRatio / topGearRatio),
     );
-
-    return rpm;
   }
 
-  // Fallback: physical calculation
   const speedMs = speedKmh / 3.6;
-  const wheelRps = speedMs / (2 * Math.PI * correctedTransmission.tireRadiusM);
-  const gearRatio = correctedTransmission.gearRatios[gearIndex];
-  const engineRps = wheelRps * gearRatio * correctedTransmission.finalDrive;
+  const wheelRps = speedMs / (2 * Math.PI * transmission.tireRadiusM);
+  const gearRatio = transmission.gearRatios[gearIndex];
+  const engineRps = wheelRps * gearRatio * transmission.finalDrive;
   return Math.round(engineRps * 60);
 }
 
@@ -351,7 +474,10 @@ export function calculateEngineLoad(input: EngineLoadInput): EngineLoadResult {
 
   // Calculate required power components
   const speedMs = speedKmh / 3.6;
-  const massTotal = vehicle.mass + 75; // Add driver weight
+  const p = input.passengers ?? 1;
+  const cg = input.cargoKg ?? 0;
+  const gnvWeight = (input.isGnv ?? false) ? 80 : 0;
+  const massTotal = vehicle.mass + p * 75 + cg + gnvWeight;
   const cda = vehicle.frontalArea * vehicle.dragCoefficient;
 
   // 1. Rolling resistance power
@@ -445,7 +571,245 @@ export function calculateEngineLoadForAllGears(
 }
 
 // ============================================================================
-// SELEÇÃO DE MARCHA BASEADA EM CARGA DO MOTOR
+// FILTRO DE VIABILIDADE E SCORING MULTI-CRITÉRIO
+// ============================================================================
+
+export interface ViableGearResult {
+  gearIndex: number;
+  gearNumber: number;
+  rpm: number;
+  engineLoad: EngineLoadResult;
+  isViable: boolean;
+  viabilityReason: string;
+}
+
+export function filterViableGears(
+  vehicle: Vehicle,
+  speedKmh: number,
+  accelerationMps2: number,
+  slopePercent: number,
+): ViableGearResult[] {
+  if (!vehicle.transmission) {
+    return [];
+  }
+
+  const aspiration = getAspirationType(vehicle);
+  const params = SCORING_PARAMS[aspiration];
+  const transmission = vehicle.transmission;
+  const engagementSpeed = params.clutchEngagementSpeedKmh;
+
+  if (speedKmh < 1) {
+    return [
+      {
+        gearIndex: 0,
+        gearNumber: 1,
+        rpm: transmission.idleRpm,
+        engineLoad: calculateEngineLoad({
+          vehicle,
+          speedKmh,
+          accelerationMps2,
+          slopePercent,
+          gearIndex: 0,
+        }),
+        isViable: true,
+        viabilityReason: "Vehicle stationary - gear 1",
+      },
+    ];
+  }
+
+  if (speedKmh < engagementSpeed) {
+    const firstGearRpm = Math.round(
+      transmission.idleRpm +
+        (computeGearRpm(engagementSpeed, 0, validateTransmission(transmission)) -
+          transmission.idleRpm) *
+          smoothstep(0, engagementSpeed, speedKmh),
+    );
+    return [
+      {
+        gearIndex: 0,
+        gearNumber: 1,
+        rpm: firstGearRpm,
+        engineLoad: calculateEngineLoad({
+          vehicle,
+          speedKmh,
+          accelerationMps2,
+          slopePercent,
+          gearIndex: 0,
+        }),
+        isViable: true,
+        viabilityReason: `Below clutch engagement (${engagementSpeed} km/h) - gear 1`,
+      },
+    ];
+  }
+
+  const allLoads = calculateEngineLoadForAllGears(
+    vehicle,
+    speedKmh,
+    accelerationMps2,
+    slopePercent,
+  );
+
+  const results: ViableGearResult[] = [];
+
+  for (const load of allLoads) {
+    const rpm = calculateRpm(
+      speedKmh,
+      load.gearIndex,
+      transmission,
+      aspiration,
+      false,
+    );
+    const minRpm = params.minOperatingRpm;
+    const maxRpm = transmission.redlineRpm * 0.95;
+
+    let isViable = true;
+    let reason = "Viable";
+
+    if (rpm < minRpm) {
+      isViable = false;
+      reason = `RPM ${rpm} below min ${minRpm} (lugging)`;
+    } else if (rpm > maxRpm) {
+      isViable = false;
+      reason = `RPM ${rpm} above redline limit ${Math.round(maxRpm)} (over-rev)`;
+    }
+
+    results.push({
+      gearIndex: load.gearIndex,
+      gearNumber: load.gearNumber,
+      rpm,
+      engineLoad: load,
+      isViable,
+      viabilityReason: reason,
+    });
+  }
+
+  if (results.every((r) => !r.isViable)) {
+    const closest = results.reduce((best, curr) =>
+      Math.abs(curr.rpm - params.minOperatingRpm) <
+      Math.abs(best.rpm - params.minOperatingRpm)
+        ? curr
+        : best,
+    );
+    closest.isViable = true;
+    closest.viabilityReason = `Fallback: closest to min RPM ${params.minOperatingRpm}`;
+  }
+
+  return results;
+}
+
+export interface GearScore {
+  gearIndex: number;
+  gearNumber: number;
+  rpm: number;
+  engineLoad: EngineLoadResult;
+  totalScore: number;
+  fuelScore: number;
+  driveScore: number;
+  powerScore: number;
+  safetyScore: number;
+  isViable: boolean;
+  reason: string;
+}
+
+function scoreViableGear(
+  vehicle: Vehicle,
+  _speedKmh: number,
+  accelerationMps2: number,
+  slopePercent: number,
+  viableGear: ViableGearResult,
+  aspiration: "NA" | "turbo" | "turbo-diesel",
+): GearScore {
+  const params = SCORING_PARAMS[aspiration];
+  const { rpm, engineLoad } = viableGear;
+
+  const bsfcBase = vehicle.baseBsfc || 250;
+  const rpmOffsetFactor = 1 + Math.abs(rpm - params.rpmOptimal) / (params.rpmOptimal * 2);
+  const loadFactor = getLoadFactor(engineLoad.engineLoadPercent);
+  const bsfc = bsfcBase * rpmOffsetFactor * loadFactor;
+
+  const fuelScore = gaussianScore(bsfc, bsfcBase, params.sigmaBsfc);
+
+  const isCruising = slopePercent < 2 && accelerationMps2 < 0.5;
+  const rpmTarget = isCruising
+    ? params.minOperatingRpm + (params.rpmOptimal - params.minOperatingRpm) * 0.2
+    : params.rpmOptimal;
+
+  const driveScore = isCruising
+    ? gaussianScore(rpm, rpmTarget, params.sigmaRpmHigh)
+    : asymmetricScore(
+        rpm,
+        rpmTarget,
+        params.sigmaRpmLow,
+        params.sigmaRpmHigh,
+      );
+
+  const loadFraction = engineLoad.engineLoadPercent / 100;
+  const optimalLoad = isCruising ? 0.30 : 0.65;
+  const sigmaLoad = isCruising ? params.sigmaLoad * 2.0 : params.sigmaLoad;
+  const powerScore = gaussianScore(loadFraction, optimalLoad, sigmaLoad);
+
+  const maxRpm = vehicle.transmission!.redlineRpm * 0.95;
+  const safetyScore = rpm > maxRpm ? 0 : 1;
+
+  const uphillWeight = sigmoid(slopePercent, 3, 2);
+  const accelWeight = sigmoid(accelerationMps2, 0.5, 3.3);
+  const hardAccelWeight = sigmoid(accelerationMps2, 2.0, 4);
+
+  const rawWFuel = 0.45 * (1 - uphillWeight) * (1 - accelWeight);
+  const rawWDrive = 0.20 + 0.05 * uphillWeight + 0.05 * (1 - hardAccelWeight);
+  const rawWPower = 0.10 + 0.20 * (uphillWeight + hardAccelWeight);
+  const rawWSafety = 0.25 - 0.15 * hardAccelWeight;
+  const totalRaw = rawWFuel + rawWDrive + rawWPower + rawWSafety;
+
+  const wFuel = rawWFuel / totalRaw;
+  const wDrive = rawWDrive / totalRaw;
+  const wPower = rawWPower / totalRaw;
+  const wSafety = rawWSafety / totalRaw;
+
+  const totalScore =
+    wFuel * fuelScore +
+    wDrive * driveScore +
+    wPower * powerScore +
+    wSafety * safetyScore;
+
+  let reason: string;
+  if (hardAccelWeight > 0.7) {
+    reason = "Power demand - hard acceleration";
+  } else if (uphillWeight > 0.7) {
+    reason = "Power demand - steep uphill";
+  } else if (fuelScore > driveScore && fuelScore > powerScore) {
+    reason = "Fuel efficiency optimal";
+  } else if (driveScore > fuelScore) {
+    reason = "Drivability optimal";
+  } else {
+    reason = "Power reserve optimal";
+  }
+
+  return {
+    gearIndex: viableGear.gearIndex,
+    gearNumber: viableGear.gearNumber,
+    rpm,
+    engineLoad,
+    totalScore,
+    fuelScore,
+    driveScore,
+    powerScore,
+    safetyScore,
+    isViable: viableGear.isViable,
+    reason,
+  };
+}
+
+function getLoadFactor(engineLoadPercent: number): number {
+  const load = Math.max(0.01, Math.min(1.0, engineLoadPercent / 100));
+  if (load <= 0.05) return 2.8;
+  if (load < 0.15) return 1 + 1.8 * Math.pow((0.15 - load) / 0.1, 1.2);
+  if (load < 0.75) return 1 + 0.25 * Math.pow((0.75 - load) / 0.6, 1.5);
+  return 1 + 0.1 * Math.pow((load - 0.75) / 0.25, 2);
+}
+
+// ============================================================================
+// SELEÇÃO DE MARCHA COM SCORING MULTI-CRITÉRIO
 // ============================================================================
 
 export interface GearSelectionParams {
@@ -456,8 +820,11 @@ export interface GearSelectionParams {
 }
 
 /**
- * Select the best gear based on engine load and driving conditions
- * This is the key function that should be used by telemetry-engine
+ * Select the best gear using multi-criteria Gaussian scoring.
+ *
+ * Phase 1: Filter viable gears (RPM within operating range)
+ * Phase 2: Score each viable gear (fuel, drivability, power, safety)
+ * Phase 3: Apply hysteresis if currentGear is provided
  */
 export function selectOptimalGear(
   vehicle: Vehicle,
@@ -476,7 +843,6 @@ export function selectOptimalGear(
     };
   }
 
-  // Special case: zero or very low speed - return idle in gear 1
   if (speedKmh < 1) {
     return {
       gear: 1,
@@ -487,277 +853,197 @@ export function selectOptimalGear(
     };
   }
 
-  const allGears = calculateEngineLoadForAllGears(
+  const aspiration = getAspirationType(vehicle);
+
+  const viableGears = filterViableGears(
     vehicle,
     speedKmh,
     accelerationMps2,
     slopePercent,
   );
 
-  if (allGears.length === 0) {
+  if (viableGears.length === 0) {
     return {
       gear: 1,
       rpm: vehicle.transmission.idleRpm,
-      confidence: 0.5,
+      confidence: 0.3,
       engineLoad: 0,
-      reason: "No valid gears",
+      reason: "No viable gears found",
     };
   }
 
-  // Determine driving scenario
-  const isUphill = slopePercent > 3;
-  const isSteepUphill = slopePercent > 8;
-  const isAccelerating = accelerationMps2 > 0.5;
-  const isHardAcceleration = accelerationMps2 > 2.0;
+  const scoredGears = viableGears
+    .filter((g) => g.isViable)
+    .map((g) =>
+      scoreViableGear(vehicle, speedKmh, accelerationMps2, slopePercent, g, aspiration),
+    );
 
-  // RULE 1: Filter out gears that are definitely wrong
-  // - Never use a gear that causes lugging (RPM too low)
-  // - Never use a gear that causes over-rev
-  let validGears = allGears.filter((g) => !g.isLugging && !g.isOverRev);
-
-  // If no gears pass the filter, relax constraints
-  if (validGears.length === 0) {
-    validGears = allGears.filter((g) => !g.isOverRev);
-  }
-  if (validGears.length === 0) {
-    validGears = allGears;
+  if (scoredGears.length === 0) {
+    const fallback = viableGears.find((g) => g.isViable) || viableGears[0];
+    return {
+      gear: fallback.gearNumber,
+      rpm: fallback.rpm,
+      confidence: 0.3,
+      engineLoad: fallback.engineLoad.engineLoadPercent,
+      reason: fallback.viabilityReason,
+    };
   }
 
-  // RULE 2: Special case for very low speeds - always use low gears
-  // Below 15 km/h, only use gears 1 or 2 to ensure enough torque and avoid lugging
-  if (speedKmh < 15) {
-    const lowGears = validGears.filter((g) => g.gearNumber <= 2);
-    if (lowGears.length > 0) {
-      let selectedGear: (typeof validGears)[0];
-      let reason: string;
+  scoredGears.sort((a, b) => b.totalScore - a.totalScore);
 
-      // At very low speeds with acceleration, use gear 1
-      // Otherwise use gear 2 if available
-      if (accelerationMps2 > 0.3 && lowGears.some((g) => g.gearNumber === 1)) {
-        selectedGear = lowGears.find((g) => g.gearNumber === 1) || lowGears[0];
-        reason = "Very low speed - first gear";
-      } else {
-        // Prefer gear 2 for smoother driving
-        selectedGear = lowGears.find((g) => g.gearNumber === 2) || lowGears[0];
-        reason = "Very low speed - second gear";
-      }
+  const bestGear = scoredGears[0];
 
+  if (currentGear === undefined || currentGear < 1) {
+    const rpm = calculateRpm(
+      speedKmh,
+      bestGear.gearIndex,
+      vehicle.transmission,
+      aspiration,
+    );
+    return {
+      gear: bestGear.gearNumber,
+      rpm,
+      confidence: Math.min(0.9, 0.5 + bestGear.totalScore * 0.4),
+      engineLoad: bestGear.engineLoad.engineLoadPercent,
+      reason: bestGear.reason,
+    };
+  }
+
+  const currentGearResult = scoredGears.find(
+    (g) => g.gearNumber === currentGear,
+  );
+
+  if (!currentGearResult) {
+    const rpm = calculateRpm(
+      speedKmh,
+      bestGear.gearIndex,
+      vehicle.transmission,
+      aspiration,
+    );
+    return {
+      gear: bestGear.gearNumber,
+      rpm,
+      confidence: Math.min(0.85, 0.5 + bestGear.totalScore * 0.35),
+      engineLoad: bestGear.engineLoad.engineLoadPercent,
+      reason: bestGear.reason,
+    };
+  }
+
+  const gearDiff = bestGear.gearNumber - currentGear;
+
+  if (gearDiff === 0) {
+    const rpm = calculateRpm(
+      speedKmh,
+      bestGear.gearIndex,
+      vehicle.transmission,
+      aspiration,
+    );
+    return {
+      gear: currentGear,
+      rpm,
+      confidence: Math.min(0.9, 0.6 + bestGear.totalScore * 0.3),
+      engineLoad: bestGear.engineLoad.engineLoadPercent,
+      reason: bestGear.reason,
+    };
+  }
+
+  if (gearDiff > 0) {
+    const currentScore = currentGearResult.totalScore;
+    const upshiftRequired = bestGear.totalScore > currentScore * (1 + HYSTERESIS_CONFIG.upshiftMargin);
+    if (!upshiftRequired && speedKmh > HYSTERESIS_CONFIG.lowSpeedBypassKmh) {
+      const rpm = calculateRpm(
+        speedKmh,
+        currentGearResult.gearIndex,
+        vehicle.transmission,
+        aspiration,
+      );
       return {
-        gear: selectedGear.gearNumber,
-        rpm: selectedGear.currentRpm,
-        confidence: 0.9,
-        engineLoad: selectedGear.engineLoadPercent,
-        reason,
+        gear: currentGear,
+        rpm,
+        confidence: Math.min(0.85, 0.5 + currentScore * 0.35),
+        engineLoad: currentGearResult.engineLoad.engineLoadPercent,
+        reason: `Hysteresis: holding gear ${currentGear}`,
       };
     }
   }
 
-  // RULE 3: Different logic based on driving scenario
-  let selectedGear: (typeof validGears)[0];
-  let reason: string;
+  if (gearDiff < 0) {
+    const currentScore = currentGearResult.totalScore;
+    const bestScore = bestGear.totalScore;
+    const downshiftRequired =
+      currentScore < bestScore * (1 - HYSTERESIS_CONFIG.downshiftMargin);
+    if (
+      !downshiftRequired &&
+      speedKmh > HYSTERESIS_CONFIG.lowSpeedBypassKmh &&
+      accelerationMps2 < HYSTERESIS_CONFIG.kickdownAccelThreshold
+    ) {
+      const rpm = calculateRpm(
+        speedKmh,
+        currentGearResult.gearIndex,
+        vehicle.transmission,
+        aspiration,
+      );
+      return {
+        gear: currentGear,
+        rpm,
+        confidence: Math.min(0.85, 0.5 + currentScore * 0.35),
+        engineLoad: currentGearResult.engineLoad.engineLoadPercent,
+        reason: `Hysteresis: holding gear ${currentGear}`,
+      };
+    }
+  }
 
-  if (isHardAcceleration) {
-    // Hard acceleration: Need power! Pick gear with load 70-85%
-    const powerGears = validGears.filter(
-      (g) => g.engineLoadPercent >= 60 && g.engineLoadPercent <= 90,
+  const step = gearDiff > 0 ? 1 : -1;
+  const intermediateGearNum = currentGear + step;
+
+  if (Math.abs(gearDiff) <= 1 || accelerationMps2 > HYSTERESIS_CONFIG.kickdownAccelThreshold || speedKmh < HYSTERESIS_CONFIG.lowSpeedBypassKmh) {
+    const rpm = calculateRpm(
+      speedKmh,
+      bestGear.gearIndex,
+      vehicle.transmission,
+      aspiration,
     );
-    if (powerGears.length > 0) {
-      // Among power gears, pick the highest one (better efficiency)
-      selectedGear = powerGears.reduce((prev, curr) =>
-        curr.gearNumber > prev.gearNumber ? curr : prev,
-      );
-      reason = "Power mode - high acceleration";
-    } else {
-      // No gear gives ideal load, pick lowest gear (most torque)
-      selectedGear = validGears.reduce((prev, curr) =>
-        curr.gearNumber < prev.gearNumber ? curr : prev,
-      );
-      reason = "Power mode - maximum torque";
-    }
-  } else if (isSteepUphill) {
-    // Steep uphill: Need torque! Pick gear with load 65-90%
-    const climbGears = validGears.filter(
-      (g) => g.engineLoadPercent >= 65 && g.engineLoadPercent <= 95,
+    return {
+      gear: bestGear.gearNumber,
+      rpm,
+      confidence: Math.min(0.9, 0.5 + bestGear.totalScore * 0.4),
+      engineLoad: bestGear.engineLoad.engineLoadPercent,
+      reason: gearDiff < 0 ? `Downshift: ${bestGear.reason}` : `Upshift: ${bestGear.reason}`,
+    };
+  }
+
+  const intermediateResult = scoredGears.find(
+    (g) => g.gearNumber === intermediateGearNum,
+  );
+
+  if (intermediateResult && intermediateResult.isViable) {
+    const rpm = calculateRpm(
+      speedKmh,
+      intermediateResult.gearIndex,
+      vehicle.transmission,
+      aspiration,
     );
-    if (climbGears.length > 0) {
-      selectedGear = climbGears.reduce((prev, curr) =>
-        curr.gearNumber > prev.gearNumber ? curr : prev,
-      );
-      reason = "Uphill - steep gradient";
-    } else {
-      selectedGear = validGears.reduce((prev, curr) =>
-        curr.gearNumber < prev.gearNumber ? curr : prev,
-      );
-      reason = "Uphill - maximum torque needed";
-    }
-  } else if (isAccelerating || isUphill) {
-    // Moderate acceleration or mild uphill: Pick gear with load 50-80%
-    const moderateGears = validGears.filter(
-      (g) => g.engineLoadPercent >= 50 && g.engineLoadPercent <= 85,
-    );
-    if (moderateGears.length > 0) {
-      selectedGear = moderateGears.reduce((prev, curr) =>
-        curr.gearNumber > prev.gearNumber ? curr : prev,
-      );
-      reason = isUphill ? "Uphill - moderate gradient" : "Accelerating";
-    } else {
-      // If load is too low in all gears, pick a lower gear
-      selectedGear = validGears.reduce((prev, curr) =>
-        curr.engineLoadPercent > prev.engineLoadPercent ? curr : prev,
-      );
-      reason = isUphill
-        ? "Uphill - increasing load"
-        : "Accelerating - increasing load";
-    }
-  } else {
-    // CRUISING (flat or downhill): Pick the HIGHEST gear that doesn't lug and load < 90%
-    // This is the key fix - we want efficiency!
-
-    // First, filter gears that are definitely good for cruising
-    const cruiseGears = validGears.filter((g) => g.engineLoadPercent < 90);
-
-    if (cruiseGears.length > 0) {
-      // Pick the highest gear number (most efficient)
-      selectedGear = cruiseGears.reduce((prev, curr) =>
-        curr.gearNumber > prev.gearNumber ? curr : prev,
-      );
-
-      if (selectedGear.engineLoadPercent < 30) {
-        reason = "Cruising - very light load";
-      } else if (selectedGear.engineLoadPercent > 70) {
-        reason = "Cruising - moderate load";
-      } else {
-        reason = "Cruising - optimal efficiency";
-      }
-    } else {
-      // All gears have high load (>90%), need to downshift
-      selectedGear = validGears.reduce((prev, curr) =>
-        curr.gearNumber < prev.gearNumber ? curr : prev,
-      );
-      reason = "High load - downshift recommended";
-    }
+    return {
+      gear: intermediateGearNum,
+      rpm,
+      confidence: Math.min(0.85, 0.5 + intermediateResult.totalScore * 0.35),
+      engineLoad: intermediateResult.engineLoad.engineLoadPercent,
+      reason: `Transition ${currentGear}→${intermediateGearNum}`,
+    };
   }
 
-  // RULE 3: Fast reaction for uphill slopes (>5%)
-  // When climbing, downshift immediately if load is too high
-  if (slopePercent > 5 && currentGear && currentGear > 1) {
-    const currentGearData = allGears.find((g) => g.gearNumber === currentGear);
-    if (currentGearData && currentGearData.engineLoadPercent > 75) {
-      // Reduz imediatamente sem histerese para subidas
-      const lowerGearNum = currentGear - 1;
-      const lowerGear = allGears.find((g) => g.gearNumber === lowerGearNum);
-      if (
-        lowerGear &&
-        !lowerGear.isLugging &&
-        lowerGear.engineLoadPercent < 95
-      ) {
-        return {
-          gear: lowerGear.gearNumber,
-          rpm: lowerGear.currentRpm,
-          confidence: 0.9,
-          engineLoad: lowerGear.engineLoadPercent,
-          reason: "Redução rápida - subida detectada",
-        };
-      }
-    }
-  }
-
-  // RULE 4: Reação rápida para aceleração forte
-  // Para aceleração > 2.0 m/s², permite redução direta sem restrição de 1 marcha
-  if (isHardAcceleration && currentGear && currentGear > 1) {
-    const currentGearData = allGears.find((g) => g.gearNumber === currentGear);
-    if (currentGearData && currentGearData.engineLoadPercent > 70) {
-      // Encontra a melhor marcha para aceleração (mais torque possível)
-      const powerGears = validGears.filter(
-        (g) =>
-          g.engineLoadPercent >= 50 &&
-          g.engineLoadPercent <= 95 &&
-          !g.isLugging,
-      );
-
-      if (powerGears.length > 0) {
-        // Para aceleração forte, escolhe marcha mais baixa possível (mais torque)
-        const bestPowerGear = powerGears.reduce((prev, curr) =>
-          curr.gearNumber < prev.gearNumber ? curr : prev,
-        );
-
-        // Só reduz se for significativamente melhor (pelo menos 2 marchas abaixo ou carga muito menor)
-        const shouldDownshift =
-          currentGear - bestPowerGear.gearNumber >= 2 ||
-          (currentGearData.engineLoadPercent > 100 &&
-            bestPowerGear.engineLoadPercent < 90);
-
-        if (shouldDownshift) {
-          return {
-            gear: bestPowerGear.gearNumber,
-            rpm: bestPowerGear.currentRpm,
-            confidence: 0.9,
-            engineLoad: bestPowerGear.engineLoadPercent,
-            reason: "Redução aceleração - máxima potência",
-          };
-        }
-      }
-    }
-  }
-
-  // RULE 5: Golden Rule - Always shift 1 gear at a time (exceto aceleração forte ou cruzeiro distante)
-  // Never skip gears (e.g., 1→3 or 4→2). Always 1→2→3→4→5 or reverse.
-  // NOTA: Esta regra NÃO se aplica quando:
-  //  - isHardAcceleration = true (aceleração forte precisa de potência imediata)
-  //  - Cruzeiro com mudança > 2 marchas e velocidade > 40 km/h (mudança significativa de velocidade)
-  const isSignificantCruiseChange =
-    !isHardAcceleration &&
-    !isAccelerating &&
-    !isUphill &&
-    speedKmh > 40 &&
-    currentGear !== undefined;
-
-  const skipGoldenRule = isHardAcceleration || isSignificantCruiseChange;
-
-  if (!skipGoldenRule && currentGear !== undefined && currentGear >= 1) {
-    const gearDiff = Math.abs(selectedGear.gearNumber - currentGear);
-
-    if (gearDiff > 1) {
-      // Calculate intermediate gear (always move 1 step)
-      const step = selectedGear.gearNumber > currentGear ? 1 : -1;
-      const intermediateGearNum = currentGear + step;
-      const intermediateGear = allGears.find(
-        (g) => g.gearNumber === intermediateGearNum,
-      );
-
-      // Check if intermediate gear is valid
-      if (
-        intermediateGear &&
-        !intermediateGear.isLugging &&
-        !intermediateGear.isOverRev &&
-        intermediateGear.engineLoadPercent < 95
-      ) {
-        selectedGear = intermediateGear;
-        reason = `Transição ${currentGear}→${intermediateGearNum}`;
-      } else {
-        // Intermediate gear not valid, stay in current gear
-        const currentGearData = allGears.find(
-          (g) => g.gearNumber === currentGear,
-        );
-        if (
-          currentGearData &&
-          !currentGearData.isLugging &&
-          !currentGearData.isOverRev
-        ) {
-          selectedGear = currentGearData;
-          reason = "Aguardando condições";
-        }
-        // If current gear is also invalid, use the best valid gear we found earlier
-      }
-    }
-  }
-
+  const rpm = calculateRpm(
+    speedKmh,
+    bestGear.gearIndex,
+    vehicle.transmission,
+    aspiration,
+  );
   return {
-    gear: selectedGear.gearNumber,
-    rpm: selectedGear.currentRpm,
-    confidence: 0.85,
-    engineLoad: selectedGear.engineLoadPercent,
-    reason,
+    gear: bestGear.gearNumber,
+    rpm,
+    confidence: Math.min(0.85, 0.5 + bestGear.totalScore * 0.35),
+    engineLoad: bestGear.engineLoad.engineLoadPercent,
+    reason: bestGear.reason,
   };
 }
 

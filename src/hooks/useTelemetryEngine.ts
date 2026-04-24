@@ -11,6 +11,7 @@ import {
   type TelemetryResult,
   resetGearEstimator,
 } from "@/lib/telemetry-engine";
+import { debugLog } from "@/lib/debug";
 
 interface SpeedReading {
   speed: number;
@@ -55,6 +56,7 @@ const MIN_SPEED_CITY = 40 / 3.6;
 const MAX_SPEED_HIGHWAY = 60 / 3.6;
 const WARM_UP_DURATION_MS = 90000;
 const MIN_KMPL_FOR_CALC = 0.1;
+const MAX_KMPL_FOR_CALC = 80;
 
 const DEFAULT_CITY = 10;
 const DEFAULT_HIGHWAY = 14;
@@ -62,10 +64,11 @@ const DEFAULT_FUEL_TYPE = "gasolina" as FuelType;
 
 function mapVehicleFuelType(vehicle: Vehicle | null | undefined): FuelType {
   if (!vehicle) return DEFAULT_FUEL_TYPE;
-  if (vehicle.fuelType === "diesel") return "gasolina";
-  if (vehicle.fuelType === "ethanol") return "etanol";
+  if (vehicle.fuelType === "gnv") return "gnv";
   if (vehicle.fuelType === "flex") return "flex";
-  return "gasolina";
+  if (vehicle.fuelType === "etanol") return "etanol";
+  if (vehicle.fuelType === "diesel") return "gasolina";
+  return vehicle.fuelType as FuelType;
 }
 
 export function useTelemetryEngine(
@@ -91,6 +94,7 @@ export function useTelemetryEngine(
   const batterySocRef = useRef<number>(100);
   const [batterySocPct, setBatterySocPct] = useState(100);
   const [warmUpElapsedMs, setWarmUpElapsedMs] = useState(0);
+  const stopEventsRef = useRef<number[]>([]);
 
   const samplesRef = useRef<ConsumptionSample[]>([]);
   const totalFuelUsedRef = useRef<number>(0);
@@ -100,7 +104,7 @@ export function useTelemetryEngine(
   const lastSampleTimestampRef = useRef<number>(0);
   const slopeReadingsRef = useRef<number[]>([]);
   const accelReadingsRef = useRef<number[]>([]);
-  const massPenaltyReadingsRef = useRef<number[]>([]);
+  const powerReadingsRef = useRef<number[]>([]);
   const [currentGear, setCurrentGear] = useState<number | undefined>();
   const [currentRpm, setCurrentRpm] = useState<number | undefined>();
   const [currentEngineLoad, setCurrentEngineLoad] = useState<
@@ -143,20 +147,17 @@ export function useTelemetryEngine(
 
   useEffect(() => {
     if (v?.transmission) {
-      console.log(
-        "[Telemetry] ✅ Vehicle has transmission data:",
-        JSON.stringify({
-          type: v.transmission.type,
-          gearRatios: v.transmission.gearRatios,
-          finalDrive: v.transmission.finalDrive,
-          hasTorqueCurve: !!v.transmission.torqueCurve,
-          torqueCurveKeys: v.transmission.torqueCurve
-            ? Object.keys(v.transmission.torqueCurve).length
-            : 0,
-        }),
-      );
+      debugLog("[Telemetry] Vehicle has transmission data:", {
+        type: v.transmission.type,
+        gearRatios: v.transmission.gearRatios,
+        finalDrive: v.transmission.finalDrive,
+        hasTorqueCurve: !!v.transmission.torqueCurve,
+        torqueCurveKeys: v.transmission.torqueCurve
+          ? Object.keys(v.transmission.torqueCurve).length
+          : 0,
+      });
     } else {
-      console.log("[Telemetry] ⚠️ No transmission data on vehicle");
+      debugLog("[Telemetry] No transmission data on vehicle");
     }
   }, [v]);
 
@@ -231,6 +232,14 @@ export function useTelemetryEngine(
         }
       }
       lastAccelRef.current = accel;
+
+      const lastSpeedKmh = (lastSpeedRef.current || 0) * 3.6;
+      if (lastSpeedKmh > 5 && speedKmh < 1) {
+        stopEventsRef.current.push(now);
+        if (stopEventsRef.current.length > 10) {
+          stopEventsRef.current = stopEventsRef.current.slice(-10);
+        }
+      }
       lastSpeedRef.current = position.speed;
 
       calculateMetrics();
@@ -240,7 +249,7 @@ export function useTelemetryEngine(
         return;
       }
 
-      console.log(
+      debugLog(
         "[TELEMETRY] gradePercent:",
         gradePercent,
         "speed:",
@@ -248,6 +257,15 @@ export function useTelemetryEngine(
         "accel:",
         accel.toFixed(2),
       );
+
+      const secondsSinceEngineStart = tripStartTimeRef.current > 0
+        ? (now - tripStartTimeRef.current) / 1000
+        : undefined;
+
+      const recentStops = stopEventsRef.current.filter(
+        (t) => now - t < 120000,
+      ).length;
+      const stopAndGoPenalty = recentStops >= 3 ? 1.0 + (recentStops - 2) * 0.05 : 1.0;
 
       const result: TelemetryResult = simulate(vehicle, {
         speed: speedKmh,
@@ -258,6 +276,10 @@ export function useTelemetryEngine(
         cargoKg,
         fuelType,
         batterySocPct: batterySocRef.current,
+        altitudeM: position.altitude,
+        temperatureC: 25,
+        secondsSinceEngineStart,
+        stopAndGoPenalty,
       });
 
       batterySocRef.current = result.updatedBatterySocPct;
@@ -271,7 +293,7 @@ export function useTelemetryEngine(
       setDrivingStyle(result.drivingStyle);
 
       if (result.hasTransmissionData) {
-        console.log(
+        debugLog(
           `[Telemetry] Gear/RPM calculated: gear=${result.gear}, rpm=${result.rpm}, hasData=${result.hasTransmissionData}`,
         );
       }
@@ -298,10 +320,9 @@ export function useTelemetryEngine(
         accelReadingsRef.current = accelReadingsRef.current.slice(-300);
       }
 
-      massPenaltyReadingsRef.current.push(result.factors.massPenalty);
-      if (massPenaltyReadingsRef.current.length > 300) {
-        massPenaltyReadingsRef.current =
-          massPenaltyReadingsRef.current.slice(-300);
+      powerReadingsRef.current.push(result.factors.totalPowerKw);
+      if (powerReadingsRef.current.length > 300) {
+        powerReadingsRef.current = powerReadingsRef.current.slice(-300);
       }
 
       const durationMs =
@@ -322,7 +343,11 @@ export function useTelemetryEngine(
         segmentDistanceKm = 6371 * c;
       }
 
-      if (segmentDistanceKm > 0.001 && result.kmpl > MIN_KMPL_FOR_CALC) {
+      if (
+        segmentDistanceKm > 0.001 &&
+        result.kmpl > MIN_KMPL_FOR_CALC &&
+        result.kmpl < MAX_KMPL_FOR_CALC
+      ) {
         const fuelUsed = segmentDistanceKm / result.kmpl;
         totalFuelUsedRef.current += fuelUsed;
         totalDistanceRef.current += segmentDistanceKm;
@@ -347,7 +372,9 @@ export function useTelemetryEngine(
         timestamp: now,
         distanceKm: segmentDistanceKm,
         fuelUsed:
-          segmentDistanceKm > 0.001 && result.kmpl > MIN_KMPL_FOR_CALC
+          segmentDistanceKm > 0.001 &&
+          result.kmpl > MIN_KMPL_FOR_CALC &&
+          result.kmpl < MAX_KMPL_FOR_CALC
             ? segmentDistanceKm / result.kmpl
             : 0,
       });
@@ -408,7 +435,7 @@ export function useTelemetryEngine(
     lastSampleTimestampRef.current = 0;
     slopeReadingsRef.current = [];
     accelReadingsRef.current = [];
-    massPenaltyReadingsRef.current = [];
+    powerReadingsRef.current = [];
     gearDistributionRef.current = {};
     rpmReadingsRef.current = [];
     speedDistributionRef.current = { city: 0, mixed: 0, highway: 0 };
@@ -469,11 +496,11 @@ export function useTelemetryEngine(
       accelReadingsRef.current.length > 0
         ? Math.max(...accelReadingsRef.current.map(Math.abs))
         : 0;
-    const avgMassPenalty =
-      massPenaltyReadingsRef.current.length > 0
-        ? massPenaltyReadingsRef.current.reduce((a, b) => a + b, 0) /
-          massPenaltyReadingsRef.current.length
-        : 1.0;
+    const avgPowerKw =
+      powerReadingsRef.current.length > 0
+        ? powerReadingsRef.current.reduce((a: number, b: number) => a + b, 0) /
+          powerReadingsRef.current.length
+        : 0;
 
     const totalTripTimeMs =
       Date.now() - (tripStartTimeRef.current || Date.now());
@@ -507,7 +534,7 @@ export function useTelemetryEngine(
       avgSlope,
       maxSlope,
       acUsagePct,
-      massPenaltyAvg: avgMassPenalty,
+      massPenaltyAvg: avgPowerKw,
       idleTimeSeconds: 0,
       avgAcceleration: avgAccel,
       maxAcceleration: maxAccel,
@@ -563,6 +590,10 @@ export function useTelemetryEngine(
         (rawEstimatedRange - conservativeFallbackRange) * warmUpFactor;
 
   const estimatedConsumption = currentConsumption;
+
+  debugLog(
+    `[TELEMETRY] Range calc: currentFuel=${currentFuel.toFixed(2)}L, litersRemaining=${litersRemaining.toFixed(2)}L, currentConsumption=${currentConsumption.toFixed(2)}km/L, estimatedRange=${estimatedRange.toFixed(2)}km`,
+  );
 
   return {
     driveMode,

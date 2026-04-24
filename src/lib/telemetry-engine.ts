@@ -8,6 +8,7 @@ import {
 import {
   selectOptimalGear,
   calculateEngineLoad,
+  HYSTERESIS_CONFIG,
 } from "./transmission-calculator";
 
 export interface TelemetryInput {
@@ -19,6 +20,12 @@ export interface TelemetryInput {
   cargoKg: number;
   fuelType: FuelType;
   batterySocPct: number;
+  altitudeM?: number;
+  temperatureC?: number;
+  secondsSinceEngineStart?: number;
+  windSpeedMs?: number;
+  windDirectionDeg?: number;
+  stopAndGoPenalty?: number;
 }
 
 export interface TelemetryResult {
@@ -26,80 +33,173 @@ export interface TelemetryResult {
   lphOrM3ph: number;
   updatedBatterySocPct: number;
   isHybridEvMode: boolean;
-  factors: TelemetryFactors;
+  factors: PhysicsFactors;
   gear?: number;
   rpm?: number;
-  engineLoad?: number; // Engine load percentage (0-100%)
+  engineLoad?: number;
   confidence: number;
   hasTransmissionData: boolean;
   drivingStyle?: "eco" | "normal" | "sport";
 }
 
-export interface TelemetryFactors {
-  baseKmpl: number;
-  massPenalty: number;
-  speedFactor: number;
-  dynamicFactor: number;
-  acFactor: number;
-  hybridImprovement: number;
+export interface PhysicsFactors {
+  rollingResistanceKw: number;
+  aerodynamicDragKw: number;
+  slopeKw: number;
+  accelerationKw: number;
+  acPowerKw: number;
+  totalPowerKw: number;
   fuelCutActive: boolean;
+  hybridFactor: number;
+  bsfcEffective: number;
+  altitudeFactor: number;
+  coldStartFactor: number;
 }
 
-const WORLD = {
-  AIR_DENSITY: 1.225,
+const PHYSICS = {
+  AIR_DENSITY_SEA_LEVEL: 1.225,
   G: 9.81,
   FUEL_E27_DENSITY: 0.75,
   FUEL_E100_DENSITY: 0.79,
   GNV_DENSITY: 0.717,
+  MIN_KMPL: 3.0,
+  MIN_KMPL_IGNORE: 100,
+  DEFAULT_TRANSMISSION_EFFICIENCY: 0.90,
+  PARASITIC_POWER_KW: 0.4,
+  DEFAULT_ALTITUDE_M: 0,
+  DEFAULT_TEMPERATURE_C: 25,
 } as const;
 
-const CITY_SPEED_THRESHOLD = 60;
-const MIN_KMPL = 3.0;
+function getTransmissionEfficiency(
+  transmission: TransmissionData | undefined,
+): number {
+  if (!transmission) return 0.90;
+  switch (transmission.type) {
+    case "Manual":
+      return 0.93;
+    case "Automatic":
+      return 0.88;
+    case "CVT":
+      return 0.86;
+    default:
+      return 0.90;
+  }
+}
 
-function getCalibratedBase(
-  vehicle: Vehicle,
-  isCity: boolean,
+function calculateAirDensity(altitudeM: number, temperatureC: number): number {
+  const T = temperatureC + 273.15;
+  const L = 0.0065;
+  const T0 = 288.15;
+  const p0 = 101325;
+  const g = 9.80665;
+  const M = 0.0289652;
+  const R = 8.31446;
+  const p = p0 * Math.pow(1 - (L * altitudeM) / T0, (g * M) / (R * L));
+  return (p * M) / (R * T);
+}
+
+function getAltitudePowerLoss(
+  altitudeM: number,
+  techEra: TechEra,
   fuelType: FuelType,
 ): number {
-  const wInmetro = vehicle.weightInmetro ?? 0.6;
-  const wUser = vehicle.weightUser ?? 0.4;
+  const isTurbo =
+    (fuelType === "gasolina" || fuelType === "flex" || fuelType === "diesel") &&
+    (techEra === "injection_modern" || techEra === "direct_injection");
 
-  if (fuelType === "gnv") {
-    const inmetroCity = vehicle.inmetroGnvCityKmpl ?? vehicle.inmetroCityKmpl;
-    const inmetroHighway =
-      vehicle.inmetroGnvHighwayKmpl ?? vehicle.inmetroHighwayKmpl;
-    const userCity = vehicle.userAvgGnvCityKmpl ?? vehicle.userAvgCityKmpl;
-    const userHighway =
-      vehicle.userAvgGnvHighwayKmpl ?? vehicle.userAvgHighwayKmpl;
-
-    if (isCity) {
-      return inmetroCity * wInmetro + userCity * wUser;
-    }
-    return inmetroHighway * wInmetro + userHighway * wUser;
+  if (isTurbo || fuelType === "diesel") {
+    return 1.0;
   }
 
-  if (fuelType === "etanol") {
-    const inmetroCity =
-      vehicle.inmetroEthanolCityKmpl ?? vehicle.inmetroCityKmpl;
-    const inmetroHighway =
-      vehicle.inmetroEthanolHighwayKmpl ?? vehicle.inmetroHighwayKmpl;
-    const userCity = vehicle.userAvgEthanolCityKmpl ?? vehicle.userAvgCityKmpl;
-    const userHighway =
-      vehicle.userAvgEthanolHighwayKmpl ?? vehicle.userAvgHighwayKmpl;
-
-    if (isCity) {
-      return inmetroCity * wInmetro + userCity * wUser;
-    }
-    return inmetroHighway * wInmetro + userHighway * wUser;
-  }
-
-  if (isCity) {
-    return vehicle.inmetroCityKmpl * wInmetro + vehicle.userAvgCityKmpl * wUser;
-  }
-  return (
-    vehicle.inmetroHighwayKmpl * wInmetro + vehicle.userAvgHighwayKmpl * wUser
-  );
+  const altitudeKm = altitudeM / 1000;
+  return Math.max(0.7, 1 - 0.01 * altitudeKm);
 }
+
+function getColdStartEnrichment(
+  secondsSinceEngineStart: number | undefined,
+  displacement: number,
+): number {
+  if (secondsSinceEngineStart === undefined || secondsSinceEngineStart <= 0) {
+    return 1.0;
+  }
+
+  const warmUpDurationMs =
+    displacement <= 1200 ? 180000 :
+    displacement <= 1800 ? 240000 :
+    300000;
+  const warmUpProgress = Math.min(secondsSinceEngineStart / warmUpDurationMs, 1);
+  return 1.0 + (0.3 * (1 - warmUpProgress));
+}
+
+function calculateEffectiveSpeedForAero(
+  speedMs: number,
+  windSpeedMs: number,
+  windDirectionDeg: number,
+  headingDeg: number,
+): number {
+  if (windSpeedMs <= 0) {
+    return speedMs;
+  }
+
+  const windAngleRad = ((windDirectionDeg - headingDeg) * Math.PI) / 180;
+  const headwindComponent = windSpeedMs * Math.cos(windAngleRad);
+  return speedMs + headwindComponent;
+}
+
+function getEngineEfficiency(loadPercent: number, isDiesel: boolean): number {
+  const baseEfficiency = isDiesel ? 0.38 : 0.32;
+  const load = Math.max(0.05, Math.min(1.0, loadPercent / 100));
+
+  if (load < 0.15) {
+    return baseEfficiency * (0.5 + load * 3.33);
+  } else if (load < 0.75) {
+    return baseEfficiency;
+  } else {
+    return baseEfficiency * (1 - (load - 0.75) * 0.15);
+  }
+}
+
+const BSFC_BY_ERA: Record<TechEra, Record<string, number>> = {
+  carburetor: {
+    gasolina: 310,
+    etanol: 380,
+    flex: 310,
+    diesel: 245,
+    gnv: 300,
+  },
+  injection_early: {
+    gasolina: 280,
+    etanol: 350,
+    flex: 280,
+    diesel: 230,
+    gnv: 275,
+  },
+  injection_modern: {
+    gasolina: 250,
+    etanol: 320,
+    flex: 250,
+    diesel: 215,
+    gnv: 245,
+  },
+  direct_injection: {
+    gasolina: 230,
+    etanol: 295,
+    flex: 230,
+    diesel: 200,
+    gnv: 225,
+  },
+};
+
+const IDLE_LPH_DEFAULTS: Record<TechEra, number> = {
+  carburetor: 1.0,
+  injection_early: 0.9,
+  injection_modern: 0.8,
+  direct_injection: 0.7,
+};
+
+const AC_POWER_KW_SMALL = 2.5;
+const AC_POWER_KW_LARGE = 3.5;
+const AC_POWER_THRESHOLD_KW = 80;
 
 interface EstimationResult {
   gear: number;
@@ -108,12 +208,19 @@ interface EstimationResult {
   drivingStyle: DrivingStyle;
 }
 
+interface GearHysteresisState {
+  currentGear: number;
+  lastShiftTimestamp: number;
+  shiftCount: number;
+}
+
 class GearRpmEstimator {
-  private previousGear: number = 2;
   private styleState: DrivingStyleState;
+  private hysteresis: GearHysteresisState;
 
   constructor() {
     this.styleState = createDrivingStyleState();
+    this.hysteresis = { currentGear: 0, lastShiftTimestamp: 0, shiftCount: 0 };
   }
 
   estimate(
@@ -123,8 +230,6 @@ class GearRpmEstimator {
     transmission: TransmissionData,
     mass: number = 1000,
   ): EstimationResult {
-    // Use the new selectOptimalGear function that considers engine load and slope
-    // We need to create a minimal Vehicle object for the function
     const minimalVehicle: Vehicle = {
       id: "temp",
       name: "temp",
@@ -142,10 +247,6 @@ class GearRpmEstimator {
       grossWeight: mass + 400,
       frontalArea: 2.2,
       dragCoefficient: 0.3,
-      f0: 0.15,
-      f1: 0.008,
-      f2: 0.00035,
-      fuelConversionFactor: 8.5,
       peakPowerKw: 80,
       peakTorqueNm: 150,
       confidence: "high",
@@ -155,33 +256,49 @@ class GearRpmEstimator {
       fuelCapacity: 50,
       currentFuel: 30,
       dataSource: "manual",
-      inmetroCityKmpl: 10,
-      inmetroHighwayKmpl: 14,
-      userAvgCityKmpl: 9,
-      userAvgHighwayKmpl: 13,
-      weightInmetro: 0.6,
-      weightUser: 0.4,
-      isHybrid: false,
-      gnvCylinderWeightKg: 80,
-      gnvEfficiencyFactor: 1.32,
       crr: 0.013,
       idleLph: 0.8,
       baseBsfc: 250,
+      isHybrid: false,
+      gnvCylinderWeightKg: 80,
+      gnvEfficiencyFactor: 1.32,
       transmission,
     };
 
+    const now = Date.now();
     const result = selectOptimalGear(
       minimalVehicle,
       speedKmh,
       observedAccel,
       slope,
-      this.previousGear,
+      this.hysteresis.currentGear || undefined,
     );
 
-    this.previousGear = result.gear - 1;
+    const proposedGear = result.gear;
+    const timeSinceShift = now - this.hysteresis.lastShiftTimestamp;
+    const isKickdown = observedAccel > HYSTERESIS_CONFIG.kickdownAccelThreshold;
+    const isLowSpeed = speedKmh < HYSTERESIS_CONFIG.lowSpeedBypassKmh;
+    const canShift =
+      timeSinceShift >= HYSTERESIS_CONFIG.minDwellMs ||
+      this.hysteresis.shiftCount === 0 ||
+      isKickdown ||
+      isLowSpeed;
+
+    let finalGear: number;
+    if (canShift && proposedGear !== this.hysteresis.currentGear) {
+      finalGear = proposedGear;
+      this.hysteresis.currentGear = proposedGear;
+      this.hysteresis.lastShiftTimestamp = now;
+      this.hysteresis.shiftCount++;
+    } else if (!canShift) {
+      finalGear = this.hysteresis.currentGear || proposedGear;
+    } else {
+      finalGear = proposedGear;
+      this.hysteresis.currentGear = proposedGear;
+    }
 
     return {
-      gear: result.gear,
+      gear: finalGear,
       rpm: result.rpm,
       confidence: result.confidence,
       drivingStyle: this.styleState.currentStyle,
@@ -190,7 +307,6 @@ class GearRpmEstimator {
 
   resetForNewTrip(): void {
     this.styleState = resetDrivingStyleForTrip(this.styleState);
-    this.previousGear = 2;
   }
 
   getDrivingStyle(): DrivingStyle {
@@ -224,30 +340,41 @@ function getTorqueAtRpm(
   return torqueCurve[rpms[0]];
 }
 
-/**
- * Calculate BSFC load factor based on real engine data
- * Based on Heywood (1988) and SAE papers - BSFC varies with engine load
- * Optimal load is around 80%, efficiency drops at very low and very high loads
- */
 function getLoadFactor(engineLoadPercent: number): number {
-  // Clamp load between 0 and 100
-  const load = Math.max(0, Math.min(100, engineLoadPercent)) / 100;
-  const optimalLoad = 0.8; // 80% load is optimal for most engines
+  const load = Math.max(0.01, Math.min(1.0, engineLoadPercent / 100));
 
-  // Base formula: 1 + 0.35 * (1 - load/0.8)^2
-  // This gives:
-  // - 20% load: ~1.50x (50% higher consumption)
-  // - 50% load: ~1.20x (20% higher consumption)
-  // - 80% load: 1.00x (baseline - optimal)
-  // - 100% load: ~1.05x (5% higher due to enrichment)
-  let loadFactor = 1 + 0.35 * Math.pow(1 - load / optimalLoad, 2);
-
-  // Additional penalty for very high loads (>90%) due to fuel enrichment
-  if (engineLoadPercent > 90) {
-    loadFactor *= 1 + (engineLoadPercent - 90) * 0.008; // +0.8% per % above 90
+  if (load <= 0.05) {
+    return 2.8;
+  } else if (load < 0.15) {
+    return 1 + 1.8 * Math.pow((0.15 - load) / 0.1, 1.2);
+  } else if (load < 0.75) {
+    return 1 + 0.25 * Math.pow((0.75 - load) / 0.6, 1.5);
+  } else {
+    return 1 + 0.1 * Math.pow((load - 0.75) / 0.25, 2);
   }
+}
 
-  return loadFactor;
+function getFuelDensity(fuelType: FuelType): number {
+  switch (fuelType) {
+    case "etanol":
+      return PHYSICS.FUEL_E100_DENSITY;
+    case "gnv":
+      return PHYSICS.GNV_DENSITY;
+    default:
+      return PHYSICS.FUEL_E27_DENSITY;
+  }
+}
+
+function getBsfcForEra(
+  techEra: TechEra,
+  fuelType: FuelType,
+  loadPercent: number,
+  bsfcMinGPerKwh?: number,
+): number {
+  const eraBsfc = BSFC_BY_ERA[techEra] || BSFC_BY_ERA.injection_modern;
+  const baseBsfc = bsfcMinGPerKwh || eraBsfc[fuelType] || eraBsfc.flex || 245;
+  const loadFactor = getLoadFactor(loadPercent);
+  return baseBsfc * loadFactor;
 }
 
 function calculatePhysicsConsumption(
@@ -258,38 +385,79 @@ function calculatePhysicsConsumption(
   fuelType: FuelType,
   speedKmh: number,
   engineLoadPercent: number,
+  transmission: TransmissionData | undefined,
   rpmAt100Kmh?: number,
 ): number {
-  const powerKw = (torqueNm * rpm * 2 * Math.PI) / 60000;
-  if (powerKw <= 0.1) return 999;
+  const P_wheels = (torqueNm * rpm * 2 * Math.PI) / 60000;
+  if (P_wheels <= 0.1) return 999;
 
-  const bsfcMap: Record<TechEra, number> = {
-    carburetor: 280,
-    injection_early: 265,
-    injection_modern: 250,
-    direct_injection: 235,
-  };
+  const transEff = getTransmissionEfficiency(transmission);
+  const engineEff = getEngineEfficiency(
+    engineLoadPercent,
+    fuelType === "diesel",
+  );
+  const totalEff = transEff * engineEff;
 
-  const bsfcBase = bsfcMinGPerKwh || bsfcMap[techEra] || 250;
+  const P_engine = P_wheels / totalEff;
+
+  const bsfcBase = bsfcMinGPerKwh || BSFC_BY_ERA[techEra]?.[fuelType] || 245;
   const optimalRpm = rpmAt100Kmh ?? 2500;
 
-  // RPM factor: BSFC increases when far from optimal RPM
   const rpmFactor = 1 + Math.abs(rpm - optimalRpm) / (optimalRpm * 2);
-
-  // Load factor: BSFC varies with engine load (NEW - based on real data)
   const loadFactor = getLoadFactor(engineLoadPercent);
-
-  // Combined BSFC with both RPM and load effects
   const bsfc = bsfcBase * rpmFactor * loadFactor;
-  const fuelFlowGPerH = bsfc * powerKw;
+  const fuelFlowGPerH = bsfc * P_engine;
 
-  const fuelDensity =
-    fuelType === "etanol" ? WORLD.FUEL_E100_DENSITY : WORLD.FUEL_E27_DENSITY;
+  const fuelDensity = getFuelDensity(fuelType);
   const fuelFlowLPerH = fuelFlowGPerH / fuelDensity / 1000;
 
   if (fuelFlowLPerH <= 0 || speedKmh < 1) return 999;
 
   return speedKmh / fuelFlowLPerH;
+}
+
+function shouldFuelCut(
+  slope: number,
+  accel: number,
+  speedKmh: number,
+  rpm: number | undefined,
+  techEra: TechEra,
+): boolean {
+  if (techEra === "carburetor") return false;
+  if (speedKmh < 8) return false;
+
+  const rpmThreshold = techEra === "direct_injection" ? 1000 : 1200;
+  if (rpm !== undefined && rpm < rpmThreshold) return false;
+
+  if (slope <= -3) return true;
+  if (slope <= -1.5 && accel < -0.3 && speedKmh > 20) return true;
+  if (accel < -0.5 && speedKmh > 50) return true;
+
+  return false;
+}
+
+function estimateEngineLoadNoTransmission(
+  P_total: number,
+  speedKmh: number,
+  vehicle: Vehicle,
+): number {
+  const rpmAt100 =
+    vehicle.rpmAt100Kmh ??
+    vehicle.transmission?.rpmAt100Kmh ??
+    2800;
+  const estimatedRpm = Math.max(
+    800,
+    (speedKmh / 100) * rpmAt100 * (speedKmh < 30 ? 1.5 : 1.0),
+  );
+
+  const rpmPeak = vehicle.transmission?.redlineRpm
+    ? (vehicle.transmission.redlineRpm as number) * 0.65
+    : 5500;
+  const rpmRatio = estimatedRpm / rpmPeak;
+  const powerFactor = Math.max(0.1, 2 * rpmRatio - rpmRatio * rpmRatio);
+  const maxPowerAtRpm = vehicle.peakPowerKw * powerFactor;
+
+  return Math.min(100, (P_total / maxPowerAtRpm) * 100);
 }
 
 export function simulate(
@@ -305,113 +473,157 @@ export function simulate(
     cargoKg,
     fuelType,
     batterySocPct,
+    altitudeM = PHYSICS.DEFAULT_ALTITUDE_M,
+    temperatureC = PHYSICS.DEFAULT_TEMPERATURE_C,
+    secondsSinceEngineStart,
+    windSpeedMs = 0,
+    windDirectionDeg = 0,
+    stopAndGoPenalty = 1.0,
   } = input;
 
-  const isCity = speed < CITY_SPEED_THRESHOLD;
-  const baseKmpl = getCalibratedBase(vehicle, isCity, fuelType);
+  const headingDeg = 0;
+  const speedMs = speed / 3.6;
+  const effectiveSpeedMs = calculateEffectiveSpeedForAero(
+    speedMs,
+    windSpeedMs,
+    windDirectionDeg,
+    headingDeg,
+  );
+  const airDensity = calculateAirDensity(altitudeM, temperatureC);
 
   let batterySoc = batterySocPct;
   let isHybridEvMode = false;
 
-  const extraMass =
-    (passengers - 1) * 75 +
+  const totalMass =
+    vehicle.mass +
+    passengers * 75 +
     cargoKg +
     (fuelType === "gnv" ? (vehicle.gnvCylinderWeightKg ?? 80) : 0);
-  const massPenalty = 1.0 + (extraMass / vehicle.mass) * 0.4;
+  const cda = vehicle.frontalArea * vehicle.dragCoefficient;
+  const techEra: TechEra = vehicle.techEra || "injection_modern";
 
-  let speedFactor = 1.0;
-  if (isCity) {
-    // City driving: optimal speed is around 32-35 km/h
-    // Below 32 km/h: efficiency improves (higher km/l)
-    // Above 32 km/h: efficiency degrades (lower km/l)
-    // The formula creates an asymmetric curve that favors lower speeds
-    if (speed > 0) {
-      const optimalSpeed = 32.5;
-      const speedDelta = speed - optimalSpeed;
-      // If below optimal (negative delta), speedFactor < 1 (improve efficiency)
-      // If above optimal (positive delta), speedFactor > 1 (worsen efficiency)
-      if (speedDelta < 0) {
-        speedFactor = 1.0 - Math.abs(speedDelta) * 0.003; // Improvement at low speeds
-      } else {
-        speedFactor = 1.0 + speedDelta * 0.0085; // Steeper penalty above optimal
-      }
-    }
-  } else {
-    // Highway driving: efficiency improves as speed increases, but at a decreasing rate
-    // Peak efficiency around 80-90 km/h, then degrades above 100 km/h
-    // The formula accounts for increased aerodynamic drag at higher speeds
-    speedFactor = 1.0 - (speed - 85.0) * 0.008;
+  const crrAtSpeed = vehicle.crr * (1 + 0.00006 * speedMs * speedMs);
+  const P_rolling = (totalMass * PHYSICS.G * crrAtSpeed * speedMs) / 1000;
+  const P_aero = (0.5 * airDensity * cda * Math.pow(effectiveSpeedMs, 3)) / 1000;
+  const P_slope =
+    (totalMass * PHYSICS.G * Math.sin(Math.atan(slope / 100)) * speedMs) / 1000;
+  const P_accel = accel > 0 ? (totalMass * accel * speedMs) / 1000 : 0;
+  const P_ac = acOn
+    ? vehicle.peakPowerKw <= AC_POWER_THRESHOLD_KW
+      ? AC_POWER_KW_SMALL
+      : AC_POWER_KW_LARGE
+    : 0;
+  const P_parasitic = PHYSICS.PARASITIC_POWER_KW;
+  const P_total = Math.max(
+    P_rolling + P_aero + P_slope + P_accel + P_ac + P_parasitic,
+    0.5,
+  );
+  let fuelCutActive = shouldFuelCut(
+    slope,
+    accel,
+    speed,
+    vehicle.transmission?.rpmAt100Kmh,
+    techEra,
+  );
+
+  // 2. Idle consumption
+  if (speed < 1) {
+    const idleLph =
+      vehicle.idleLph ?? vehicle.idleFuelRateLph ?? IDLE_LPH_DEFAULTS[techEra];
+    const idleKmpl = idleLph > 0 ? 0.001 : 999;
+    return {
+      kmpl: idleKmpl,
+      lphOrM3ph: idleLph,
+      updatedBatterySocPct: batterySoc,
+      isHybridEvMode: false,
+      factors: {
+        rollingResistanceKw: 0,
+        aerodynamicDragKw: 0,
+        slopeKw: 0,
+        accelerationKw: 0,
+        acPowerKw: P_ac,
+        totalPowerKw: 0,
+        fuelCutActive: false,
+        hybridFactor: 1.0,
+        bsfcEffective: 0,
+        altitudeFactor: 1.0,
+        coldStartFactor: 1.0,
+      },
+      confidence: 0.95,
+      hasTransmissionData: !!vehicle.transmission,
+      drivingStyle: undefined,
+    };
   }
 
-  const dynamicFactor = 1.0 - slope * 0.025 - accel * 0.415;
-  const fuelCutActive = slope < -3 && speed > 0;
+  // 3. Fuel cut (deceleration on steep downhill)
+  if (fuelCutActive) {
+    return {
+      kmpl: 999,
+      lphOrM3ph: 0,
+      updatedBatterySocPct: batterySoc,
+      isHybridEvMode: false,
+      factors: {
+        rollingResistanceKw: Math.round(P_rolling * 100) / 100,
+        aerodynamicDragKw: Math.round(P_aero * 100) / 100,
+        slopeKw: Math.round(P_slope * 100) / 100,
+        accelerationKw: Math.round(P_accel * 100) / 100,
+        acPowerKw: P_ac,
+        totalPowerKw: Math.round(P_total * 100) / 100,
+        fuelCutActive: true,
+        hybridFactor: 1.0,
+        bsfcEffective: 0,
+        altitudeFactor: 1.0,
+        coldStartFactor: 1.0,
+      },
+      confidence: 0.95,
+      hasTransmissionData: !!vehicle.transmission,
+      drivingStyle: undefined,
+    };
+  }
 
-  const acPenalty = vehicle.peakPowerKw <= 80 ? 0.12 : 0.08;
-  const acFactor = acOn ? 1.0 - acPenalty : 1.0;
-
-  let hybridImprovement = 1.0;
+  // 4. Hybrid factor
+  let hybridFactor = 1.0;
   if (vehicle.isHybrid) {
-    if (isCity) {
-      hybridImprovement = 1.6;
+    if (speed < 60) {
+      hybridFactor = 1.4;
       isHybridEvMode = batterySoc > 20;
       batterySoc = Math.max(20, batterySoc - 2);
     } else {
-      hybridImprovement = 1.1;
+      hybridFactor = 1.1;
       batterySoc = Math.min(100, batterySoc + 1);
     }
   }
 
-  // For city driving, divide by speedFactor (use reciprocal)
-  // For highway, multiply by speedFactor (use directly)
-  // This ensures low city speeds improve efficiency, while high highway speeds degrade it
-  const speedFactorAdjustment = isCity ? 1.0 / speedFactor : speedFactor;
-
-  const copertKmpl =
-    ((baseKmpl * speedFactorAdjustment * acFactor * dynamicFactor) /
-      massPenalty) *
-    hybridImprovement;
-
+  // 5. Calculate consumption
+  let kmpl: number;
   let gear: number | undefined;
   let rpm: number | undefined;
-  let confidence = 0.85;
-  let hasTransmissionData = false;
-  let kmpl: number;
-  let drivingStyle: "eco" | "normal" | "sport" | undefined;
-
   let engineLoad: number | undefined;
+  let confidence: number;
+  let hasTransmissionData = false;
+  let drivingStyle: "eco" | "normal" | "sport" | undefined;
+  let bsfcEffective: number;
 
   if (vehicle.transmission) {
     hasTransmissionData = true;
-    console.log(
-      "[TelemetryEngine] Using transmission data:",
-      JSON.stringify({
-        type: vehicle.transmission.type,
-        gearRatios: vehicle.transmission.gearRatios,
-        finalDrive: vehicle.transmission.finalDrive,
-        tireRadiusM: vehicle.transmission.tireRadiusM,
-        idleRpm: vehicle.transmission.idleRpm,
-        redlineRpm: vehicle.transmission.redlineRpm,
-        hasTorqueCurve: !!vehicle.transmission.torqueCurve,
-        cda: vehicle.transmission.cda,
-        rollingResistance: vehicle.transmission.rollingResistance,
-        cruiseRpm: vehicle.transmission.cruiseRpm,
-      }),
-    );
 
-    const totalMass = vehicle.mass + extraMass;
+    const totalMassForGear =
+      vehicle.mass +
+      passengers * 75 +
+      cargoKg +
+      (fuelType === "gnv" ? (vehicle.gnvCylinderWeightKg ?? 80) : 0);
     const gearResult = gearEstimator.estimate(
       speed,
       accel,
       slope,
       vehicle.transmission,
-      totalMass,
+      totalMassForGear,
     );
     gear = gearResult.gear;
     rpm = gearResult.rpm;
     confidence = gearResult.confidence;
     drivingStyle = gearResult.drivingStyle;
 
-    // Calculate engine load for the selected gear
     if (gear !== undefined && gear > 0) {
       try {
         const loadResult = calculateEngineLoad({
@@ -419,21 +631,16 @@ export function simulate(
           speedKmh: speed,
           accelerationMps2: accel,
           slopePercent: slope,
-          gearIndex: gear - 1, // convert to 0-based index
+          gearIndex: gear - 1,
+          passengers,
+          cargoKg,
+          isGnv: fuelType === "gnv",
         });
         engineLoad = loadResult.engineLoadPercent;
-        console.log(
-          `[TelemetryEngine] Engine load calculated: ${engineLoad.toFixed(1)}% for gear ${gear} at ${speed}km/h`,
-        );
-      } catch (err) {
-        console.warn("[TelemetryEngine] Failed to calculate engine load:", err);
-        engineLoad = 50; // default to 50% if calculation fails
+      } catch {
+        engineLoad = 50;
       }
     }
-
-    console.log(
-      `[TelemetryEngine] Predicted: gear=${gear}, rpm=${rpm}, load=${engineLoad?.toFixed(1) ?? "N/A"}%, confidence=${confidence.toFixed(2)}, drivingStyle=${drivingStyle}, speed=${speed}km/h, slope=${slope}%`,
-    );
 
     if (
       vehicle.transmission.torqueCurve &&
@@ -443,59 +650,99 @@ export function simulate(
       engineLoad !== undefined
     ) {
       const torque = getTorqueAtRpm(rpm, vehicle.transmission.torqueCurve);
-      const physicsKmpl = calculatePhysicsConsumption(
+      bsfcEffective = getBsfcForEra(
+        techEra,
+        fuelType,
+        engineLoad,
+        vehicle.bsfcMinGPerKwh,
+      );
+      kmpl = calculatePhysicsConsumption(
         rpm,
         torque,
         vehicle.bsfcMinGPerKwh,
-        vehicle.techEra || "injection_modern",
+        techEra,
         fuelType,
         speed,
         engineLoad,
+        vehicle.transmission,
         vehicle.transmission.rpmAt100Kmh,
       );
 
-      if (physicsKmpl < 999 && physicsKmpl > 0) {
-        kmpl = physicsKmpl * 0.8 + copertKmpl * 0.2;
-        confidence = Math.min(0.98, confidence + 0.1);
-      } else {
-        kmpl = copertKmpl;
-        confidence = Math.min(0.92, confidence + 0.05);
+      if (kmpl >= 999 || kmpl <= 0) {
+        const fuelDensity = getFuelDensity(fuelType);
+        const transEff = getTransmissionEfficiency(vehicle.transmission);
+        const engineEff = getEngineEfficiency(
+          engineLoad,
+          fuelType === "diesel",
+        );
+        const totalEff = transEff * engineEff;
+        const P_engine = P_total / totalEff;
+        kmpl =
+          speed /
+          ((bsfcEffective * P_engine) / (fuelDensity * 1000000));
       }
+      confidence = Math.min(0.98, confidence + 0.1);
     } else {
-      kmpl = copertKmpl;
+      const transEff = getTransmissionEfficiency(vehicle.transmission);
+      const engineEff = getEngineEfficiency(
+        engineLoad ?? 50,
+        fuelType === "diesel",
+      );
+      const totalEff = transEff * engineEff;
+      const P_engine = P_total / totalEff;
+      bsfcEffective = getBsfcForEra(techEra, fuelType, engineLoad ?? 50);
+      const fuelDensity = getFuelDensity(fuelType);
+      const fuelFlowLPerH = (bsfcEffective * P_engine) / (fuelDensity * 1000);
+      kmpl = fuelFlowLPerH > 0 ? speed / fuelFlowLPerH : PHYSICS.MIN_KMPL;
       confidence = Math.min(0.9, confidence + 0.05);
     }
   } else {
-    console.log(
-      "[TelemetryEngine] No transmission data, using COPERT fallback only",
+    const estimatedLoad = estimateEngineLoadNoTransmission(P_total, speed, vehicle);
+    const transEff = getTransmissionEfficiency(vehicle.transmission);
+    const engineEff = getEngineEfficiency(
+      estimatedLoad,
+      fuelType === "diesel",
     );
-    kmpl = copertKmpl;
-    confidence = 0.85;
+    const totalEff = transEff * engineEff;
+    const P_engine = P_total / totalEff;
+    bsfcEffective = getBsfcForEra(techEra, fuelType, estimatedLoad);
+    const fuelDensity = getFuelDensity(fuelType);
+    const fuelFlowLPerH = (bsfcEffective * P_engine) / (fuelDensity * 1000);
+    kmpl = fuelFlowLPerH > 0 ? speed / fuelFlowLPerH : PHYSICS.MIN_KMPL;
+    confidence = 0.75;
   }
 
-  if (fuelCutActive) {
-    kmpl = 999;
-  }
+  // 6. Apply hybrid factor
+  kmpl *= hybridFactor;
 
+  // 7. Apply GNV efficiency
   if (fuelType === "gnv") {
-    kmpl *= vehicle.gnvEfficiencyFactor ?? 1.32;
+    kmpl *= vehicle.gnvEfficiencyFactor ?? 1.22;
   }
 
-  kmpl = Math.round(Math.max(kmpl, MIN_KMPL) * 100) / 100;
+  // 8. Apply altitude power loss for NA engines
+  const altitudeLossFactor = getAltitudePowerLoss(altitudeM, techEra, fuelType);
+  kmpl *= altitudeLossFactor;
 
-  console.log(
-    "[TELEMETRY-ENGINE] slope:",
-    slope,
-    "dynamicFactor:",
-    dynamicFactor.toFixed(3),
-    "kmpl:",
-    kmpl,
+  // 9. Apply cold start enrichment
+  const coldStartFactor = getColdStartEnrichment(
+    secondsSinceEngineStart,
+    vehicle.displacement,
   );
+  kmpl *= coldStartFactor;
+
+  // 10. Apply stop-and-go traffic penalty (reduces kmpl)
+  kmpl /= stopAndGoPenalty;
+
+  // 11. Clamp
+  kmpl = Math.round(Math.max(kmpl, PHYSICS.MIN_KMPL) * 100) / 100;
 
   const lphOrM3ph =
     kmpl > 0 && speed > 0
       ? Math.round((speed / kmpl) * 100) / 100
-      : (vehicle.idleLph ?? vehicle.idleFuelRateLph ?? 0.9);
+      : (vehicle.idleLph ??
+        vehicle.idleFuelRateLph ??
+        IDLE_LPH_DEFAULTS[techEra]);
 
   return {
     kmpl,
@@ -503,13 +750,17 @@ export function simulate(
     updatedBatterySocPct: batterySoc,
     isHybridEvMode,
     factors: {
-      baseKmpl,
-      massPenalty,
-      speedFactor,
-      dynamicFactor,
-      acFactor,
-      hybridImprovement,
+      rollingResistanceKw: Math.round(P_rolling * 100) / 100,
+      aerodynamicDragKw: Math.round(P_aero * 100) / 100,
+      slopeKw: Math.round(P_slope * 100) / 100,
+      accelerationKw: Math.round(P_accel * 100) / 100,
+      acPowerKw: P_ac,
+      totalPowerKw: Math.round(P_total * 100) / 100,
       fuelCutActive,
+      hybridFactor,
+      bsfcEffective: Math.round(bsfcEffective * 100) / 100,
+      altitudeFactor: altitudeLossFactor,
+      coldStartFactor,
     },
     gear,
     rpm,
@@ -524,4 +775,20 @@ export function resetGearEstimator(): void {
   gearEstimator.resetForNewTrip();
 }
 
-export const TelemetryConstants = WORLD;
+export const TelemetryConstants = {
+  ...PHYSICS,
+  getTransmissionEfficiency,
+  getEngineEfficiency,
+  calculateAirDensity,
+  AIR_DENSITY: 1.225,
+  G: 9.81,
+  FUEL_E27_DENSITY: 0.75,
+  FUEL_E100_DENSITY: 0.79,
+  GNV_DENSITY: 0.717,
+  MIN_KMPL: 3.0,
+  MIN_KMPL_IGNORE: 100,
+  DEFAULT_TRANSMISSION_EFFICIENCY: 0.90,
+  PARASITIC_POWER_KW: 0.4,
+  DEFAULT_ALTITUDE_M: 0,
+  DEFAULT_TEMPERATURE_C: 25,
+};

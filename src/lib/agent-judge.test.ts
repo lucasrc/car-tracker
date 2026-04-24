@@ -10,7 +10,7 @@ function makeValidCalibration(
     model: "Corolla",
     year: 2020,
     displacement: 1800,
-    fuelType: "gasoline",
+    fuelType: "gasolina",
     euroNorm: "Euro 6",
     segment: "medium",
     urbanKmpl: 8.5,
@@ -176,9 +176,7 @@ describe("agent-judge", () => {
         });
         const result = validateBasic(data);
         expect(result.valid).toBe(false);
-        expect(result.errors).toContainEqual(
-          expect.stringContaining("massa deve ser menor"),
-        );
+        expect(result.errors).toContainEqual(expect.stringContaining("mass"));
       });
 
       it("rejects mass > grossWeight", () => {

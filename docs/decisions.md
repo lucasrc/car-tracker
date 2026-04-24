@@ -327,3 +327,45 @@ Decisões de arquitetura documentadas com o contexto da época. Evita que o agen
 - Se dados OBD2 disponíveis via Bluetooth: usar RPM e marcha reais
 - Se precisão do modelo híbrido não superar COPERT puro em testes reais
 - Se complexidade de manutenção do modelo híbrido for muito alta
+
+---
+
+## ADR-008: Substituição do Algoritmo de Seleção de Marcha por Scoring Gaussiano
+
+**Data:** Abril 2026
+
+**Contexto:**
+
+O algoritmo anterior de seleção de marcha (`selectOptimalGear`) usava regras heurísticas com thresholds binários (slope > 3, accel > 2.0). Isso causava:
+
+1. **Bug de marcha baixa**: Aos 3 km/h, selecionava 2ª marcha (RPM abaixo do idle)
+2. **Descontinuidades**: Transições abruptas entre modos (cruzeiro/aceleração/subida)
+3. **Gear hunting**: Oscilação entre marchas adjacentes em velocidades de fronteira
+4. **Sem histerese**: Sem tempo mínimo entre trocas ou margens assimétricas
+
+**Decisão:**
+
+Substituir o algoritmo baseado em regras if/else por um seletor multi-critério com três fases:
+
+1. **Filtro de Viabilidade**: Descarta marchas com RPM fora do range operacional (MIN_OPERATING_RPM por tipo de aspiração: NA=1300, turbo=1100, diesel=1000)
+2. **Scoring Gaussiano**: Cada marcha viável recebe score ponderado:
+   - `fuelScore` = `gaussianScore(BSFC, bsfcOptimal, σ_fuel)`
+   - `driveScore` = `asymmetricScore(RPM, rpmTarget, σ_low, σ_high)`
+   - `powerScore` = `gaussianScore(load, optimalLoad, σ_load)`
+   - `safetyScore` = hardcutoff(RPM < redline × 0.95)
+   - Pesos adaptativos via `sigmoid(slope)` e `sigmoid(accel)`
+3. **Histerese**: Margens assimétricas (upshift +15%, downshift +10%), dwell mínimo 1.5s, kickdown bypass para accel > 2.5 m/s²
+
+**Consequentess:**
+
+- RPM a baixa velocidade segue modelo clutch-slip (aspiration-dependent: NA=10km/h, turbo=8, diesel=7)
+- Transições entre modos são suaves (sigmoid ao invés de threshold binário)
+- Bug de "3 km/h em 2ª marcha" corrigido
+- Gear hunting eliminado pelo dwell e margens
+- `calculateRpm` tem novo parâmetro `aspiration` e `clampToIdle`
+
+**Alternativas consideradas:**
+
+- Manter regras if/else com mais condições: rejeitado por não resolver descontinuidades
+- Machine learning (regressão logística): rejeitado por necessidade de dados de treino
+- Tabela de lookup velocidade→marcha (estilo COPERT Tier 2): rejeitado por não considerar carga/slope

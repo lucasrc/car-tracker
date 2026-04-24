@@ -1,5 +1,4 @@
 import { useRef, useState, useCallback, useEffect } from "react";
-import { KalmanFilter1D } from "@/lib/kalman-filter-1d";
 
 const CALIBRATION_STORAGE_KEY = "inclination-calibration";
 
@@ -15,11 +14,7 @@ export interface InclinationData {
 }
 
 export interface UseInclinationReturn extends InclinationData {
-  addPitchReading: (pitchDegrees: number, timestamp: number) => void;
-  addGpsReading: (
-    altitudeM: number | undefined,
-    distanceFromLastM: number,
-  ) => void;
+  addGpsReading: (altitudeM: number, distanceM: number) => void;
   calibrate: () => void;
   resetCalibration: () => void;
 }
@@ -29,13 +24,13 @@ interface CalibrationData {
   calibratedAt: string;
 }
 
-const PITCH_Q = 0.01;
-const PITCH_R = 0.5;
-const GPS_Q = 0.1;
-const GPS_R = 5.0;
-const PITCH_WEIGHT = 0.85;
-const GPS_WEIGHT = 0.15;
-const CALIBRATION_SAMPLES = 60;
+const MIN_DISTANCE_FOR_GRADE = 10;
+const MAX_ALTITUDE_JUMP = 20;
+const GRADE_WINDOW_DISTANCE = 80;
+const LOW_PASS_ALPHA = 0.08;
+const MAX_REASONABLE_GRADE = 25;
+const CONFIDENCE_PER_SAMPLE = 0.05;
+const MAX_CONFIDENCE = 0.9;
 
 function loadCalibration(): CalibrationData | null {
   try {
@@ -55,19 +50,25 @@ function clearCalibrationData(): void {
   localStorage.removeItem(CALIBRATION_STORAGE_KEY);
 }
 
+interface AltitudeSample {
+  altitudeM: number;
+  cumulativeDistanceM: number;
+}
+
 export function useInclination(
   options: UseInclinationOptions = {},
 ): UseInclinationReturn {
   const { enabled = true } = options;
 
-  const pitchKalmanRef = useRef<KalmanFilter1D | null>(null);
-  const gpsKalmanRef = useRef<KalmanFilter1D | null>(null);
   const calibrationOffsetRef = useRef<number>(0);
   const isCalibratedRef = useRef<boolean>(false);
-
   const calibratingRef = useRef(false);
   const calibrationSamplesRef = useRef<number[]>([]);
-  const lastAltitudeRef = useRef<number | null>(null);
+
+  const samplesRef = useRef<AltitudeSample[]>([]);
+  const cumulativeDistanceRef = useRef(0);
+  const lastGradeRef = useRef(0);
+  const sampleCountRef = useRef(0);
 
   const [gradePercent, setGradePercent] = useState(0);
   const [angleDegrees, setAngleDegrees] = useState(0);
@@ -81,49 +82,64 @@ export function useInclination(
       isCalibratedRef.current = true;
       setIsCalibrated(true);
     }
-
-    pitchKalmanRef.current = new KalmanFilter1D(0, PITCH_Q, PITCH_R);
-    gpsKalmanRef.current = new KalmanFilter1D(0, GPS_Q, GPS_R);
   }, []);
 
-  const pitchReadingCountRef = useRef(0);
+  const computeGradeFromWindow = useCallback(() => {
+    const samples = samplesRef.current;
+    if (samples.length < 2) return 0;
+
+    const windowStart = samples[samples.length - 1].cumulativeDistanceM - GRADE_WINDOW_DISTANCE;
+
+    let firstSample: AltitudeSample | null = null;
+    for (let i = samples.length - 1; i >= 0; i--) {
+      if (samples[i].cumulativeDistanceM <= windowStart) {
+        firstSample = samples[i];
+        break;
+      }
+    }
+
+    if (!firstSample) {
+      firstSample = samples[0];
+    }
+
+    const lastSample = samples[samples.length - 1];
+    const distanceDelta = lastSample.cumulativeDistanceM - firstSample.cumulativeDistanceM;
+
+    if (distanceDelta < MIN_DISTANCE_FOR_GRADE) return 0;
+
+    const altitudeDelta = lastSample.altitudeM - firstSample.altitudeM;
+    const gradeRad = Math.atan2(altitudeDelta, distanceDelta);
+    const gradePercent = Math.tan(gradeRad) * 100;
+
+    if (Math.abs(gradePercent) > MAX_REASONABLE_GRADE) return 0;
+
+    return gradePercent;
+  }, []);
 
   const updateOutput = useCallback(() => {
-    const pitchKf = pitchKalmanRef.current;
-    const gpsKf = gpsKalmanRef.current;
-    if (!pitchKf) return;
+    const rawGrade = computeGradeFromWindow();
+    const smoothed = lastGradeRef.current + LOW_PASS_ALPHA * (rawGrade - lastGradeRef.current);
+    lastGradeRef.current = smoothed;
 
-    const pitchEstimate = pitchKf.getEstimate() - calibrationOffsetRef.current;
-    const gpsEstimate = gpsKf?.getEstimate() ?? pitchEstimate;
+    const angleDeg = (Math.atan(smoothed / 100) * 180) / Math.PI;
+    const calibratedAngle = angleDeg - calibrationOffsetRef.current;
 
-    const hasGpsData = gpsKf !== null && lastAltitudeRef.current !== null;
-    const finalAngle = hasGpsData
-      ? PITCH_WEIGHT * pitchEstimate + GPS_WEIGHT * gpsEstimate
-      : pitchEstimate;
+    const conf = Math.min(sampleCountRef.current * CONFIDENCE_PER_SAMPLE, MAX_CONFIDENCE);
+    const calibBonus = isCalibratedRef.current ? 0.1 : 0;
+    const totalConfidence = Math.min(conf + calibBonus, 1);
 
-    const pitchConvergence = Math.min(pitchReadingCountRef.current / 30, 0.8);
-    const gpsConfidence = hasGpsData ? 0.15 : 0;
-    const calibBonus = isCalibratedRef.current ? 0.2 : 0;
-    const totalConfidence = Math.min(
-      pitchConvergence + gpsConfidence + calibBonus,
-      1,
-    );
+    setGradePercent(Math.round(smoothed * 100) / 100);
+    setAngleDegrees(Math.round(calibratedAngle * 100) / 100);
+    setConfidence(Math.round(totalConfidence * 100) / 100);
+  }, [computeGradeFromWindow]);
 
-    const grade = Math.tan((finalAngle * Math.PI) / 180) * 100;
-
-    setAngleDegrees(finalAngle);
-    setGradePercent(grade);
-    setConfidence(totalConfidence);
-  }, []);
-
-  const addPitchReading = useCallback(
-    (pitchDegrees: number, timestamp: number) => {
-      void timestamp;
-      if (!enabled) return;
+  const addGpsReading = useCallback(
+    (altitudeM: number, distanceM: number) => {
+      if (!enabled || distanceM < MIN_DISTANCE_FOR_GRADE) return;
 
       if (calibratingRef.current) {
-        calibrationSamplesRef.current.push(pitchDegrees);
-        if (calibrationSamplesRef.current.length >= CALIBRATION_SAMPLES) {
+        calibrationSamplesRef.current.push(altitudeM);
+        if (calibrationSamplesRef.current.length >= 30) {
           const samples = calibrationSamplesRef.current;
           const avg = samples.reduce((a, b) => a + b, 0) / samples.length;
           calibrationOffsetRef.current = avg;
@@ -139,33 +155,27 @@ export function useInclination(
         return;
       }
 
-      const kf = pitchKalmanRef.current;
-      if (!kf) return;
-
-      kf.update(pitchDegrees);
-      pitchReadingCountRef.current++;
-      updateOutput();
-    },
-    [enabled, updateOutput],
-  );
-
-  const addGpsReading = useCallback(
-    (altitudeM: number | undefined, distanceFromLastM: number) => {
-      if (!enabled || altitudeM === undefined) return;
-
-      if (lastAltitudeRef.current !== null && distanceFromLastM > 5) {
-        const deltaAlt = altitudeM - lastAltitudeRef.current;
-        const gradeDeg =
-          Math.atan2(deltaAlt, distanceFromLastM) * (180 / Math.PI);
-
-        const kf = gpsKalmanRef.current;
-        if (kf && Math.abs(gradeDeg) < 30) {
-          kf.update(gradeDeg);
-          updateOutput();
+      const lastSample = samplesRef.current[samplesRef.current.length - 1];
+      if (lastSample) {
+        const altJump = Math.abs(altitudeM - lastSample.altitudeM);
+        if (altJump > MAX_ALTITUDE_JUMP) {
+          return;
         }
       }
 
-      lastAltitudeRef.current = altitudeM;
+      cumulativeDistanceRef.current += distanceM;
+      samplesRef.current.push({
+        altitudeM,
+        cumulativeDistanceM: cumulativeDistanceRef.current,
+      });
+
+      const windowStart = cumulativeDistanceRef.current - GRADE_WINDOW_DISTANCE * 1.5;
+      samplesRef.current = samplesRef.current.filter(
+        (s) => s.cumulativeDistanceM >= windowStart,
+      );
+
+      sampleCountRef.current++;
+      updateOutput();
     },
     [enabled, updateOutput],
   );
@@ -189,7 +199,6 @@ export function useInclination(
     angleDegrees,
     confidence,
     isCalibrated,
-    addPitchReading,
     addGpsReading,
     calibrate,
     resetCalibration,

@@ -3,7 +3,9 @@ import {
   addRefuel,
   getRefuels,
   getRefuelsInPeriod,
+  getRefuelsByVehicle,
   deleteRefuel,
+  updateRefuelConsumed,
 } from "@/lib/db";
 
 vi.mock("@/lib/db", () => ({
@@ -17,11 +19,14 @@ vi.mock("@/lib/db", () => ({
         fuelType,
         totalCost: amount * fuelPrice,
         timestamp: new Date().toISOString(),
+        consumedAmount: 0,
       }),
   ),
   getRefuels: vi.fn(() => Promise.resolve([])),
   getRefuelsInPeriod: vi.fn(() => Promise.resolve([])),
+  getRefuelsByVehicle: vi.fn(() => Promise.resolve([])),
   deleteRefuel: vi.fn(() => Promise.resolve()),
+  updateRefuelConsumed: vi.fn(() => Promise.resolve()),
 }));
 
 describe("db - refuel operations", () => {
@@ -89,6 +94,49 @@ describe("db - refuel operations", () => {
       await deleteRefuel("refuel-123");
 
       expect(deleteRefuel).toHaveBeenCalledWith("refuel-123");
+    });
+  });
+
+  describe("getRefuelsByVehicle", () => {
+    it("should return refuels for specific vehicle", async () => {
+      const vehicleId = "vehicle-123";
+      await getRefuelsByVehicle(vehicleId);
+
+      expect(getRefuelsByVehicle).toHaveBeenCalledWith(vehicleId);
+    });
+
+    it("should filter by vehicleId and date range", async () => {
+      const vehicleId = "vehicle-123";
+      const startDate = new Date("2024-01-01");
+      const endDate = new Date("2024-06-30");
+
+      await getRefuelsByVehicle(vehicleId, startDate, endDate);
+
+      expect(getRefuelsByVehicle).toHaveBeenCalledWith(
+        vehicleId,
+        startDate,
+        endDate,
+      );
+    });
+
+    it("should return empty array for vehicle with no refuels", async () => {
+      const result = await getRefuelsByVehicle("non-existent-vehicle");
+
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe("updateRefuelConsumed", () => {
+    it("should update consumedAmount for a refuel", async () => {
+      await updateRefuelConsumed("refuel-123", 15.5);
+
+      expect(updateRefuelConsumed).toHaveBeenCalledWith("refuel-123", 15.5);
+    });
+
+    it("should allow setting consumedAmount to zero", async () => {
+      await updateRefuelConsumed("refuel-123", 0);
+
+      expect(updateRefuelConsumed).toHaveBeenCalledWith("refuel-123", 0);
     });
   });
 });

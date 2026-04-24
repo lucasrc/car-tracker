@@ -495,29 +495,29 @@ export function TripDetail() {
 
             {trip.consumptionBreakdown && (
               <>
-                {trip.consumptionBreakdown.totalPenaltyPct > 0 &&
+                {(trip.consumptionBreakdown.totalPenaltyPct ?? 0) > 0 &&
                   (() => {
                     const b = trip.consumptionBreakdown;
                     const totalPenalty =
-                      b.speedPenaltyPct +
-                      b.aggressionPenaltyPct +
-                      b.idlePenaltyPct +
-                      b.stabilityPenaltyPct;
+                      (b.speedPenaltyPct ?? 0) +
+                      (b.aggressionPenaltyPct ?? 0) +
+                      (b.idlePenaltyPct ?? 0) +
+                      (b.stabilityPenaltyPct ?? 0);
                     const speedCost =
                       totalPenalty > 0
-                        ? (b.speedPenaltyPct / totalPenalty) * b.extraCost
+                        ? ((b.speedPenaltyPct ?? 0) / totalPenalty) * b.extraCost
                         : 0;
                     const aggressionCost =
                       totalPenalty > 0
-                        ? (b.aggressionPenaltyPct / totalPenalty) * b.extraCost
+                        ? ((b.aggressionPenaltyPct ?? 0) / totalPenalty) * b.extraCost
                         : 0;
                     const idleCost =
                       totalPenalty > 0
-                        ? (b.idlePenaltyPct / totalPenalty) * b.extraCost
+                        ? ((b.idlePenaltyPct ?? 0) / totalPenalty) * b.extraCost
                         : 0;
                     const stabilityCost =
                       totalPenalty > 0
-                        ? (b.stabilityPenaltyPct / totalPenalty) * b.extraCost
+                        ? ((b.stabilityPenaltyPct ?? 0) / totalPenalty) * b.extraCost
                         : 0;
 
                     return (
@@ -526,43 +526,43 @@ export function TripDetail() {
                           Penalidades (-)
                         </p>
                         <div className="space-y-2">
-                          {b.speedPenaltyPct > 0 && (
+                          {(b.speedPenaltyPct ?? 0) > 0 && (
                             <div className="flex justify-between items-center text-sm">
                               <span className="text-red-700">
                                 Excesso de velocidade (+
-                                {b.speedPenaltyPct.toFixed(1)}%)
+                                {(b.speedPenaltyPct ?? 0).toFixed(1)}%)
                               </span>
                               <span className="font-medium text-red-900">
                                 +R$ {speedCost.toFixed(2)}
                               </span>
                             </div>
                           )}
-                          {b.idlePenaltyPct > 0 && (
+                          {(b.idlePenaltyPct ?? 0) > 0 && (
                             <div className="flex justify-between items-center text-sm">
                               <span className="text-red-700">
-                                Tempo ocioso (+{b.idlePenaltyPct.toFixed(1)}%)
+                                Tempo ocioso (+{(b.idlePenaltyPct ?? 0).toFixed(1)}%)
                               </span>
                               <span className="font-medium text-red-900">
                                 +R$ {idleCost.toFixed(2)}
                               </span>
                             </div>
                           )}
-                          {b.aggressionPenaltyPct > 0 && (
+                          {(b.aggressionPenaltyPct ?? 0) > 0 && (
                             <div className="flex justify-between items-center text-sm">
                               <span className="text-red-700">
                                 Acelerações bruscas (+
-                                {b.aggressionPenaltyPct.toFixed(1)}%)
+                                {(b.aggressionPenaltyPct ?? 0).toFixed(1)}%)
                               </span>
                               <span className="font-medium text-red-900">
                                 +R$ {aggressionCost.toFixed(2)}
                               </span>
                             </div>
                           )}
-                          {b.stabilityPenaltyPct > 0 && (
+                          {(b.stabilityPenaltyPct ?? 0) > 0 && (
                             <div className="flex justify-between items-center text-sm">
                               <span className="text-red-700">
                                 Irregularidade na dirigibilidade (+
-                                {b.stabilityPenaltyPct.toFixed(1)}%)
+                                {(b.stabilityPenaltyPct ?? 0).toFixed(1)}%)
                               </span>
                               <span className="font-medium text-red-900">
                                 +R$ {stabilityCost.toFixed(2)}
@@ -582,34 +582,34 @@ export function TripDetail() {
                     );
                   })()}
 
-                {trip.consumptionBreakdown.totalBonusPct > 0 &&
+                {(trip.consumptionBreakdown.totalBonusPct ?? 0) > 0 &&
                   (() => {
                     const b = trip.consumptionBreakdown;
                     const totalBonus =
-                      b.speedBonusPct +
-                      b.accelerationBonusPct +
-                      b.coastingBonusPct +
-                      b.stabilityBonusPct +
-                      b.idleBonusPct;
+                      (b.speedBonusPct ?? 0) +
+                      (b.accelerationBonusPct ?? 0) +
+                      (b.coastingBonusPct ?? 0) +
+                      (b.stabilityBonusPct ?? 0) +
+                      (b.idleBonusPct ?? 0);
                     const speedSavings =
                       totalBonus > 0
-                        ? (b.speedBonusPct / totalBonus) * b.savedCost
+                        ? ((b.speedBonusPct ?? 0) / totalBonus) * b.savedCost
                         : 0;
                     const accelSavings =
                       totalBonus > 0
-                        ? (b.accelerationBonusPct / totalBonus) * b.savedCost
+                        ? ((b.accelerationBonusPct ?? 0) / totalBonus) * b.savedCost
                         : 0;
                     const coastingSavings =
                       totalBonus > 0
-                        ? (b.coastingBonusPct / totalBonus) * b.savedCost
+                        ? ((b.coastingBonusPct ?? 0) / totalBonus) * b.savedCost
                         : 0;
                     const stabilitySavings =
                       totalBonus > 0
-                        ? (b.stabilityBonusPct / totalBonus) * b.savedCost
+                        ? ((b.stabilityBonusPct ?? 0) / totalBonus) * b.savedCost
                         : 0;
                     const idleSavings =
                       totalBonus > 0
-                        ? (b.idleBonusPct / totalBonus) * b.savedCost
+                        ? ((b.idleBonusPct ?? 0) / totalBonus) * b.savedCost
                         : 0;
 
                     return (
@@ -617,58 +617,58 @@ export function TripDetail() {
                         <div className="flex items-center gap-2 mb-3">
                           <span className="text-lg">🌿</span>
                           <p className="text-sm font-semibold text-green-800">
-                            Condução Ecológica (+{b.totalBonusPct.toFixed(1)}%)
+                            Condução Ecológica (+{(b.totalBonusPct ?? 0).toFixed(1)}%)
                           </p>
                         </div>
                         <div className="space-y-2">
-                          {b.speedBonusPct > 0 && (
+                          {(b.speedBonusPct ?? 0) > 0 && (
                             <div className="flex justify-between items-center text-sm">
                               <span className="text-green-700">
                                 Velocidade ideal (60-80 km/h) (+
-                                {b.speedBonusPct.toFixed(1)}%)
+                                {(b.speedBonusPct ?? 0).toFixed(1)}%)
                               </span>
                               <span className="font-medium text-green-900">
                                 -R$ {speedSavings.toFixed(2)}
                               </span>
                             </div>
                           )}
-                          {b.accelerationBonusPct > 0 && (
+                          {(b.accelerationBonusPct ?? 0) > 0 && (
                             <div className="flex justify-between items-center text-sm">
                               <span className="text-green-700">
                                 Aceleração suave (+
-                                {b.accelerationBonusPct.toFixed(1)}%)
+                                {(b.accelerationBonusPct ?? 0).toFixed(1)}%)
                               </span>
                               <span className="font-medium text-green-900">
                                 -R$ {accelSavings.toFixed(2)}
                               </span>
                             </div>
                           )}
-                          {b.coastingBonusPct > 0 && (
+                          {(b.coastingBonusPct ?? 0) > 0 && (
                             <div className="flex justify-between items-center text-sm">
                               <span className="text-green-700">
                                 Coasting detectado (+
-                                {b.coastingBonusPct.toFixed(1)}%)
+                                {(b.coastingBonusPct ?? 0).toFixed(1)}%)
                               </span>
                               <span className="font-medium text-green-900">
                                 -R$ {coastingSavings.toFixed(2)}
                               </span>
                             </div>
                           )}
-                          {b.stabilityBonusPct > 0 && (
+                          {(b.stabilityBonusPct ?? 0) > 0 && (
                             <div className="flex justify-between items-center text-sm">
                               <span className="text-green-700">
                                 Velocidade estável (+
-                                {b.stabilityBonusPct.toFixed(1)}%)
+                                {(b.stabilityBonusPct ?? 0).toFixed(1)}%)
                               </span>
                               <span className="font-medium text-green-900">
                                 -R$ {stabilitySavings.toFixed(2)}
                               </span>
                             </div>
                           )}
-                          {b.idleBonusPct > 0 && (
+                          {(b.idleBonusPct ?? 0) > 0 && (
                             <div className="flex justify-between items-center text-sm">
                               <span className="text-green-700">
-                                Sem marcha lenta (+{b.idleBonusPct.toFixed(1)}%)
+                                Sem marcha lenta (+{(b.idleBonusPct ?? 0).toFixed(1)}%)
                               </span>
                               <span className="font-medium text-green-900">
                                 -R$ {idleSavings.toFixed(2)}
@@ -688,8 +688,8 @@ export function TripDetail() {
                     );
                   })()}
 
-                {trip.consumptionBreakdown.totalPenaltyPct === 0 &&
-                  trip.consumptionBreakdown.totalBonusPct === 0 && (
+                {(trip.consumptionBreakdown.totalPenaltyPct ?? 0) === 0 &&
+                  (trip.consumptionBreakdown.totalBonusPct ?? 0) === 0 && (
                     <div className="col-span-2 mt-2 rounded-2xl bg-gray-50 border border-gray-200 p-4 shadow-sm">
                       <p className="text-sm text-gray-600 text-center">
                         Nenhuma penalidade ou bônus registrado nesta viagem

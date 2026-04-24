@@ -20,108 +20,96 @@ function makeDefaultProps() {
   };
 }
 
-describe("DrivingPanel vehicle display", () => {
-  it("shows vehicle name when provided", () => {
-    render(
-      <DrivingPanel
-        {...makeDefaultProps()}
-        vehicleName="Corolla 2.0 Flex"
-        vehicleDetails="2.0L Flex · 1350kg"
-      />,
-    );
-
-    expect(screen.getByText("Corolla 2.0 Flex")).toBeInTheDocument();
-  });
-
-  it("shows vehicle details when provided", () => {
-    render(
-      <DrivingPanel
-        {...makeDefaultProps()}
-        vehicleName="Corolla"
-        vehicleDetails="2.0L Flex · 1350kg"
-      />,
-    );
-
-    expect(screen.getByText("2.0L Flex · 1350kg")).toBeInTheDocument();
-  });
-
-  it("shows dash when no vehicle name", () => {
+describe("DrivingPanel inclination display", () => {
+  it("shows inclination label", () => {
     render(<DrivingPanel {...makeDefaultProps()} />);
-
-    expect(screen.getByText("—")).toBeInTheDocument();
+    expect(screen.getByText("Inclinação")).toBeInTheDocument();
   });
 
-  it("does not show Méd/Máx card", () => {
-    const { container } = render(
-      <DrivingPanel
-        {...makeDefaultProps()}
-        vehicleName="Test Car"
-        vehicleDetails="1.6L Gasolina · 1200kg"
-      />,
-    );
-
-    expect(container.textContent).not.toMatch(/Méd\/Máx/);
-  });
-
-  it("shows Veículo label", () => {
-    const { container } = render(
-      <DrivingPanel {...makeDefaultProps()} vehicleName="Test Car" />,
-    );
-
-    expect(container.textContent).toMatch(/Veículo/);
-  });
-
-  it("shows autonomy with vehicle fuel", () => {
+  it("shows placeholder when confidence is low", () => {
     render(
-      <DrivingPanel
-        {...makeDefaultProps()}
-        currentFuelLiters={25}
-        range={225}
-        vehicleName="Test Car"
-      />,
-    );
-
-    expect(screen.getByText("225 km")).toBeInTheDocument();
-    expect(screen.getByText("25.0 L")).toBeInTheDocument();
-  });
-
-  it("shows grade/inclination when confidence is high", () => {
-    render(
-      <DrivingPanel
-        {...makeDefaultProps()}
-        gradePercent={3.5}
-        inclinationConfidence={0.85}
-        vehicleName="Test Car"
-      />,
-    );
-
-    expect(screen.getByText(/3.5%/)).toBeInTheDocument();
-    expect(screen.getByText("85%")).toBeInTheDocument();
-  });
-
-  it("does not show grade when confidence is low", () => {
-    const { container } = render(
       <DrivingPanel
         {...makeDefaultProps()}
         gradePercent={2.0}
         inclinationConfidence={0.05}
-        vehicleName="Test Car"
       />,
     );
 
-    expect(container.textContent).not.toMatch(/2.0%/);
+    expect(screen.getByText(/—/)).toBeInTheDocument();
   });
 
-  it("shows fuel cut indicator on steep downhill", () => {
-    render(
+  it("shows grade value when confidence is high", () => {
+    const { container } = render(
       <DrivingPanel
         {...makeDefaultProps()}
-        gradePercent={-5}
-        inclinationConfidence={0.9}
-        vehicleName="Test Car"
+        gradePercent={3.5}
+        inclinationConfidence={0.85}
       />,
     );
 
-    expect(screen.getByText(/5.0%/)).toBeInTheDocument();
+    expect(container.textContent).toContain("3.5%");
+  });
+
+  it("shows flat indicator for small grade values", () => {
+    const { container } = render(
+      <DrivingPanel
+        {...makeDefaultProps()}
+        gradePercent={0.2}
+        inclinationConfidence={0.8}
+      />,
+    );
+
+    expect(container.textContent).toContain("→");
+  });
+
+  it("shows uphill arrow for positive grade", () => {
+    const { container } = render(
+      <DrivingPanel
+        {...makeDefaultProps()}
+        gradePercent={5.0}
+        inclinationConfidence={0.9}
+      />,
+    );
+
+    expect(container.textContent).toContain("↗");
+  });
+
+  it("shows downhill arrow for negative grade", () => {
+    const { container } = render(
+      <DrivingPanel
+        {...makeDefaultProps()}
+        gradePercent={-5.0}
+        inclinationConfidence={0.9}
+      />,
+    );
+
+    expect(container.textContent).toContain("↘");
+  });
+
+  it("displays consumption values", () => {
+    const { container } = render(<DrivingPanel {...makeDefaultProps()} />);
+
+    expect(screen.getByText("Consumo instantâneo")).toBeInTheDocument();
+    expect(container.textContent).toContain("10.5");
+    expect(container.textContent).toContain("km/l");
+  });
+
+  it("displays gasto section with cost and fuel", () => {
+    const { container } = render(<DrivingPanel {...makeDefaultProps()} />);
+
+    expect(screen.getByText("Gasto")).toBeInTheDocument();
+    expect(container.textContent).toContain("R$");
+    expect(container.textContent).toContain("3.25");
+    expect(container.textContent).toContain("L");
+  });
+
+  it("displays time, distance, and autonomy", () => {
+    render(<DrivingPanel {...makeDefaultProps()} />);
+
+    expect(screen.getByText("Tempo")).toBeInTheDocument();
+    expect(screen.getByText("Distância")).toBeInTheDocument();
+    expect(screen.getByText("Autonomia")).toBeInTheDocument();
+    expect(screen.getByText(/270 km/)).toBeInTheDocument();
+    expect(screen.getByText(/30.0 L/)).toBeInTheDocument();
   });
 });

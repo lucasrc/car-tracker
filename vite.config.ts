@@ -20,5 +20,11 @@ export default defineConfig(({ mode }) => ({
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts", "./src/test/indexeddb-setup.ts"],
     css: true,
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "json", "html"],
+      include: ["src/lib/**/*.ts", "src/hooks/**/*.ts", "src/stores/**/*.ts"],
+      exclude: ["src/lib/ai/**/*.ts", "src/lib/db/**/*.ts"],
+    },
   },
 }));

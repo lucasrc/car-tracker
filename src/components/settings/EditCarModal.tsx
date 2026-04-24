@@ -28,16 +28,15 @@ export function EditCarModal({ vehicle, onClose }: EditCarModalProps) {
   const [recalibrateInput, setRecalibrateInput] = useState("");
   const [showRecalibrate, setShowRecalibrate] = useState(false);
 
-  const isFlex =
-    vehicle?.fuelType === "flex" || vehicle?.fuelType === "ethanol";
+  const isFlex = vehicle?.fuelType === "flex" || vehicle?.fuelType === "etanol";
 
   useEffect(() => {
     if (vehicle) {
       setName(vehicle.name);
-      setUserAvgCityKmpl(vehicle.userAvgCityKmpl.toString());
-      setUserAvgHighwayKmpl(vehicle.userAvgHighwayKmpl.toString());
-      setInmetroCityKmpl(vehicle.inmetroCityKmpl.toString());
-      setInmetroHighwayKmpl(vehicle.inmetroHighwayKmpl.toString());
+      setUserAvgCityKmpl((vehicle.userAvgCityKmpl ?? 0).toString());
+      setUserAvgHighwayKmpl((vehicle.userAvgHighwayKmpl ?? 0).toString());
+      setInmetroCityKmpl((vehicle.inmetroCityKmpl ?? 0).toString());
+      setInmetroHighwayKmpl((vehicle.inmetroHighwayKmpl ?? 0).toString());
       setUserAvgEthanolCityKmpl(
         (vehicle.userAvgEthanolCityKmpl ?? "").toString(),
       );
@@ -112,8 +111,9 @@ export function EditCarModal({ vehicle, onClose }: EditCarModalProps) {
       urbanKmpl: parseFloat(userAvgCityKmpl) || vehicle.urbanKmpl,
       highwayKmpl: parseFloat(userAvgHighwayKmpl) || vehicle.highwayKmpl,
       combinedKmpl:
-        ((parseFloat(userAvgCityKmpl) || vehicle.userAvgCityKmpl) +
-          (parseFloat(userAvgHighwayKmpl) || vehicle.userAvgHighwayKmpl)) /
+        (((parseFloat(userAvgCityKmpl) || vehicle.userAvgCityKmpl) ?? 0) +
+          ((parseFloat(userAvgHighwayKmpl) || vehicle.userAvgHighwayKmpl) ??
+            0)) /
         2,
       fuelCapacity: parseFloat(fuelCapacity) || vehicle.fuelCapacity,
     };
@@ -322,7 +322,7 @@ export function EditCarModal({ vehicle, onClose }: EditCarModalProps) {
             </div>
           )}
 
-          {vehicle.fuelType === "gasoline" && (
+          {vehicle.fuelType === "gnv" && (
             <div className="rounded-xl bg-gray-50 p-4">
               <p className="mb-3 text-sm font-medium text-gray-700">
                 Consumo — GNV (km/l)

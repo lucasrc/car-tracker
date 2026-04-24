@@ -15,10 +15,10 @@ import { useLocationProvider } from "@/hooks/useLocationProvider";
 import { useWakeLock } from "@/hooks/useWakeLock";
 import { useSpeedFilter } from "@/hooks/useSpeedFilter";
 import { useTelemetryEngine } from "@/hooks/useTelemetryEngine";
-import { useInclination } from "@/hooks/useInclination";
 import { useFuelInventoryStore } from "@/stores/useFuelInventoryStore";
 import { useVehicleStore } from "@/stores/useVehicleStore";
 import { useAppStore } from "@/stores/useAppStore";
+import type { FuelType } from "@/types";
 import { speedToKmh } from "@/lib/utils";
 import { isValidSpeedForDistance, vincentyDistance } from "@/lib/distance";
 import { calculateDistanceKm } from "@/lib/radar-api";
@@ -63,12 +63,11 @@ export function Tracker() {
     loadBatches,
     consumeFuel,
     getTotalLiters,
-    getWeightedAveragePrice,
+    getCumulativeFifoCost,
     emitFuelEvent,
     flushEventsToDb,
   } = useFuelInventoryStore();
   const { nearestRadar, currentSpeedingEvent } = useRadarStore();
-  const inclination = useInclination({ enabled: status === "recording" });
   const location = useLocationProvider();
   const debugModeEnabled = useAppStore((s) => s.debugModeEnabled);
   const debugModeShowRadars = useAppStore((s) => s.debugModeShowRadars);
@@ -81,7 +80,8 @@ export function Tracker() {
     battery,
     deviceOrientation,
     filteredHeading,
-    filteredPitch,
+    grade,
+    gradeConfidence,
   } = location;
 
   const accumulatedFuelRef = useRef(0);
@@ -121,13 +121,8 @@ export function Tracker() {
       );
       loadBatches(activeVehicle.id);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeVehicle?.id]);
-
-  useEffect(() => {
-    if (filteredPitch !== null) {
-      inclination.addPitchReading(filteredPitch, Date.now());
-    }
-  }, [filteredPitch, inclination]);
 
   const lastGpsDistanceRef = useRef(0);
   useEffect(() => {
@@ -137,10 +132,9 @@ export function Tracker() {
       if (lastPos) {
         distance = vincentyDistance(lastPos.lat, lastPos.lng, pos.lat, pos.lng);
       }
-      inclination.addGpsReading(pos.altitude, distance);
       lastGpsDistanceRef.current = distance;
     }
-  }, [pos?.altitude, pos?.lat, pos?.lng, inclination]);
+  }, [pos?.altitude, pos?.lat, pos?.lng]);
 
   useEffect(() => {
     if (!activeVehicle || storeTotalFuelUsed <= 0) {
@@ -148,41 +142,10 @@ export function Tracker() {
       return;
     }
 
-    const vehicleFuelType = activeVehicle
-      ? activeVehicle.fuelType === "diesel"
-        ? "gasolina"
-        : activeVehicle.fuelType === "ethanol"
-          ? "etanol"
-          : activeVehicle.fuelType === "flex"
-            ? "flex"
-            : "gasolina"
-      : "gasolina";
-
-    const totalLiters = getTotalLiters(
-      vehicleFuelType as "gasolina" | "etanol" | "flex" | "gnv",
-    );
-
-    if (totalLiters <= 0) {
-      setRealtimeCost(0);
-      return;
-    }
-
-    const weightedPrice = getWeightedAveragePrice(
-      vehicleFuelType as "gasolina" | "etanol" | "flex" | "gnv",
-    );
-
-    if (weightedPrice <= 0) {
-      setRealtimeCost(0);
-      return;
-    }
-
-    setRealtimeCost(storeTotalFuelUsed * weightedPrice);
-  }, [
-    storeTotalFuelUsed,
-    activeVehicle,
-    getTotalLiters,
-    getWeightedAveragePrice,
-  ]);
+    const fifoCost = getCumulativeFifoCost();
+    console.log(`[FUEL] realtimeCost: using FIFO cost=${fifoCost.toFixed(2)}`);
+    setRealtimeCost(fifoCost);
+  }, [storeTotalFuelUsed, activeVehicle, getCumulativeFifoCost]);
 
   const {
     estimatedConsumption,
@@ -218,6 +181,12 @@ export function Tracker() {
         return;
       }
       await loadBatches(activeVehicle.id);
+      const totalRemaining = getTotalLiters();
+      const newFuel = Math.min(totalRemaining, activeVehicle.fuelCapacity);
+      await updateVehicleFuelLevel(activeVehicle.id, newFuel);
+      console.log(
+        `[FUEL] Trip start sync: batches=${totalRemaining.toFixed(2)}L, vehicle.currentFuel=${newFuel.toFixed(2)}L`,
+      );
       resetSpeedFilter();
       resetDriveMode();
       lastValidPositionRef.current = null;
@@ -259,6 +228,8 @@ export function Tracker() {
     resetSpeedFilter,
     resetDriveMode,
     loadBatches,
+    getTotalLiters,
+    updateVehicleFuelLevel,
     setLocalFuelUsed,
   ]);
 
@@ -332,32 +303,60 @@ export function Tracker() {
         `[FUEL] Consuming ${fuelToConsume.toFixed(3)}L from vehicle ${activeVehicle.id} (current: ${currentFuelLevel.toFixed(2)}L)`,
       );
 
-      const vehicleFuelType: "gasolina" | "etanol" | "flex" | "gnv" =
-        activeVehicle.fuelType === "diesel"
-          ? "gasolina"
-          : activeVehicle.fuelType === "ethanol"
-            ? "etanol"
-            : activeVehicle.fuelType === "flex"
-              ? "flex"
-              : "gasolina";
+      // DEBUG: Log batch state before consumption
+      const batchesBefore = useFuelInventoryStore.getState().batches;
+      console.log(
+        `[FUEL] Batches before: ${batchesBefore.length}, total remaining: ${getTotalLiters().toFixed(2)}L`,
+      );
+
+      const fuelTypeFilter: FuelType | undefined =
+        activeVehicle.fuelType === "flex"
+          ? undefined
+          : activeVehicle.fuelType === "diesel"
+            ? "diesel"
+            : activeVehicle.fuelType;
 
       const position = lastValidPositionRef.current || { lat: 0, lng: 0 };
 
       try {
         console.log(
-          `[FUEL] Calling consumeFuel with ${fuelToConsume}L, type=${vehicleFuelType}, vehicleId=${activeVehicle.id}`,
+          `[FUEL] Calling consumeFuel with ${fuelToConsume}L, filter=${fuelTypeFilter ?? "all"}, vehicleId=${activeVehicle.id}`,
         );
         const result = await consumeFuel(
           fuelToConsume,
-          vehicleFuelType,
+          fuelTypeFilter,
           activeVehicle.id,
         );
         console.log(
           `[FUEL] Batch consumption result: cost=${result.cost.toFixed(2)}, batches=${result.batches.length}`,
         );
 
-        const newFuelLevel = Math.max(0, currentFuelLevel - fuelToConsume);
+        // DEBUG: Log batch state after consumption
+        const batchesAfter = useFuelInventoryStore.getState().batches;
+        console.log(`[FUEL] Batches after: ${batchesAfter.length}`);
+        batchesAfter.forEach((b, i) => {
+          console.log(
+            `[FUEL]   Batch ${i}: amount=${b.amount}, consumed=${b.consumedAmount}, remaining=${b.amount - b.consumedAmount}`,
+          );
+        });
+
+        const totalRemaining = getTotalLiters();
+        const newFuelLevel = Math.min(
+          Math.max(0, totalRemaining),
+          activeVehicle.fuelCapacity,
+        );
+        console.log(
+          `[FUEL] Calling updateVehicleFuelLevel with ${newFuelLevel.toFixed(2)}L`,
+        );
         await updateVehicleFuelLevel(activeVehicle.id, newFuelLevel);
+        console.log(
+          `[FUEL] Consumption sync: batches=${totalRemaining.toFixed(2)}L, vehicle.currentFuel=${newFuelLevel.toFixed(2)}L`,
+        );
+
+        // DEBUG: Log activeVehicle after update
+        console.log(
+          `[FUEL] activeVehicle.currentFuel after sync: ${activeVehicle.currentFuel?.toFixed(2) ?? "null"}L`,
+        );
 
         const cumulativeFuelUsed = storeTotalFuelUsed + fuelToConsume;
         emitFuelEvent(
@@ -397,6 +396,7 @@ export function Tracker() {
       emitFuelEvent,
       fuelInventoryIsLoaded,
       loadBatches,
+      getTotalLiters,
     ],
   );
 
@@ -467,6 +467,17 @@ export function Tracker() {
   }, [status, tick]);
 
   useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        tick();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [tick]);
+
+  useEffect(() => {
     if (!isGpsWarming) {
       return;
     }
@@ -534,13 +545,26 @@ export function Tracker() {
     if (distance < GPS_CONFIG.minDistanceMeters) return;
 
     const distanceKm = distance / 1000;
+    console.log(
+      `[FUEL-SIM] distanceKm=${distanceKm.toFixed(3)}, estimatedConsumption=${estimatedConsumption.toFixed(2)}`,
+    );
     if (estimatedConsumption > 0) {
       const fuelUsed = distanceKm / estimatedConsumption;
+      console.log(`[FUEL-SIM] fuelUsed=${fuelUsed.toFixed(4)}`);
       if (fuelUsed > 0) {
         setTotalFuelUsed(storeTotalFuelUsed + fuelUsed);
         setLocalFuelUsed((prev) => prev + fuelUsed);
+        console.log(
+          `[FUEL-SIM] Calling consumeFuelFromVehicle with ${fuelUsed.toFixed(4)}L`,
+        );
         consumeFuelFromVehicle(fuelUsed, activeVehicle?.currentFuel ?? 0);
+      } else {
+        console.log(
+          `[FUEL-SIM] Skipping consumeFuelFromVehicle - fuelUsed <= 0`,
+        );
       }
+    } else {
+      console.log(`[FUEL-SIM] Skipping - estimatedConsumption <= 0`);
     }
 
     console.log("[SIM] Calling addDriveModePosition - grade:", location.grade);
@@ -761,16 +785,10 @@ export function Tracker() {
             avgConsumption={
               isRecordingOrSimulating ? getAverageConsumption() : 0
             }
-            vehicleName={activeVehicle?.name}
-            vehicleDetails={
-              activeVehicle
-                ? `${(activeVehicle.displacement / 1000).toFixed(1)}L ${activeVehicle.fuelType === "flex" ? "Flex" : activeVehicle.fuelType === "diesel" ? "Diesel" : activeVehicle.fuelType === "ethanol" ? "Etanol" : "Gasolina"} · ${Math.round(activeVehicle.mass)}kg`
-                : undefined
-            }
             radarMaxSpeed={nearbyRadarMaxSpeed}
             isSpeeding={!!currentSpeedingEvent}
-            gradePercent={inclination.gradePercent}
-            inclinationConfidence={inclination.confidence}
+            gradePercent={grade}
+            inclinationConfidence={gradeConfidence}
             batterySocPct={activeVehicle?.isHybrid ? batterySocPct : undefined}
             isHybrid={activeVehicle?.isHybrid ?? false}
             isGnv={isGnv}

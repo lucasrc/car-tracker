@@ -7,6 +7,52 @@ Este documento descreve o algoritmo de cálculo de consumo de combustível em te
 1. **COPERT** (Computer Programme to calculate Emissions from Road Transport) - modelo validado pela EEA com precisão de ~88.6%
 2. **Modelo de Física Veicular** - cálculo baseado em transmissão, curva de torque e BSFC (quando dados disponíveis)
 
+## Novas Constantes Físicas (Abril 2026)
+
+O modelo foi revisado com base em pesquisa científica para corrigir superestimação de consumo em cidade:
+
+| Constante | Valor | Descrição |
+|-----------|-------|-----------|
+| `DEFAULT_TRANSMISSION_EFFICIENCY` | 0.90 | Eficiência típica do trem de força |
+| `getTransmissionEfficiency(type)` | 0.86-0.93 | Por tipo: Manual 0.93, Auto 0.88, CVT 0.86 |
+| `PARASITIC_POWER_KW` | 0.4 kW | Carga base (alternador, auxiliares) |
+| `DEFAULT_ALTITUDE_M` | 0 | Altitude padrão (nível do mar) |
+| `DEFAULT_TEMPERATURE_C` | 25 | Temperatura padrão (°C) |
+
+### Eficiência do Motor por Carga
+
+O modelo agora usa **eficiência dependente de carga** baseada em dados reais de BSFC island maps:
+
+| Load (%) | Efficiency (gasolina) |
+|----------|------------------------|
+| 10% | 0.16 |
+| 20% | 0.24 |
+| 50% | 0.32 |
+| 75% | 0.32 |
+| 100% | 0.27 |
+
+### BSFC por Era Tecnológica (mínimo/ótimo)
+
+| Era | Gasolina | Diesel | GNV |
+|----|----------|--------|-----|
+| Carburetor | 310 | 245 | 300 |
+| Early Injection | 280 | 230 | 275 |
+| Modern Injection | 250 | 215 | 245 |
+| Direct Injection | 230 | 200 | 225 |
+
+### Load Factor (BSFC penalidade)
+
+O BSFC efetiva é multiplicada por um load factor que reflete a ineficiência em cargas baixas:
+
+| Load (%) | Load Factor |
+|----------|-------------|
+| 5% | 2.8 |
+| 10% | 2.0 |
+| 20% | 1.4 |
+| 50% | 1.1 |
+| 75% | 1.0 |
+| 100% | 1.1 |
+
 ## Arquitetura do Sistema
 
 ```

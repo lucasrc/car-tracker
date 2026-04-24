@@ -138,7 +138,7 @@ describe("useRadarStore", () => {
     });
 
     it("refetches when moved more than 1km", async () => {
-      (fetchRadarsInArea as ReturnType<typeof vi.fn>).mockResolvedValue(
+      (fetchRadarsInArea as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
         mockRadars,
       );
 
@@ -156,7 +156,9 @@ describe("useRadarStore", () => {
     });
 
     it("handles API errors gracefully", async () => {
-      (fetchRadarsInArea as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      useRadarStore.setState({ lastFetchPosition: null });
+      (fetchRadarsInArea as ReturnType<typeof vi.fn>).mockReset();
+      (fetchRadarsInArea as ReturnType<typeof vi.fn>).mockRejectedValue(
         new Error("API Error"),
       );
 
